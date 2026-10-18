@@ -1,0 +1,273 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Self-hosted fonts (offline-first). Files in /fonts, precached by the SW. */
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Noto Serif Georgian";
+  src: url("/fonts/NotoSerifGeorgian-SemiBold-latinext.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Noto Serif Georgian";
+  src: url("/fonts/NotoSerifGeorgian-SemiBold-latin.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --background: oklch(0.9850 0 0);
+  --foreground: oklch(0.2050 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2050 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2050 0 0);
+  --primary: oklch(0.4600 0.2200 266);
+  --primary-foreground: oklch(0.9850 0 0);
+  --secondary: oklch(0.9400 0 0);
+  --secondary-foreground: oklch(0.2500 0 0);
+  --muted: oklch(0.9700 0 0);
+  --muted-foreground: oklch(0.4400 0 0);
+  --accent: oklch(0.9200 0.0400 272);
+  --accent-foreground: oklch(0.2100 0.0600 268);
+  --destructive: oklch(0.6300 0.1900 23.0300);
+  --destructive-foreground: oklch(0.9850 0 0);
+  --border: oklch(0.9200 0 0);
+  --input: oklch(0.9400 0 0);
+  --ring: oklch(0.4600 0.2200 266);
+  --chart-1: oklch(0.9200 0.0400 272);
+  --chart-2: oklch(0.7500 0.1300 269);
+  --chart-3: oklch(0.4600 0.2200 266);
+  --chart-4: oklch(0.4200 0.1500 266);
+  --chart-5: oklch(0.2100 0.0600 268);
+  --sidebar: oklch(0.9850 0 0);
+  --sidebar-foreground: oklch(0.2050 0 0);
+  --sidebar-primary: oklch(0.4600 0.2200 266);
+  --sidebar-primary-foreground: oklch(0.9850 0 0);
+  --sidebar-accent: oklch(0.9200 0.0400 272);
+  --sidebar-accent-foreground: oklch(0.2100 0.0600 268);
+  --sidebar-border: oklch(0.9200 0 0);
+  --sidebar-ring: oklch(0.4600 0.2200 266);
+  --font-sans: Geist, sans-serif;
+  --font-serif: Noto Serif Georgian, ui-serif, serif;
+  --font-mono: Geist Mono, monospace;
+  --radius: 0.5rem;
+  --shadow-x: 0.25px;
+  --shadow-y: 1px;
+  --shadow-blur: 3px;
+  --shadow-spread: 0px;
+  --shadow-opacity: 0.15;
+  --shadow-color: oklch(0.2571 0.1161 272.24);
+  --shadow-2xs: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.07);
+  --shadow-xs: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.07);
+  --shadow-sm: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 1px 2px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 1px 2px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-md: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 2px 4px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-lg: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 2px 4px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 8px 10px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-2xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.38);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+
+  /* --- Lyric Reader additions (not part of Nahom's design system) ---
+     Muted trail: the mockup shows ~25-30% white on pure black.
+     Deliberately NOT --muted-foreground (0.72 lightness is far too bright):
+     trail text uses the foreground color at low opacity instead. */
+  --trail-opacity: 0.28;
+  --reader-margin: 12%;
+  --sentence-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark {
+  --background: oklch(0 0 0);
+  --foreground: oklch(0.9460 0 0);
+  --card: oklch(0.1450 0 0);
+  --card-foreground: oklch(0.9460 0 0);
+  --popover: oklch(0.1450 0 0);
+  --popover-foreground: oklch(0.9460 0 0);
+  --primary: oklch(0.4600 0.2200 266);
+  --primary-foreground: oklch(0.9850 0 0);
+  --secondary: oklch(0.2500 0 0);
+  --secondary-foreground: oklch(0.9400 0 0);
+  --muted: oklch(0.2300 0 0);
+  --muted-foreground: oklch(0.7200 0 0);
+  --accent: oklch(0.3200 0 0);
+  --accent-foreground: oklch(0.9200 0.0400 272);
+  --destructive: oklch(0.6900 0.2000 23.9100);
+  --destructive-foreground: oklch(0.9850 0 0);
+  --border: oklch(0.2600 0 0);
+  --input: oklch(0.3200 0 0);
+  --ring: oklch(0.4600 0.2200 266);
+  --chart-1: oklch(0.2100 0.0600 268);
+  --chart-2: oklch(0.4200 0.1500 269);
+  --chart-3: oklch(0.4600 0.2200 266);
+  --chart-4: oklch(0.7500 0.1300 269);
+  --chart-5: oklch(0.9200 0.0400 272);
+  --sidebar: oklch(0 0 0);
+  --sidebar-foreground: oklch(0.9460 0 0);
+  --sidebar-primary: oklch(0.4600 0.2200 266);
+  --sidebar-primary-foreground: oklch(0.9850 0 0);
+  --sidebar-accent: oklch(0.3200 0 0);
+  --sidebar-accent-foreground: oklch(0.9200 0.0400 272);
+  --sidebar-border: oklch(0.2600 0 0);
+  --sidebar-ring: oklch(0.4600 0.2200 266);
+  --font-sans: Geist, sans-serif;
+  --font-serif: Noto Serif Georgian, ui-serif, serif;
+  --font-mono: Geist Mono, monospace;
+  --radius: 0.5rem;
+  --shadow-x: 0.25px;
+  --shadow-y: 1px;
+  --shadow-blur: 3px;
+  --shadow-spread: 0px;
+  --shadow-opacity: 0.15;
+  --shadow-color: oklch(0.2571 0.1161 272.24);
+  --shadow-2xs: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.07);
+  --shadow-xs: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.07);
+  --shadow-sm: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 1px 2px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 1px 2px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-md: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 2px 4px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-lg: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 2px 4px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 8px 10px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-2xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.38);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ---------------- Reader-specific (not part of the design system) ---------------- */
+
+.reader-root {
+  background: #000;
+  color: #fff;
+  font-family: var(--font-sans);
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: pan-y;
+}
+
+.trail-block {
+  color: #fff;
+  opacity: var(--trail-opacity);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.current-sentence {
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  /* transform/opacity only — no layout thrash on advance */
+  animation: sentence-in 300ms var(--sentence-ease);
+}
+
+@keyframes sentence-in {
+  from {
+    opacity: 0.35;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .current-sentence {
+    animation: none;
+  }
+}
+
+.bullet-hairline {
+  border-left: 1px solid color-mix(in oklch, #fff 22%, transparent);
+}
