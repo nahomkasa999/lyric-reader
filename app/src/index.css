@@ -100,11 +100,8 @@
   --spacing: 0.25rem;
 
   /* --- Lyric Reader additions (not part of Nahom's design system) ---
-     Muted trail: the mockup shows ~25-30% white on pure black.
-     Deliberately NOT --muted-foreground (0.72 lightness is far too bright):
-     trail text uses the foreground color at low opacity instead. */
-  --trail-opacity: 0.28;
-  --reader-margin: 12%;
+     Ease used by the sentence-advance motion. Runtime look tokens live in
+     the --lr-* variables below (driven by Settings, see lib/settings.tsx). */
   --sentence-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -223,32 +220,129 @@
 }
 
 /* ---------------- Reader-specific (not part of the design system) ---------------- */
+/* Runtime tokens, driven by Settings (see lib/settings.tsx -> applySettings).
+   Trail/upcoming/defaults resolve white at configurable opacity. */
+:root {
+  --lr-font: var(--font-sans);
+  --lr-main-size: 30px;
+  --lr-trail-size: 13px;
+  --lr-hl: oklch(0.62 0.2 266);
+  --lr-cm: #ffffff;
+  --lr-mo: 100;
+  --lr-ct: #ffffff;
+  --lr-to: 30;
+}
 
 .reader-root {
   background: #000;
   color: #fff;
-  font-family: var(--font-sans);
+  font-family: var(--lr-font);
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   touch-action: pan-y;
 }
 
+/* Top bar + hairline progress (reference #bar / #prog) */
+.reader-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  gap: 8px;
+}
+.reader-bar button {
+  padding: 6px 10px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+}
+.reader-bar button:active {
+  background: var(--accent);
+}
+.reader-bar .page-btn {
+  color: var(--foreground);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.reader-progress {
+  height: 3px;
+  background: color-mix(in oklch, #fff 10%, transparent);
+}
+.reader-progress i {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.3s ease;
+}
+
+/* Stage mask: sentences fade at the top/bottom edges */
+.reader-stage {
+  -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
+}
+
+/* Trail (past) and upcoming lines */
 .trail-block {
-  color: #fff;
-  opacity: var(--trail-opacity);
-  font-size: 0.95rem;
+  font-size: var(--lr-trail-size);
   line-height: 1.5;
   font-weight: 400;
 }
+.trail-line {
+  color: color-mix(in oklch, var(--lr-ct) calc(var(--lr-to) * 1%), transparent);
+}
+.upcoming-line {
+  color: color-mix(in oklch, var(--lr-ct) calc(var(--lr-to) * 0.55 * 1%), transparent);
+}
+.trail-h {
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: calc(var(--lr-trail-size) * 0.8);
+  font-weight: 600;
+}
+.trail-li {
+  border-left: 1px solid color-mix(in oklch, var(--lr-ct) 55%, transparent);
+  padding-left: 12px;
+}
 
+/* The ONE current sentence */
 .current-sentence {
-  color: #fff;
   font-weight: 600;
   letter-spacing: -0.01em;
-  line-height: 1.15;
-  /* transform/opacity only — no layout thrash on advance */
+  line-height: 1.22;
+  color: color-mix(in oklch, var(--lr-cm) calc(var(--lr-mo) * 1%), transparent);
   animation: sentence-in 300ms var(--sentence-ease);
+}
+.current-sentence.cur-heading {
+  font-size: calc(var(--lr-main-size) * 0.6);
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.current-sentence .bullet-wrap {
+  border-left: 1px solid color-mix(in oklch, var(--lr-ct) 55%, transparent);
+  padding-left: 12px;
+}
+.hl-wash {
+  background: color-mix(in oklch, var(--lr-hl) 42%, transparent);
+  border-radius: 4px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  padding: 0 0.12em;
+}
+.bm-dot {
+  display: inline-block;
+  width: 0.28em;
+  height: 0.28em;
+  border-radius: 9999px;
+  background: var(--primary);
+  margin-left: 0.45em;
+  vertical-align: middle;
 }
 
 @keyframes sentence-in {
@@ -263,11 +357,142 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .current-sentence {
-    animation: none;
+  .current-sentence,
+  .action-card,
+  .action-row {
+    animation: none !important;
+  }
+  .action-row {
+    opacity: 1;
   }
 }
 
-.bullet-hairline {
-  border-left: 1px solid color-mix(in oklch, #fff 22%, transparent);
+/* Sheets / popups (reference #jump / #pop) */
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: oklch(0 0 0 / 0.35);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.sheet-card {
+  width: min(92%, 420px);
+  max-height: 82%;
+  overflow: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 20px;
+  box-shadow: 0 20px 60px oklch(0 0 0 / 0.5);
+}
+.action-card {
+  animation: card-in 200ms ease-out;
+}
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.action-row {
+  opacity: 0;
+  animation: row-in 220ms ease-out forwards;
+}
+.action-row:nth-child(1) { animation-delay: 50ms; }
+.action-row:nth-child(2) { animation-delay: 100ms; }
+.action-row:nth-child(3) { animation-delay: 150ms; }
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Jump input */
+.jump-input {
+  width: 7ch;
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: center;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: var(--foreground);
+  outline: none;
+}
+.jump-input:focus {
+  border-color: var(--ring);
+}
+
+/* Auto-hiding bottom nav (reference #foot) */
+.bottom-nav {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 4px 12px calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, oklch(0 0 0 / 0.55));
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 250ms ease, transform 250ms ease, visibility 0s linear 250ms;
+}
+.bottom-nav.show {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  visibility: visible;
+  transition: opacity 250ms ease, transform 250ms ease;
+}
+.bottom-nav button {
+  font-size: 26px;
+  padding: 4px 20px;
+  border-radius: 12px;
+  color: var(--foreground);
+  line-height: 1.2;
+}
+.bottom-nav button:active {
+  background: var(--accent);
+}
+
+/* Settings chips */
+.set-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--background);
+  font-size: 13px;
+}
+.set-chip.on {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.hl-chip {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 0;
+}
+.hl-chip.on {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
 }

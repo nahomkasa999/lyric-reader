@@ -1,0 +1,239 @@
+import { FONT_CHOICES, HIGHLIGHT_COLORS, useSettings } from "../lib/settings";
+
+interface Props {
+  onBack: () => void;
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-5">
+      <label className="mb-2 block text-[13px] text-muted-foreground">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function SliderRow({
+  testid,
+  min,
+  max,
+  value,
+  onChange,
+  suffix,
+}: {
+  testid: string;
+  min: number;
+  max: number;
+  value: number;
+  onChange: (v: number) => void;
+  suffix?: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <input
+        data-testid={testid}
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value, 10))}
+        className="w-full accent-primary"
+      />
+      <span className="w-14 shrink-0 text-right text-sm text-foreground tabular-nums">
+        {value}
+        {suffix}
+      </span>
+    </div>
+  );
+}
+
+export default function Settings({ onBack }: Props) {
+  const { settings, update, reset } = useSettings();
+
+  return (
+    <div
+      data-testid="settings-page"
+      className="min-h-dvh bg-background text-foreground"
+    >
+      <div className="mx-auto max-w-xl px-6 pt-14 pb-24">
+        <div className="flex items-center gap-3">
+          <button
+            data-testid="settings-back"
+            onClick={onBack}
+            aria-label="Back"
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+          >
+            ← Back
+          </button>
+          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        </div>
+
+        <Row label="Font">
+          <div className="flex flex-wrap gap-2">
+            {FONT_CHOICES.map((f) => (
+              <button
+                key={f}
+                data-testid={`font-chip-${f}`}
+                onClick={() => update({ font: f })}
+                className={`set-chip${settings.font === f ? " on" : ""}`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </Row>
+
+        <Row label="Main sentence size">
+          <SliderRow
+            testid="setting-main-size"
+            min={18}
+            max={48}
+            value={settings.mainSize}
+            onChange={(v) => update({ mainSize: v })}
+            suffix="px"
+          />
+        </Row>
+
+        <Row label="Top and bottom size">
+          <SliderRow
+            testid="setting-trail-size"
+            min={9}
+            max={24}
+            value={settings.trailSize}
+            onChange={(v) => update({ trailSize: v })}
+            suffix="px"
+          />
+        </Row>
+
+        <Row label="Highlight colour">
+          <div className="flex flex-wrap gap-2">
+            {HIGHLIGHT_COLORS.map((c, i) => (
+              <button
+                key={c}
+                data-testid={`hl-chip-${i}`}
+                onClick={() => update({ highlight: c })}
+                aria-label={`Highlight colour ${i + 1}`}
+                className={`hl-chip${settings.highlight === c ? " on" : ""}`}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        </Row>
+
+        <Row label="Main text colour and opacity">
+          <div className="flex items-center gap-3">
+            <input
+              data-testid="main-color"
+              type="color"
+              value={settings.mainColor ?? "#ffffff"}
+              onChange={(e) => update({ mainColor: e.target.value })}
+              className="h-9 w-11 shrink-0 cursor-pointer border-0 bg-transparent p-0"
+            />
+            <button
+              data-testid="main-color-default"
+              onClick={() => update({ mainColor: null })}
+              className="set-chip shrink-0"
+            >
+              Default
+            </button>
+            <input
+              data-testid="main-opacity"
+              type="range"
+              min={20}
+              max={100}
+              value={settings.mainOpacity}
+              onChange={(e) =>
+                update({ mainOpacity: parseInt(e.target.value, 10) })
+              }
+              className="w-full accent-primary"
+            />
+            <span className="w-12 shrink-0 text-right text-sm tabular-nums">
+              {settings.mainOpacity}%
+            </span>
+          </div>
+        </Row>
+
+        <Row label="Top and bottom text colour and opacity">
+          <div className="flex items-center gap-3">
+            <input
+              data-testid="trail-color"
+              type="color"
+              value={settings.trailColor ?? "#ffffff"}
+              onChange={(e) => update({ trailColor: e.target.value })}
+              className="h-9 w-11 shrink-0 cursor-pointer border-0 bg-transparent p-0"
+            />
+            <button
+              data-testid="trail-color-default"
+              onClick={() => update({ trailColor: null })}
+              className="set-chip shrink-0"
+            >
+              Default
+            </button>
+            <input
+              data-testid="trail-opacity"
+              type="range"
+              min={10}
+              max={100}
+              value={settings.trailOpacity}
+              onChange={(e) =>
+                update({ trailOpacity: parseInt(e.target.value, 10) })
+              }
+              className="w-full accent-primary"
+            />
+            <span className="w-12 shrink-0 text-right text-sm tabular-nums">
+              {settings.trailOpacity}%
+            </span>
+          </div>
+        </Row>
+
+        <button
+          data-testid="settings-reset"
+          onClick={reset}
+          className="mt-8 w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium"
+        >
+          Reset settings
+        </button>
+
+        {/* Live preview: muted line / current line / muted line, in settings */}
+        <div
+          data-testid="settings-preview"
+          className="mt-6 rounded-xl border border-border bg-black p-4"
+          style={{ fontFamily: "var(--lr-font)" }}
+        >
+          <p
+            style={{
+              fontSize: "var(--lr-trail-size)",
+              color:
+                "color-mix(in oklch, var(--lr-ct) calc(var(--lr-to) * 1%), transparent)",
+            }}
+          >
+            The previous sentence fades above.
+          </p>
+          <p
+            data-testid="settings-preview-current"
+            className="my-3 font-semibold"
+            style={{
+              fontSize: "var(--lr-main-size)",
+              lineHeight: 1.22,
+              color:
+                "color-mix(in oklch, var(--lr-cm) calc(var(--lr-mo) * 1%), transparent)",
+            }}
+          >
+            This is the sentence you are reading.
+          </p>
+          <p
+            style={{
+              fontSize: "var(--lr-trail-size)",
+              color:
+                "color-mix(in oklch, var(--lr-ct) calc(var(--lr-to) * 0.55 * 1%), transparent)",
+            }}
+          >
+            The next one waits below.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

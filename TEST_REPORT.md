@@ -84,3 +84,90 @@ sentences per flick (600ms lock + functional state update). No layout thrash:
 the advance animates transform/opacity only. One nit: very long sentences
 drop to 1.4rem which is correct but plainly less dramatic — inherent to the
 design, not a bug.
+
+---
+
+# TEST_REPORT v2 — reference UI adoption + the 4 fixes (Oct 19, 2026)
+
+Full UI-layer rebuild: reference look (Library home, reader chrome, sheets,
+stage mask, heading/bullet styles), typed page jump, one-card staggered
+action popup with persisted highlights/bookmarks, auto-hiding bottom nav,
+dedicated Settings page. Engine (segment/structure/extract/db logic, paging,
+trail/restore, persistence) untouched.
+
+## Unit tests — `npx vitest run`
+
+**30/30 passed** (4 files): lib unchanged, all green as required.
+
+## Interaction tests — `npx playwright test tests/e2e/reader.spec.ts`
+
+**23/23 passed** (Chromium headless, phone viewport 390×844, against
+`vite preview` serving `dist`):
+
+Core flows (7): open at first sentence; exactly one sentence per keypress +
+trail grows; page-boundary clear + scroll-back restore; upcoming previews;
+position persists across reload; page button shows "1 / 5" and opens the
+jump sheet; offline reload works.
+
+Typed jump (4): type page number + Enter/Go jumps there; out-of-range
+clamps to last page with inline "Only 5 pages" hint; empty input shows a
+hint instead of jumping; section list jumps to a heading page.
+
+Action popup (4): middle-third tap opens ONE card with 3 staggered rows
+(animation delays verified distinct and ordered); Highlight toggles and
+survives reload; Bookmark shows a dot marker + lists the page in the jump
+sheet; Copy writes the raw sentence text to the clipboard and shows
+"Copied".
+
+Bottom nav (3): hidden initially → visible on bottom hot-zone tap → hidden
+again after the 2.5s auto-hide; hot-zone tap never advances the sentence;
+› advances a page and « returns to the previous section page.
+
+Settings (5): gear opens the Settings page; main-size slider drives the
+live preview (48px) and the reader; font chip changes `--lr-font`;
+settings persist across reload (localStorage → CSS vars); A−/A+ adjust the
+same main-size setting; settings page also opens from the library gear and
+Back returns to the library.
+
+**Four real bugs were caught by these tests and fixed** (not test
+artefacts):
+
+1. **Stale closure silently disabled Highlight/Bookmark/Copy.**
+   `toggleMarkKind`/`doCopy` were `useCallback(..., [bookId])` but read the
+   current sentence through a helper closed over the first render — where
+   the book wasn't loaded yet, so they always saw `undefined` and returned
+   early with no error. Fixed by closing over the fresh `current` with
+   correct deps; the helper was deleted.
+2. **Out-of-range jump closed the sheet before the hint could be seen.**
+   `gotoPage` unconditionally closed the jump sheet, so the clamp hint
+   never rendered. Out-of-range jumps now set position directly and keep
+   the sheet open with the hint.
+3. **Bottom-nav hover/tap race.** A mouse moving into the hot zone fired
+   the hover reveal, then the tap itself toggled the bar back off — the
+   same race a desktop user would hit. Hot-zone taps now always reveal;
+   the 2.5s auto-hide dismisses.
+4. **Hidden bar wasn't really hidden.** It used opacity:0 only, which
+   Playwright (correctly) still treats as visible. Now also
+   `visibility: hidden` (delayed to let the 250ms fade finish).
+
+## Screenshots — `npx playwright test tests/e2e/shots.spec.ts`
+
+**2/2 suites passed**, 7 PNGs captured from the real build and eyeballed:
+
+| File | Shows |
+|---|---|
+| `library-phone.png` | Headline + sub, gear, "Start reading a book" CTA, paste area, book card row |
+| `reader-mid-phone.png` | Top bar (← Library · 1/5 · A− A+ ⚙), indigo progress hairline, muted trail, big current sentence, dim upcoming |
+| `jump-sheet-phone.png` | Typed "3" input, "of 5 pages", Go button, sections list |
+| `popup-phone.png` | One card, 3 rows (Highlight/Bookmark/Copy) |
+| `bottom-nav-phone.png` | « ‹ › » bar revealed over the reader |
+| `settings-phone.png` | Font chips, sliders, highlight chips, colour+opacity rows, Reset, live preview |
+| `reader-desktop.png` | Reader at 1280×800 |
+
+Old v1 shots (`reader-start-phone`, `reader-bullet-phone`,
+`reader-overlay-phone`) were retired — their UI no longer exists.
+
+## Build
+
+`npx tsc -b` clean, `npm run build` succeeds (dist regenerated with the new
+UI; prebuild regenerates fonts/icons as before).

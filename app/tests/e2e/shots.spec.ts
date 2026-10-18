@@ -26,27 +26,53 @@ async function stepToText(page: Page, needle: string, max = 80) {
 }
 
 test.describe("screenshots", () => {
-  test("phone: library, reader states, overlay", async ({ page }) => {
+  test("phone: library, reader, jump sheet, popup, bottom nav, settings", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
+
+    // Library
     await page.goto("/");
     await page.getByTestId("upload-btn").waitFor();
     await page.evaluate(() => document.fonts.ready);
+    await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/library-phone.png` });
 
+    // Reader mid-page (trail above, big sentence, upcoming below)
     await openSample(page);
-    await page.screenshot({ path: `${SHOTS}/reader-start-phone.png` });
-
     for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowDown");
     await page.waitForTimeout(450);
     await page.screenshot({ path: `${SHOTS}/reader-mid-phone.png` });
 
-    await stepToText(page, "Take the poker from the study.");
-    await page.waitForTimeout(450);
-    await page.screenshot({ path: `${SHOTS}/reader-bullet-phone.png` });
+    // Jump sheet with typed input
+    await page.getByTestId("page-btn").click();
+    await page.getByTestId("jump-sheet").waitFor();
+    await page.getByTestId("jump-input").fill("3");
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: `${SHOTS}/jump-sheet-phone.png` });
+    await page.keyboard.press("Escape");
 
-    await page.mouse.click(195, 420);
-    await page.getByTestId("reader-overlay").waitFor();
-    await page.screenshot({ path: `${SHOTS}/reader-overlay-phone.png` });
+    // Action popup card open
+    await page.mouse.click(195, 422);
+    await page.getByTestId("popup-card").waitFor();
+    await page.waitForTimeout(600); // let the stagger finish
+    await page.screenshot({ path: `${SHOTS}/popup-phone.png` });
+    await page.keyboard.press("Escape");
+
+    // Bottom nav visible
+    await page.mouse.click(195, 790);
+    await page.getByTestId("bottom-nav").waitFor();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${SHOTS}/bottom-nav-phone.png` });
+
+    // Settings page
+    await page.getByTestId("settings-gear").click();
+    await page.getByTestId("settings-page").waitFor();
+    await page.waitForTimeout(300);
+    await page.screenshot({
+      path: `${SHOTS}/settings-phone.png`,
+      fullPage: true,
+    });
   });
 
   test("desktop: reader mid-page", async ({ page }) => {

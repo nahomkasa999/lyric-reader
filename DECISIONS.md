@@ -113,3 +113,123 @@ and how to change it. Nothing here is load-bearing — veto anything.
 - **Decision:** The build now generates its own binaries. `app/scripts/copy-fonts.mjs` copies the five fonts from the `geist` and `@fontsource/noto-serif-georgian` npm packages into `public/fonts`, and the existing `scripts/make-icons.mjs` draws the three PNG icons — both wired as `prebuild` in `app/package.json`, so local builds and Vercel builds produce identical output with zero binaries in git. The generated files are git-ignored.
 - **Verified:** deleted all local font/icon binaries, `npm run build` regenerated everything, dist complete, reader e2e suite still 7/7.
 - **Veto/change:** to pin exact font files instead, commit the binaries with a local git client and remove the `prebuild` script.
+
+## v2: reference UI adoption + the 4 fixes (Oct 19, 2026)
+
+22. **Kept our three-zone stage instead of the reference's translating track.**
+    The reference renders every sentence in one track that translates to keep the
+    current one in place; our layout (muted top block / big centre sentence /
+    muted bottom block, 10/10-approved against the mockup) produces the same
+    visual with far simpler snap semantics, and it keeps "exactly one sentence
+    per gesture" true by construction. Restyled to the reference tokens
+    (sizes, colours, heading/bullet styles, hairline progress bar, stage mask).
+    → Change: rebuild the stage as a single translating track in `Reader.tsx`.
+
+23. **Trail/upcoming are settings-driven now; --trail-opacity is gone.**
+    Trail uses `--lr-ct` (default white) × `--lr-to` (default 30%), upcoming is
+    the same colour at 55% of that opacity — the reference's past/dim two-step
+    fade, preserving the v1 30%-white look Nahom approved. Opacity slider
+    10–100, colour picker with Default reset.
+    → Change: the two sliders + Default buttons in Settings.
+
+24. **Main sentence: 30px base (reference --fs) × the old shrink tiers.**
+    Tiers are now multipliers (1 / 0.78 / 0.62 / 0.5) of the Main size setting
+    (18–48), so long sentences still fit without scrolling and A−/A+ (now
+    ±2px on the same setting) and the slider stay in sync. Old legacy
+    `font-scale` localStorage is migrated once into `mainSize`.
+    → Change: `currentFontPx()` in `Reader.tsx`.
+
+25. **Headings follow the reference exactly: primary, uppercase, letterspaced.**
+    The v1 serif "title card" for the current heading is gone — the chosen
+    Settings font now governs every typeface, so headings stay on-brand
+    instead of fighting a font choice. Current heading = 0.6× main size.
+    → Change: `.cur-heading` / `.trail-h` in `index.css`.
+
+26. **Bullets always get the hairline (reference style), nested or not.**
+    v1 only drew hairlines for nested levels; the reference draws the 1px
+    trail-colour border + 12px padding on every bullet. Indent grows 18px per
+    nesting level in both current and muted blocks.
+    → Change: `.trail-li` / `.bullet-wrap` in `index.css`.
+
+27. **Top bar is always visible (reference #bar), not tap-to-reveal.**
+    `← Library | page button "3 / 7" | A− A+ gear`, 14px muted row, accent bg
+    on :active, hairline indigo progress under it. The old middle-tap overlay
+    is removed; its middle-third tap now opens the action popup.
+    → Change: `Reader.tsx` header.
+
+28. **Popup = ONE centred card, staggered rows (fix 2).**
+    Card ~200ms ease-in; rows fade+rise with 50/100/150ms delays,
+    transform/opacity only (disabled under prefers-reduced-motion).
+    Actions work: Highlight = sentence-level wash
+    `color-mix(in oklch, --lr-hl 42%, transparent)`; Bookmark = primary dot
+    after the text + entry in the jump sheet; Copy = clipboard + transient
+    "Copied" row state. Marks persist per book in IndexedDB ("marks" store,
+    DB v2 — additive, old installs migrate cleanly; marks die with the book).
+    → Change: popup block in `Reader.tsx`, `lib/db.ts`.
+
+29. **Jump sheet: typed input is the hero (fix 1), slider is gone.**
+    Numeric input (inputMode) + "of N pages" + Go button, Enter submits.
+    Non-numeric → inline hint, stays open. Numeric out-of-range → clamps to
+    1..N, shows the hint, and the reader still jumps to the clamped page
+    (sheet stays open so the hint is seen). Below: tappable section list
+    (pages whose first sentence is a heading) and, if any, bookmarked pages.
+    → Change: `submitJump` in `Reader.tsx`.
+
+30. **Bottom nav: hidden by default, hot-zone reveal (fix 3).**
+    « prev section ‹ prev page › next page » next section; section = nearest
+    heading-first page (book start/end when none). Reveal: pointer hover in
+    the bottom 15% (desktop), tap in the bottom hot-zone (touch), ~1.2s on
+    page change, keyboard focus. Auto-hide 2.5s. Hot-zone tap NEVER advances
+    — it only shows (or hides) the bar. transition 250ms.
+    → Change: `showBar`/`hideBar` and the pointer handler in `Reader.tsx`.
+
+31. **Settings is a page, reachable from two gears (fix 4).**
+    Gear in the reader top bar and the library header both open it; Back
+    returns to where you came from. No settings UI remains on reader/library
+    screens. Settings persist in localStorage and apply live through the
+    --lr-* CSS variables (also covering the library + preview card).
+    → Change: `components/Settings.tsx`, `lib/settings.tsx`, `App.tsx`.
+
+32. **Library restyle per reference:** 28px tight-tracking headline, "Start
+    reading a book" primary CTA (label wrapping the file input), inline paste
+    area + "Read pasted text" button, card rows with × delete. Kept the tiny
+    optional title input and the "N sentences · P% read" meta — small
+    utilities the reference didn't forbid. → Change: `components/Library.tsx`.
+
+33. **Removed: `App.css` never existed; unused template files are gone** from
+    the earlier cleanup — nothing user-facing depended on them.
+
+## v2 test-pass fixes (Oct 19, 2026 — caught by the new e2e suite)
+
+34. **Fixed: stale-closure popup actions (real bug, not a test bug).**
+    `toggleMarkKind`/`doCopy` were `useCallback(..., [bookId])` but read the
+    sentence via a helper closed over the first render, where `book` was
+    still null — so every row click silently no-op'd. They now close over
+    the fresh `current` with `[bookId, current]` / `[current]` deps and the
+    helper is gone. Lesson: never eslint-disable exhaustive-deps on a
+    callback that reads render state. → Change: `Reader.tsx` popup actions.
+
+35. **Fixed: out-of-range jump hid its own hint (real bug).** `gotoPage`
+    always closed the jump sheet, so the clamp hint never rendered.
+    Out-of-range jumps now set position directly, keep the sheet open, and
+    rewrite the input to the clamped value. → Change: `submitJump`.
+
+36. **Fixed: bottom-nav hover/tap race (real UX bug).** Mousemove into the
+    hot zone revealed the bar, then the tap toggled it straight back off —
+    a desktop user would hit the same. Hot-zone taps now always reveal;
+    dismissal is the 2.5s auto-hide. → Change: `onPointerUp`.
+
+37. **Fixed: hidden bar wasn't hidden (a11y/test correctness).** Opacity 0
+    alone still counts as visible (and to assistive tech). Now
+    `visibility: hidden` with the transition delayed 250ms so the fade
+    completes first. → Change: `.bottom-nav` in `index.css`.
+
+38. **Test call: whole e2e file runs at 390×844.** The bottom-nav hot-zone
+    and middle-third tap are viewport-relative; Playwright's default
+    1280×720 put the hot-zone tap outside the window. Phone viewport is
+    also the product's real target. → Change: `test.use` in reader.spec.ts.
+
+39. **Test call: Copy asserts the RAW sentence text.** The heading renders
+    uppercase via CSS, so `innerText` is "THE MIDNIGHT STAIRCASE" while the
+    clipboard correctly gets "The Midnight Staircase". Asserting raw text
+    is the right behaviour — pasting shouldn't inherit display casing.

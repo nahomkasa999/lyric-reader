@@ -39,8 +39,15 @@ offline afterwards.
   try the reader instantly.
 - **Reader:** swipe up/down, tap the bottom/top third, scroll the mouse
   wheel, or use arrow keys / space — each gesture moves exactly one sentence.
-  Tap the **middle third** to reveal the overlay: back to library,
-  `Page x of y · z%`, progress bar, and A−/A+ text size. It auto-hides.
+  The top bar shows `← Library`, the page as `3 / 7`, A−/A+ and a settings
+  gear. Tap the page number to **type** a page and jump to it (sections and
+  bookmarks are listed there too). Tap the **middle third** (the current
+  sentence) to open the action card: Highlight, Bookmark, Copy — these are
+  saved per book. The `« ‹ › »` page bar at the bottom hides itself; hover
+  or tap near the bottom edge to bring it back.
+- **Settings:** the gear opens a dedicated settings page — font, sentence
+  sizes, text colours and opacity, highlight colour, with a live preview.
+  Settings persist on-device.
 - Your place (book + page + sentence) is saved on-device and restored on
   reopen — even offline.
 
@@ -53,11 +60,13 @@ app/src/
     structure.ts  plain-text -> blocks (heading/para/bullet + level)
     extract.ts    PDF (pdfjs-dist) / EPUB (jszip + OPF walker) / TXT -> BookDoc
     types.ts      Book/Page/Sentence model, step/trail/progress logic
-    db.ts         IndexedDB: books, progress
+    db.ts         IndexedDB: books, progress, highlights/bookmarks (marks)
+    settings.tsx  reader settings (persisted) as CSS custom properties
     sample.ts     the bundled sample book
   components/
     Library.tsx   upload / paste / book list with progress
-    Reader.tsx    the three-zone lyric reader + gestures + overlay
+    Reader.tsx    the three-zone lyric reader + gestures + popup card
+    Settings.tsx  the settings page (font, sizes, colours, preview)
     App.tsx       shell, dark mode, sample seeding, last-book resume
 ```
 
@@ -68,7 +77,7 @@ is pure and unit-tested; the Reader is a thin view over it.
 
 ```bash
 npx vitest run                  # unit: 30 tests
-npx playwright test              # e2e: 7 interaction + 2 screenshot suites
+npx playwright test              # e2e: 23 interaction + 2 screenshot suites
 ```
 
 Results are recorded in [TEST_REPORT.md](TEST_REPORT.md); screenshots in

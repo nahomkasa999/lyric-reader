@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Library from "./components/Library";
 import Reader from "./components/Reader";
+import Settings from "./components/Settings";
+import { SettingsProvider } from "./lib/settings";
 import { extractTxt } from "./lib/extract";
 import {
   getBook,
@@ -13,6 +15,8 @@ import { SAMPLE_TEXT, SAMPLE_TITLE } from "./lib/sample";
 
 const LAST_BOOK_KEY = "lyric-reader.last-book";
 
+type View = "library" | "reader" | "settings";
+
 function readLastBook(): string | null {
   try {
     return localStorage.getItem(LAST_BOOK_KEY);
@@ -21,8 +25,15 @@ function readLastBook(): string | null {
   }
 }
 
-export default function App() {
+function Shell() {
+  // If a book was open last time, land straight back in the reader.
+  const [view, setView] = useState<View>(() =>
+    readLastBook() ? "reader" : "library",
+  );
   const [openBookId, setOpenBookId] = useState<string | null>(readLastBook);
+  const [settingsReturn, setSettingsReturn] = useState<"library" | "reader">(
+    "library",
+  );
   const [seeded, setSeeded] = useState(false);
 
   // The whole app is dark-only (the reader mockup is pure black).
@@ -77,7 +88,9 @@ export default function App() {
     } catch {
       /* ignore */
     }
+    setView("reader");
   }, []);
+
   const closeBook = useCallback(() => {
     setOpenBookId(null);
     try {
@@ -85,6 +98,12 @@ export default function App() {
     } catch {
       /* ignore */
     }
+    setView("library");
+  }, []);
+
+  const openSettingsFrom = useCallback((from: "library" | "reader") => {
+    setSettingsReturn(from);
+    setView("settings");
   }, []);
 
   if (!seeded) {
@@ -95,9 +114,35 @@ export default function App() {
     );
   }
 
-  return openBookId ? (
-    <Reader bookId={openBookId} onBack={closeBook} />
-  ) : (
-    <Library onOpen={openBook} />
+  if (view === "settings") {
+    return (
+      <Settings
+        onBack={() =>
+          setView(settingsReturn === "reader" && openBookId ? "reader" : "library")
+        }
+      />
+    );
+  }
+
+  if (view === "reader" && openBookId) {
+    return (
+      <Reader
+        bookId={openBookId}
+        onBack={closeBook}
+        onOpenSettings={() => openSettingsFrom("reader")}
+      />
+    );
+  }
+
+  return (
+    <Library onOpen={openBook} onOpenSettings={() => openSettingsFrom("library")} />
+  );
+}
+
+export default function App() {
+  return (
+    <SettingsProvider>
+      <Shell />
+    </SettingsProvider>
   );
 }
