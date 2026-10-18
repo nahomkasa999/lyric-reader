@@ -3,3 +3,8 @@ dist/
 test-results/
 *.zip
 .DS_Store
+
+# Generated at build time by `npm run prebuild` (scripts/copy-fonts.mjs
+# copies fonts from npm packages; scripts/make-icons.mjs draws the icons).
+app/public/fonts/*.woff2
+app/public/icons/*.png

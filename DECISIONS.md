@@ -106,3 +106,10 @@ and how to change it. Nothing here is load-bearing — veto anything.
 21. **Sample book "Sample — The Midnight Staircase"** (60 sentences, 5 pages)
     is original prose written for testing: paragraphs, headings, nested
     bullets. Seeded once on first run (guarded against double-seeding).
+
+## Post-launch: self-generating assets (Oct 18, ~23:57 EAT)
+
+- **Context:** The GitHub connector push is UTF-8-text-only and this environment's browser file-upload is blocked, so the font (.woff2) and icon (.png) binaries could not be committed to the repo — which Vercel needs in order to build from GitHub.
+- **Decision:** The build now generates its own binaries. `app/scripts/copy-fonts.mjs` copies the five fonts from the `geist` and `@fontsource/noto-serif-georgian` npm packages into `public/fonts`, and the existing `scripts/make-icons.mjs` draws the three PNG icons — both wired as `prebuild` in `app/package.json`, so local builds and Vercel builds produce identical output with zero binaries in git. The generated files are git-ignored.
+- **Verified:** deleted all local font/icon binaries, `npm run build` regenerated everything, dist complete, reader e2e suite still 7/7.
+- **Veto/change:** to pin exact font files instead, commit the binaries with a local git client and remove the `prebuild` script.
