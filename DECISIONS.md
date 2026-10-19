@@ -400,3 +400,95 @@ leg, and a 450ms `suppressUntil` timestamp ignores the click that follows it
 behaviour unchanged: Bookmark/Highlight toggle, Copy shows "Copied", Note
 save/cancel/delete and Esc keep closing exactly as before. The fx blur is
 tied to the popup-open state and clears on close as it always did.
+
+## v4: selection + Meaning + Words (Oct 19, 2026)
+
+Selection wake-up: sentences stay `user-select:none` everywhere except the
+current sentence's part spans — `.s.cur .pt` gets a scoped
+`user-select:text` override, so selection can only ever begin where reading
+happens. The wake-up listens to the native `selectionchange` event (not
+click-drag timers): any non-collapsed selection fully inside the current
+item raises the pill; a collapsed selection or one outside the current item
+hides it. The pill is positioned from the selection's bounding rect,
+clamped to the viewport (top - 60, min 8px top, horizontal clamp).
+
+Suppression while a selection is live: the same swallow pattern as the
+action popup — wheel, touchmove, hot-zone clicks, arrow keys and the popup
+open path all bail while `sel`, the meaning card, or the Ask sheet is open.
+Tap-anywhere-else collapses the selection via the root capture handler and
+swallows the gesture (same 450ms suppress), so it can never also step.
+Esc unwinds topmost-first (selection -> meaning card -> Ask sheet -> popup).
+Android shows its own native selection menu alongside ours — accepted for
+v1; our pill is the feature path. Honest gap: no physical Android device
+was available to verify the long-press + native-menu interplay; headless
+Chromium covers the selectionchange path via programmatic ranges only.
+
+Meaning card: reuses the popup card styling + the same anchor math
+(extracted into `anchorCard`), and re-anchors after the lookup resolves
+(content height changes loading -> definition). Single word: dictionaryapi
+first, one lemmatizer retry on 404; phrase (2+ words) or dictionary miss:
+Gemini JSON if a key is set, else a calm "phrases need the AI" state with a
+Settings link. Single word WITH a key also pulls the "as used in this
+sentence" line from Gemini in the background (cached per word+sentence) —
+the dictionary result renders instantly, the AI line appends when it
+arrives. Offline/network failure is a plain offline state, no crash.
+
+Vocab: one IndexedDB store, dedupe by `norm` (lowercased trimmed text);
+re-saving UPDATES the context fields (book/page/sentence) to the latest
+but KEEPS the original `savedAt`/`dayKey` — the first time you learned a
+word stays under that day's group. Saved occurrences get a faint dotted
+underline via `decorateText` (longest-norm-first, word-boundary,
+case-insensitive) applied only to rendered part spans.
+
+Words view: a segmented `Saved | Words` switch INSIDE the Saved view
+(per-book, matching his marks model) rather than a new top-level screen —
+one bookmark icon path, no parallel places to look. Rows group by day
+(Today / Yesterday / "Mon 12 Oct" + count); row = word, one-line first
+definition, muted "book · p.N" source; tap reuses the Saved jump mechanism
+to land on the exact item+part. Delete per row with a small ×, no confirm
+(consistent with app patterns — undo not required).
+
+## v4: Ask (?) + Gemini key (Oct 19, 2026)
+
+BYOK: key lives in `localStorage` (`lr-gemini-key`), entered in a new
+Settings "AI" section with a show/hide eye, the "Free key from Google AI
+Studio — stays on this phone only" helper text, the aistudio.google.com
+link, and a Test key button making one tiny call ("Reply with exactly ok")
+reporting ✓ working / ✗ with the reason. The key is NEVER logged and is
+only ever sent to `generativelanguage.googleapis.com` via the `x-goog-api-key`
+header. Gemini client uses model `gemini-2.5-flash`, `responseMimeType:
+application/json` for the meaning JSON, plain text for Ask; errors map to
+calm messages (400 invalid key, 429 quota, network, blocked).
+
+The "?" is a circular ghost button that JOINS the unified auto-hiding
+chrome — visible exactly when the chrome is visible (same
+`chromeVisible` state/timer), stacked above « ‹ › » at bottom-right so it
+never overlaps the page bar. Per Nahom's Oct 19 instruction ("it should
+also disappear like the others"). Tapping it counts as chrome interaction
+(resets the idle timer) and opens the Ask sheet.
+
+Ask sheet: bottom sheet over the fx-blurred stage; header context chip
+"Page N · bookTitle — heading — sentence-head"; messages user-right/AI-left;
+input + send. Context builder (`lib/askContext.ts`, pure, unit-tested):
+full text of previous + current + next page, the current sentence wrapped
+in `>>> <<<`, the nearest heading at/before the current item, and the
+system instruction — answer ONLY from the passage, say so plainly when it
+doesn't contain the answer, quote relied-on sentences exactly in « ».
+Follow-ups send the whole thread; the thread persists per book in the
+`ask` store (last 60 messages) and restores on reopen. AI answers render as
+paragraphs; a «quoted» passage that exactly matches a sentence in the book
+becomes a tappable quote block that jumps the reader to that sentence and
+closes the sheet. No-key state points to Settings; errors are inline with
+Retry; backdrop tap / swipe-down-from-header / ✕ / Esc close (tap-outside
+swallow rules apply — taps on the sheet itself pass through).
+
+Testing: BOTH APIs are stubbed in e2e via route interception
+(dictionaryapi.dev and generativelanguage.googleapis.com return canned
+payloads — the new suite runs fully offline). No real key, no real network.
+Selection is driven via programmatic ranges in tests (same
+`selectionchange` code path the native long-press takes); native
+double-click-to-select on a single-part sentence briefly flashes the
+action popup on the first click (his tap-to-popup rule fires before the
+selection forms) — acceptable v1, the second press dismisses it and the
+pill takes over. Not a test flake: long-press on touch devices fires no
+click, so the real gesture path is clean.

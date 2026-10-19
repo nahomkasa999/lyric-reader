@@ -3,7 +3,7 @@ import type { BookDoc, Position } from "./types";
 import { migrateBook } from "./types";
 
 const DB_NAME = "lyric-reader";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -16,6 +16,10 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore("progress");
       if (!db.objectStoreNames.contains("marks"))
         db.createObjectStore("marks", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("vocab"))
+        db.createObjectStore("vocab", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("ask"))
+        db.createObjectStore("ask", { keyPath: "bookId" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -97,6 +101,8 @@ export async function deleteBook(id: string): Promise<void> {
   await tx("books", "readwrite", (s) => s.delete(id));
   await tx("progress", "readwrite", (s) => s.delete(id));
   await deleteMarksForBook(id);
+  await deleteVocabForBook(id);
+  await tx("ask", "readwrite", (s) => s.delete(id)).catch(() => {});
 }
 
 export interface PartMark {
@@ -294,6 +300,132 @@ export async function getProgress(
   bookId: string,
 ): Promise<Position | undefined> {
   return tx("progress", "readonly", (s) => s.get(bookId));
+}
+
+// ---------------------------------------------------------------------------
+// Vocab: words/phrases the user saved with their meanings — the personal
+// knowledge base, browsed on the Words view grouped by day.
+// ---------------------------------------------------------------------------
+
+export interface VocabRecord {
+  /** `${bookId}:${norm}` */
+  id: string;
+  bookId: string;
+  /** display text as selected */
+  text: string;
+  /** lowercased trimmed, for dedupe + matching */
+  norm: string;
+  phonetic?: string;
+  /** flattened definitions, e.g. "noun — A portable lamp." */
+  defs: string[];
+  /** AI line for phrases / in-context meanings */
+  contextMeaning?: string;
+  bookTitle: string;
+  /** 1-based page */
+  page: number;
+  item: number;
+  part: number;
+  /** the full sentence the word was found in */
+  sentence: string;
+  savedAt: number;
+  /** local YYYY-MM-DD, for day grouping */
+  dayKey: string;
+}
+
+/**
+ * Upsert by norm: re-saving updates the context fields (page, sentence,
+ * definitions) to the latest, but keeps the original savedAt/dayKey —
+ * the word's "learned" day is when he first saved it.
+ */
+export async function saveVocab(
+  rec: Omit<VocabRecord, "id" | "savedAt" | "dayKey"> & {
+    savedAt?: number;
+    dayKey?: string;
+  },
+): Promise<VocabRecord> {
+  const id = `${rec.bookId}:${rec.norm}`;
+  const existing = await tx<VocabRecord | undefined>(
+    "vocab",
+    "readonly",
+    (s) => s.get(id),
+  ).catch(() => undefined);
+  const savedAt = existing?.savedAt ?? rec.savedAt ?? Date.now();
+  const dayKey = existing?.dayKey ?? rec.dayKey ?? localDayKey(savedAt);
+  const full: VocabRecord = { ...rec, id, savedAt, dayKey };
+  await tx("vocab", "readwrite", (s) => s.put(full));
+  return full;
+}
+
+export function localDayKey(ts: number): string {
+  const d = new Date(ts);
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+export async function listVocab(bookId?: string): Promise<VocabRecord[]> {
+  const all = await tx<VocabRecord[]>("vocab", "readonly", (s) =>
+    s.getAll(),
+  ).catch(() => [] as VocabRecord[]);
+  const rows = bookId ? all.filter((r) => r.bookId === bookId) : all;
+  rows.sort((a, b) => b.savedAt - a.savedAt);
+  return rows;
+}
+
+export async function deleteVocab(id: string): Promise<void> {
+  await tx("vocab", "readwrite", (s) => s.delete(id)).catch(() => {});
+}
+
+async function deleteVocabForBook(bookId: string): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve) => {
+    const t = db.transaction("vocab", "readwrite");
+    const store = t.objectStore("vocab");
+    const req = store.getAllKeys();
+    req.onsuccess = () => {
+      for (const k of req.result as string[]) {
+        if (k.startsWith(`${bookId}:`)) store.delete(k);
+      }
+      t.oncomplete = () => {
+        resolve();
+        db.close();
+      };
+      t.onerror = () => {
+        resolve();
+        db.close();
+      };
+    };
+    req.onerror = () => {
+      resolve();
+      db.close();
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Ask threads: per-book chat history with the AI about the passage.
+// ---------------------------------------------------------------------------
+
+export interface AskMessage {
+  role: "user" | "ai";
+  text: string;
+}
+
+export async function getAskThread(bookId: string): Promise<AskMessage[]> {
+  const row = await tx<{ bookId: string; messages: AskMessage[] } | undefined>(
+    "ask",
+    "readonly",
+    (s) => s.get(bookId),
+  ).catch(() => undefined);
+  return row?.messages ?? [];
+}
+
+export async function saveAskThread(
+  bookId: string,
+  messages: AskMessage[],
+): Promise<void> {
+  await tx("ask", "readwrite", (s) =>
+    s.put({ bookId, messages: messages.slice(-60) }),
+  ).catch(() => {});
 }
 
 const SAMPLE_FLAG = "lyric-reader.sample-seeded-v1";

@@ -306,3 +306,71 @@ instruction: "after the edit don't do like e2e or any testing, just push
 after linting test". Only typecheck + build ran; interactive verification
 of the dismissal is left to him on his phone. No push made by this agent
 (the parent pushes).
+
+## v4 — selection + Meaning + Words + Ask (?) (Oct 19, 2026, afternoon)
+
+Full pass, everything green, same as v3.1. Verified this time: `npx tsc
+-b` clean + `npm run build` green + the ENTIRE suite (old + new).
+
+## Unit tests — `npx vitest run`
+
+**65/65 passed** (8 files; was 35/35 in v3.1, +30 new):
+
+| File | Tests | Covers |
+|---|---|---|
+| `tests/meaning.test.ts` | 12 | dictionary payload parsing (word/phonetic/POS, first 2 defs each, phonetics[] fallback, null on unusable payloads), lemmatizer inflections + refusals, lookup: dictionary hit, 404→lemma retry, double-miss not-found, offline, phrase needs-key, phrase via Gemini JSON, malformed Gemini reply |
+| `tests/askContext.test.ts` | 9 | context builder: sentence marked with `>>> <<<`, prev/next page inclusion + ends, nearest-heading pick, instruction wording; `findQuote` exact item/part match, part-level fallback, null on non-exact; `splitQuotes` segmentation |
+| `tests/vocab.test.ts` | 9 | `dayKey` local YYYY-MM-DD, Today/Yesterday/"Mon 12 Oct" labels, `groupByDay` ordering + labels, `decorateText` word-boundary/case-insensitive, no match inside other words, longest-norm-first overlap, no-norms passthrough |
+
+Real bug caught during this run: none — all new tests passed on first
+run against the written code.
+
+## Interaction tests — `npx playwright test`
+
+**56/56 passed** (Chromium headless, `vite preview` serving `dist`;
+was 42/42 in v3.1 — 40 in reader.spec.ts + 2 in shots.spec.ts; +13 new in
+`tests/e2e/vocab-ask.spec.ts`, +1 new v4 screenshots test). The entire old
+suite stayed green — the v4 overlay/suppression machinery broke none of
+his v3/v3.1/v3.2 reader mechanics. BOTH network APIs were stubbed via
+route interception (dictionaryapi.dev + generativelanguage.googleapis.com
+return canned payloads), so the whole run was fully offline. New coverage:
+
+1. Selecting a word raises the pill; Meaning opens the card with the stubbed definition — passed
+2. Arrow keys don't step while a selection is active; Esc frees input — passed
+3. Tapping elsewhere collapses the selection without stepping — passed
+4. Copy writes the selected text and closes the pill — passed
+5. Saving a word underlines it; the underline persists across reload — passed
+6. Phrase without a key shows the key path; with a key Gemini defines it (incl. "In this sentence") — passed
+7. Words view groups under Today with a count; tapping the row jumps to the exact sentence — passed
+8. Deleting a word removes it and its underline — passed
+9. Words empty state is calm — passed
+10. The ? button hides/shows with the chrome — passed
+11. Ask without a key explains the key path and links to Settings — passed
+12. Ask answer renders with a tappable «quote»; tapping jumps to the sentence and closes the sheet — passed
+13. Follow-ups keep the thread; the thread persists across reload — passed
+
+One test authoring issue was fixed mid-run: the `needs-key` meaning card
+state lacked the `meaning-close` testid its close button needed (now on
+all four card close buttons). One flake observed in the final rerun: the
+old "tapping the next sentence advances one step" test failed once in a
+full-suite run, then passed in isolation, as a file, and in the next full
+rerun — timing flakiness, no code change implicated.
+
+## Screenshots — `npx playwright test tests/e2e/shots.spec.ts`
+
+**3/3 suites passed**; 5 new 390×844 PNGs captured from the real build
+with stubbed APIs and eyeballed by the builder:
+`selection-pill-phone.png`, `meaning-card-phone.png`, `words-phone.png`,
+`ask-sheet-phone.png`, `ai-settings-phone.png`. All 10 earlier screenshots
+regenerated unchanged in the same run.
+
+### Honest gaps
+- Chromium-only e2e (same as v1–v4); native long-press and Android's own
+  selection menu were NOT tested on a physical device — the headless suite
+  drives selection through programmatic ranges (same `selectionchange`
+  path), so the pill/meaning/save flow is covered but the native touch
+  interplay is a real gap left for his phone.
+- No real network was ever touched in tests: dictionary, phrase meaning,
+  key test ping, and Ask answers all ran against canned stubs. Real-API
+  behaviour (dictionary edge words, Gemini latency/wording) is untested.
+- Screenshots eyeballed by the builder, not by Nahom.

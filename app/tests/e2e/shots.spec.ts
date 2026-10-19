@@ -163,4 +163,138 @@ test.describe("screenshots", () => {
     await chromeSettled(page);
     await page.screenshot({ path: `${SHOTS}/reader-desktop.png` });
   });
+
+  test("phone v4: selection pill, meaning card, words, ask sheet, AI settings", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    // Stubbed APIs (offline-capable screenshots).
+    await page.route("https://api.dictionaryapi.dev/**", async (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            word: "lamp",
+            phonetic: "/læmp/",
+            meanings: [
+              {
+                partOfSpeech: "noun",
+                definitions: [
+                  {
+                    definition: "A device for giving light.",
+                    example: "She lit the lamp.",
+                  },
+                  { definition: "A source of knowledge or guidance." },
+                ],
+              },
+            ],
+          },
+        ]),
+      }),
+    );
+    await page.route(
+      "https://generativelanguage.googleapis.com/**",
+      async (route) => {
+        const body = route.request().postDataJSON() as {
+          contents?: Array<{ parts?: Array<{ text?: string }> }>;
+          generationConfig?: { responseMimeType?: string };
+        };
+        const text =
+          body?.contents
+            ?.map((c) => c.parts?.map((p) => p.text ?? "").join(" "))
+            .join(" ") ?? "";
+        const answer = (t: string) =>
+          route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              candidates: [{ content: { parts: [{ text: t }] } }],
+            }),
+          });
+        if (/Reply with exactly/i.test(text)) return answer("ok");
+        return answer(
+          "He took it for protection. «Take the poker from the study.»",
+        );
+      },
+    );
+
+    await openSample(page);
+    const current = page.getByTestId("current-item");
+    for (let i = 0; i < 40 && !(await current.innerText()).includes("brass lamp"); i++)
+      await page.keyboard.press("ArrowDown");
+    await page.waitForTimeout(450);
+
+    // Selection pill above a selected word.
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="current-item"]');
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node: Node | null = null;
+      while ((node = walker.nextNode())) {
+        const idx = (node.textContent ?? "").toLowerCase().indexOf("lamp");
+        if (idx >= 0) {
+          const range = document.createRange();
+          range.setStart(node, idx);
+          range.setEnd(node, idx + 4);
+          const sel = window.getSelection();
+          sel?.removeAllRanges();
+          sel?.addRange(range);
+          break;
+        }
+      }
+    });
+    await page.getByTestId("selection-pill").waitFor();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOTS}/selection-pill-phone.png` });
+
+    // Meaning card with the stubbed definition.
+    await page.getByTestId("sel-meaning").click();
+    await page.getByTestId("meaning-card").waitFor();
+    await expect(page.getByTestId("meaning-card")).toContainText(
+      "A device for giving light.",
+    );
+    await page.waitForTimeout(500); // stagger + re-anchor settle
+    await page.screenshot({ path: `${SHOTS}/meaning-card-phone.png` });
+
+    // Save the word, then show the Words view.
+    await page.getByTestId("meaning-save").click();
+    await expect(page.getByTestId("meaning-save")).toContainText("Saved");
+    await page.getByTestId("meaning-close").click();
+    await revealChrome(page);
+    await page.getByTestId("saved-btn").click();
+    await page.getByTestId("saved-tab-words").click();
+    await page.locator('[data-testid^="word-day-"]').first().waitFor();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOTS}/words-phone.png` });
+    await page.getByTestId("saved-back").click();
+
+    // Set the key in Settings (stubbed ping) and shoot the AI section.
+    await revealChrome(page);
+    await page.getByTestId("settings-gear").click();
+    await page.getByTestId("gemini-key").fill("test-key");
+    await page.getByTestId("gemini-test").click();
+    await expect(page.getByTestId("gemini-test-result")).toContainText(
+      "Key works",
+    );
+    await page.waitForTimeout(300);
+    await page.screenshot({
+      path: `${SHOTS}/ai-settings-phone.png`,
+      fullPage: true,
+    });
+    await page.getByTestId("settings-back").click();
+
+    // Ask sheet with an answer containing a tappable quote.
+    await page.getByTestId("reader-root").waitFor();
+    await revealChrome(page);
+    await page.getByTestId("ask-btn").click();
+    await page.getByTestId("ask-sheet").waitFor();
+    await page.getByTestId("ask-input").fill("why did he take the poker?");
+    await page.getByTestId("ask-send").click();
+    await expect(page.getByTestId("ask-answer")).toContainText(
+      "He took it for protection.",
+    );
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${SHOTS}/ask-sheet-phone.png` });
+  });
 });

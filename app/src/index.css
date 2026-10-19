@@ -697,3 +697,377 @@
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
+
+/* v4: text selection is enabled ONLY on the current sentence's part spans.
+   Everything else stays user-select:none so taps keep working as input. */
+.s.cur .pt {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+.s.cur {
+  cursor: text;
+}
+
+/* v4: the floating selection pill (Meaning / Copy), above the selection. */
+.sel-pill {
+  position: absolute;
+  z-index: 35;
+  display: flex;
+  gap: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px;
+  box-shadow: 0 10px 30px oklch(0 0 0 / 0.5);
+  animation: card-in 160ms ease-out;
+}
+.sel-pill button {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.sel-pill button:active {
+  background: var(--accent);
+}
+.sel-pill .sel-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* v4: the meaning card — same anchored card as the action popup. */
+.meaning-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+}
+.meaning-card {
+  max-width: min(86vw, 340px);
+}
+.meaning-word {
+  font-size: var(--lr-main-size);
+  font-weight: 600;
+  line-height: 1.22;
+  color: var(--foreground);
+  margin: 6px 8px 2px;
+  overflow-wrap: break-word;
+}
+.meaning-phonetic {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin: 0 8px 8px;
+}
+.meaning-pos {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin: 10px 8px 4px;
+}
+.meaning-def {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--foreground);
+  margin: 4px 8px;
+}
+.meaning-example {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  font-style: italic;
+  margin: 2px 8px 4px 16px;
+}
+.meaning-context {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--lr-hl) 14%, transparent);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 10px 8px 4px;
+}
+.meaning-context b {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin-bottom: 4px;
+}
+.meaning-actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 8px 6px;
+}
+.meaning-save {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 15px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.meaning-save.saved {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.meaning-close {
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
+.meaning-status {
+  padding: 18px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+.meaning-status button {
+  text-decoration: underline;
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+/* v4: saved-word underline — faint dotted, doesn't fight the part colours. */
+.voc {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in oklch, var(--lr-hl) 65%, transparent);
+  text-underline-offset: 3px;
+}
+
+/* v4: the "?" button — a ghost that joins the unified auto-hiding chrome.
+   Same show/hide rules as the rest of the chrome; stacked above « ‹ › ». */
+.ask-btn {
+  position: absolute;
+  right: 16px;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  z-index: 25;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: oklch(0 0 0 / 0.55);
+  color: var(--foreground);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 250ms ease, visibility 0s linear 250ms;
+}
+.ask-btn.show {
+  opacity: 0.55;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 250ms ease, visibility 0s;
+}
+.ask-btn:active {
+  opacity: 1;
+  background: var(--accent);
+}
+
+/* v4: the Ask sheet — bottom sheet over the fx-blurred stage. */
+.ask-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: oklch(0 0 0 / 0.35);
+  animation: card-in 200ms ease-out;
+}
+.ask-sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 82%;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -20px 60px oklch(0 0 0 / 0.5);
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: sheet-up 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(48px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ask-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 8px;
+}
+.ask-context-chip {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ask-x {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.ask-messages {
+  flex: 1;
+  overflow-y: auto;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 16px 12px;
+  min-height: 120px;
+}
+.ask-msg {
+  max-width: 92%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+}
+.ask-msg.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--foreground);
+  border-bottom-right-radius: 6px;
+}
+.ask-msg.ai {
+  align-self: flex-start;
+  background: var(--background);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  border-bottom-left-radius: 6px;
+}
+.ask-quote {
+  display: block;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--primary);
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  border-radius: 0 10px 10px 0;
+  font-size: 13.5px;
+  color: var(--foreground);
+  text-align: left;
+  width: 100%;
+}
+.ask-muted {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.ask-hint {
+  text-align: center;
+  margin: auto;
+  max-width: 280px;
+}
+.ask-thinking {
+  color: var(--muted-foreground);
+  letter-spacing: 0.2em;
+}
+.ask-error {
+  align-self: stretch;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--foreground);
+  background: var(--background);
+}
+.ask-error p {
+  margin: 0 0 10px;
+  line-height: 1.55;
+}
+.ask-cta {
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 14px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.ask-nokey {
+  padding: 28px 24px 36px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+.ask-nokey p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--foreground);
+}
+.ask-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 16px;
+  border-top: 1px solid var(--border);
+}
+.ask-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--foreground);
+  outline: none;
+}
+.ask-input:focus {
+  border-color: var(--ring);
+}
+.ask-send {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.ask-send:disabled {
+  opacity: 0.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-sheet,
+  .ask-layer,
+  .sel-pill {
+    animation: none !important;
+  }
+}

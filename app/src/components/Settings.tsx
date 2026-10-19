@@ -1,9 +1,12 @@
+import { useState } from "react";
 import {
   FONT_CHOICES,
   FONT_STACKS,
   HIGHLIGHT_COLORS,
   useSettings,
 } from "../lib/settings";
+import { getApiKey, setApiKey } from "../lib/apikey";
+import { testApiKey } from "../lib/gemini";
 
 interface Props {
   onBack: () => void;
@@ -51,6 +54,79 @@ function SliderRow({
         {suffix}
       </span>
     </div>
+  );
+}
+
+function AiKeySection() {
+  const [key, setKey] = useState(() => getApiKey());
+  const [show, setShow] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  return (
+    <>
+      <Row label="Gemini API key (AI meanings, Ask)">
+        <div className="flex items-center gap-2">
+          <input
+            data-testid="gemini-key"
+            type={show ? "text" : "password"}
+            value={key}
+            onChange={(e) => {
+              setKey(e.target.value);
+              setApiKey(e.target.value);
+              setResult(null);
+            }}
+            placeholder="AIza…"
+            autoComplete="off"
+            spellCheck={false}
+            className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-sm"
+            aria-label="Gemini API key"
+          />
+          <button
+            data-testid="gemini-key-eye"
+            onClick={() => setShow((s) => !s)}
+            aria-label={show ? "Hide key" : "Show key"}
+            className="set-chip shrink-0"
+          >
+            {show ? "Hide" : "Show"}
+          </button>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          Free key from{" "}
+          <a
+            href="https://aistudio.google.com/apikey"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            Google AI Studio
+          </a>{" "}
+          — stays on this phone only, never sent anywhere except Google's AI
+          servers.
+        </p>
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            data-testid="gemini-test"
+            onClick={async () => {
+              setTesting(true);
+              setResult(null);
+              const r = await testApiKey(key);
+              setTesting(false);
+              setResult(r.ok ? "✓ Key works" : `✗ ${r.reason}`);
+            }}
+            disabled={testing}
+            className="set-chip shrink-0"
+          >
+            {testing ? "Testing…" : "Test key"}
+          </button>
+          {result && (
+            <span data-testid="gemini-test-result" className="text-sm">
+              {result}
+            </span>
+          )}
+        </div>
+      </Row>
+    </>
   );
 }
 
@@ -193,6 +269,8 @@ export default function Settings({ onBack }: Props) {
             </span>
           </div>
         </Row>
+
+        <AiKeySection />
 
         <button
           data-testid="settings-reset"

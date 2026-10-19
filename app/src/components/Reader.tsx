@@ -19,11 +19,22 @@ import {
   getBook,
   getMarks,
   getProgress,
+  listVocab,
   saveProgress,
+  saveVocab,
   setNote,
   toggleMark,
+  type VocabRecord,
 } from "../lib/db";
 import { useSettings } from "../lib/settings";
+import { getApiKey } from "../lib/apikey";
+import {
+  geminiInContext,
+  lookupMeaning,
+  type MeaningModel,
+} from "../lib/meaning";
+import { decorateText } from "../lib/vocab";
+import AskSheet from "./AskSheet";
 
 interface Props {
   bookId: string;
@@ -41,6 +52,27 @@ interface Mark {
   note: string | null;
 }
 const NO_MARK: Mark = { highlight: false, bookmark: false, note: null };
+
+// Meaning card state (v4).
+type MeaningStatus =
+  | "loading"
+  | "ready"
+  | "not-found"
+  | "needs-key"
+  | "offline"
+  | "error";
+interface MeaningState {
+  /** text as the user selected it */
+  text: string;
+  status: MeaningStatus;
+  model?: MeaningModel;
+  saved: boolean;
+  /** for phrases without a key */
+  query?: string;
+}
+
+// Cache of AI "as used in this sentence" lines: norm + sentence head -> line.
+const contextCache = new Map<string, string>();
 
 function GearIcon() {
   return (
@@ -126,12 +158,24 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   // Inline page-number editing.
   const [editing, setEditing] = useState(false);
   const [editVal, setEditVal] = useState("1");
+  // v4: text selection (pill) + meaning card + saved words + Ask.
+  const [sel, setSel] = useState<{
+    text: string;
+    top: number;
+    left: number;
+  } | null>(null);
+  const [meaning, setMeaning] = useState<MeaningState | null>(null);
+  const [vocab, setVocab] = useState<VocabRecord[]>([]);
+  const [askOpen, setAskOpen] = useState(false);
 
   const { settings, update: updateSettings } = useSettings();
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const pillRef = useRef<HTMLDivElement | null>(null);
+  const meaningCardRef = useRef<HTMLDivElement | null>(null);
+  const askLayerRef = useRef<HTMLDivElement | null>(null);
 
   // Refs mirroring state so native handlers always see fresh values.
   const posRef = useRef(pos);
@@ -140,6 +184,16 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   popRef.current = pop;
   const editingRef = useRef(editing);
   editingRef.current = editing;
+  const selRef = useRef(sel);
+  selRef.current = sel;
+  const meaningRef = useRef(meaning);
+  meaningRef.current = meaning;
+  const vocabRef = useRef(vocab);
+  vocabRef.current = vocab;
+  const askOpenRef = useRef(askOpen);
+  askOpenRef.current = askOpen;
+  const bookRef = useRef<BookDoc | null>(null);
+  const itemsRef = useRef<Item[]>([]);
   // Set when Escape cancels the edit so the blur it triggers doesn't commit.
   const cancelEditRef = useRef(false);
   const lastTap = useRef<{ t: number; key: string }>({ t: 0, key: "" });
@@ -152,6 +206,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const chromeRef = useRef(false);
 
   const items: Item[] = book?.items ?? [];
+  itemsRef.current = items;
   // Parts per item (his splitS), cached per book.
   const parts = useMemo(() => items.map((it) => splitS(it.text)), [items]);
   const partsRef = useRef<string[][]>([]);
@@ -182,9 +237,12 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       }
       const saved = await getProgress(bookId);
       const savedMarks = await getMarks(bookId).catch(() => ({}));
+      const savedVocab = await listVocab(bookId).catch(() => []);
       if (cancelled) return;
       setBook(b);
+      bookRef.current = b;
       setMarks(savedMarks);
+      setVocab(savedVocab);
       // First open: flash the chrome briefly so the user sees where
       // everything is, then it hides itself for full-focus reading.
       showChromeRef.current(1600);
@@ -259,12 +317,38 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     setCopied(false);
   }, []);
 
+  /** Collapse any active text selection (v4): clear the native selection
+      and hide the pill. */
+  const collapseSelection = useCallback(() => {
+    selRef.current = null;
+    setSel(null);
+    try {
+      const s = window.getSelection();
+      if (s && !s.isCollapsed) s.collapseToStart();
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const closeMeaning = useCallback(() => {
+    meaningRef.current = null;
+    setMeaning(null);
+  }, []);
+
+  /** Anything that moves the reading position closes the reading overlays:
+      popup, selection, meaning card (the Ask sheet manages itself). */
+  const closeReadingOverlays = useCallback(() => {
+    closePop();
+    collapseSelection();
+    closeMeaning();
+  }, [closePop, collapseSelection, closeMeaning]);
+
   const go = useCallback(
     (dir: 1 | -1) => {
-      closePop();
+      closeReadingOverlays();
       setPos((p) => stepParts(partsRef.current, p, dir));
     },
-    [closePop],
+    [closeReadingOverlays],
   );
   const goRef = useRef(go);
   goRef.current = go;
@@ -275,11 +359,11 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       const t = clamp(p, 0, pages - 1);
       const idx = items.findIndex((it) => it.page === t);
       if (idx < 0) return;
-      closePop();
+      closeReadingOverlays();
       setPos({ item: idx, part: 0 });
       showChrome(1200);
     },
-    [pages, items, closePop, showChrome],
+    [pages, items, closeReadingOverlays, showChrome],
   );
   const toPageRef = useRef(toPage);
   toPageRef.current = toPage;
@@ -301,11 +385,11 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         if (t < 0) t = 0;
       }
       if (t < 0) return;
-      closePop();
+      closeReadingOverlays();
       setPos({ item: t, part: 0 });
       showChrome(1200);
     },
-    [items, closePop, showChrome],
+    [items, closeReadingOverlays, showChrome],
   );
 
   // Briefly reveal the bar on every page change.
@@ -354,15 +438,13 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     return () => window.removeEventListener("resize", place);
   }, [place]);
 
-  // --- Action popup, anchored at the item (his openPop positioning) ---
-  const openPop = useCallback((i: number, p: number) => {
-    setPop({ i, p });
-    setCopied(false);
-    setNoteEditing(false);
-    setNoteDraft("");
-    requestAnimationFrame(() => {
+  // --- Anchored cards (action popup + meaning card): his openPop math ---
+  // Below the item (+16), flipping above near the bottom, right-aligned
+  // to the item and clamped to the viewport.
+  const anchorCard = useCallback(
+    (cardRef: React.RefObject<HTMLElement | null>, i: number) => {
+      const m = cardRef.current;
       const track = trackRef.current;
-      const m = menuRef.current;
       if (!track || !m) return;
       const el = track.querySelector<HTMLElement>(`[data-item="${i}"]`);
       if (!el) return;
@@ -377,7 +459,127 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         16,
         Math.min(window.innerWidth - mw - 24, r.right - mw),
       )}px`;
+    },
+    [],
+  );
+
+  // --- Action popup, anchored at the item (his openPop positioning) ---
+  const openPop = useCallback(
+    (i: number, p: number) => {
+      setPop({ i, p });
+      setCopied(false);
+      setNoteEditing(false);
+      setNoteDraft("");
+      requestAnimationFrame(() => anchorCard(menuRef, i));
+    },
+    [anchorCard],
+  );
+
+  // --- v4: meaning lookup for the selected text ---
+  const openMeaning = useCallback(async () => {
+    const s = selRef.current;
+    const b = bookRef.current;
+    if (!s || !b) return;
+    const { item } = posRef.current;
+    const it = itemsRef.current[item];
+    const sentence =
+      partsRef.current[item]?.[posRef.current.part] ?? it?.text ?? "";
+    const text = s.text;
+    collapseSelection();
+    setMeaning({ text, status: "loading", saved: false });
+    requestAnimationFrame(() => anchorCard(meaningCardRef, item));
+    const key = getApiKey();
+    const outcome = await lookupMeaning({ text, sentence, apiKey: key });
+    // The card may have been closed while the lookup was in flight.
+    if (meaningRef.current?.text !== text) return;
+    if (outcome.status === "ready" && outcome.model) {
+      const model = outcome.model;
+      const norm = text.toLowerCase().trim();
+      const alreadySaved = vocabRef.current.some((v) => v.norm === norm);
+      setMeaning({ text, status: "ready", model, saved: alreadySaved });
+      // The AI "in this sentence" line for single words never blocks the
+      // dictionary result — it appends when it arrives (cached per norm).
+      if (key && !/\s/.test(text.trim()) && !model.inContext) {
+        const cacheKey = `${norm}::${sentence.slice(0, 120)}`;
+        const cached = contextCache.get(cacheKey);
+        if (cached) {
+          setMeaning((prev) =>
+            prev && prev.text === text
+              ? { ...prev, model: { ...prev.model!, inContext: cached } }
+              : prev,
+          );
+        } else {
+          void geminiInContext(text.trim(), sentence, key).then((line) => {
+            if (!line) return;
+            contextCache.set(cacheKey, line);
+            setMeaning((prev) =>
+              prev && prev.text === text
+                ? { ...prev, model: { ...prev.model!, inContext: line } }
+                : prev,
+            );
+          });
+        }
+      }
+    } else {
+      setMeaning({
+        text,
+        status: outcome.status,
+        saved: false,
+        query: outcome.query,
+      });
+    }
+  }, [anchorCard, collapseSelection]);
+
+  const copySelection = useCallback(async () => {
+    const s = selRef.current;
+    collapseSelection();
+    if (!s) return;
+    try {
+      await navigator.clipboard.writeText(s.text);
+    } catch {
+      /* ignore */
+    }
+  }, [collapseSelection]);
+
+  // Re-anchor the meaning card when its content height changes (loading ->
+  // definition), so it never overflows the viewport bottom.
+  const meaningStatus = meaning?.status ?? null;
+  useEffect(() => {
+    if (!meaningStatus) return;
+    const raf = requestAnimationFrame(() =>
+      anchorCard(meaningCardRef, posRef.current.item),
+    );
+    return () => cancelAnimationFrame(raf);
+  }, [meaningStatus, anchorCard]);
+
+  const saveWord = useCallback(async () => {
+    const m = meaningRef.current;
+    const b = bookRef.current;
+    if (!m?.model || !b) return;
+    const { item, part } = posRef.current;
+    const it = itemsRef.current[item];
+    const defs = m.model.groups.flatMap((g) =>
+      g.defs.map((d) => `${g.partOfSpeech} — ${d.definition}`),
+    );
+    const rec = await saveVocab({
+      bookId: b.id,
+      text: m.model.word || m.text,
+      norm: m.text.toLowerCase().trim(),
+      phonetic: m.model.phonetic,
+      defs,
+      contextMeaning: m.model.inContext,
+      bookTitle: b.title,
+      page: (it?.page ?? 0) + 1,
+      item,
+      part,
+      sentence: it?.text ?? "",
+    }).catch(() => null);
+    if (!rec) return;
+    setVocab((prev) => {
+      const rest = prev.filter((r) => r.id !== rec.id);
+      return [rec, ...rest].sort((a, z) => z.savedAt - a.savedAt);
     });
+    setMeaning((prev) => (prev ? { ...prev, saved: true } : prev));
   }, []);
 
   // --- Input: wheel / keys / swipe / click (his exact semantics) ---
@@ -390,6 +592,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      // v4: while a selection is active, a meaning card open, or the Ask
+      // sheet open, every stepping input is suppressed.
+      if (selRef.current || meaningRef.current || askOpenRef.current) return;
       window.clearTimeout(wt);
       wt = window.setTimeout(() => {
         wlock = false;
@@ -405,6 +610,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     };
     const onTouchMove = (e: TouchEvent) => {
       if (moved.current) return;
+      // v4: a touch-drag that is actually selecting text must not step.
+      if (selRef.current || meaningRef.current || askOpenRef.current) return;
       const dy = ty - e.touches[0].clientY;
       if (Math.abs(dy) > 30) {
         goRef.current(dy > 0 ? 1 : -1);
@@ -419,6 +626,14 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       if (moved.current) {
         moved.current = false;
         return;
+      }
+      // v4: the click that finishes a drag-select must not step or open the
+      // popup — the selectionchange listener raises the pill instead.
+      try {
+        const s = window.getSelection();
+        if (s && !s.isCollapsed) return;
+      } catch {
+        /* ignore */
       }
       const t = e.target as HTMLElement;
       // Hot zones: taps at the top ~12% or bottom 15% of the stage reveal
@@ -471,6 +686,21 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     };
 
     const onKey = (e: KeyboardEvent) => {
+      // v4: overlays own their keys. Escape unwinds topmost-first;
+      // any other key is swallowed while a selection, meaning card,
+      // or the Ask sheet is open (stepping stays suppressed).
+      if (selRef.current) {
+        if (e.key === "Escape") collapseSelection();
+        return;
+      }
+      if (meaningRef.current) {
+        if (e.key === "Escape") closeMeaning();
+        return;
+      }
+      if (askOpenRef.current) {
+        if (e.key === "Escape") setAskOpen(false);
+        return;
+      }
       if (popRef.current) {
         if (e.key === "Escape") closePop();
         return;
@@ -510,7 +740,68 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     };
     // `book` in deps: the effect must (re-)attach once the stage exists
     // after the book loads — on first render we bail out at `!stage`.
-  }, [book, closePop, openPop, showChrome, hideChrome]);
+  }, [book, closePop, openPop, showChrome, hideChrome, collapseSelection, closeMeaning]);
+
+  // --- v4: native text selection on the current sentence ---
+  // Only .s.cur .pt spans are selectable (CSS); the native selection is
+  // watched here. A non-collapsed selection fully inside the current item
+  // raises the floating pill; everything else collapses it.
+  useEffect(() => {
+    if (!book) return;
+    const onSelChange = () => {
+      // While the action popup is open, taps collapse the selection first
+      // (the popup's capture handler swallows them) — nothing to raise.
+      if (
+        popRef.current ||
+        meaningRef.current ||
+        askOpenRef.current ||
+        editingRef.current
+      ) {
+        if (selRef.current) collapseSelection();
+        return;
+      }
+      let s: Selection | null = null;
+      try {
+        s = window.getSelection();
+      } catch {
+        /* ignore */
+      }
+      if (!s || s.isCollapsed || s.rangeCount === 0) {
+        if (selRef.current) setSel(null);
+        return;
+      }
+      const anchorEl =
+        s.anchorNode instanceof Element
+          ? s.anchorNode
+          : s.anchorNode?.parentElement;
+      const focusEl =
+        s.focusNode instanceof Element
+          ? s.focusNode
+          : s.focusNode?.parentElement;
+      const anchorItem = anchorEl?.closest?.("[data-item]");
+      const focusItem = focusEl?.closest?.("[data-item]");
+      const cur = posRef.current.item;
+      const text = s.toString().trim();
+      if (
+        !text ||
+        !anchorItem ||
+        !focusItem ||
+        Number(anchorItem.getAttribute("data-item")) !== cur ||
+        Number(focusItem.getAttribute("data-item")) !== cur
+      ) {
+        if (selRef.current) setSel(null);
+        return;
+      }
+      const rect = s.getRangeAt(0).getBoundingClientRect();
+      setSel({
+        text,
+        top: Math.max(8, rect.top - 60),
+        left: clamp(rect.left, 16, window.innerWidth - 190),
+      });
+    };
+    document.addEventListener("selectionchange", onSelChange);
+    return () => document.removeEventListener("selectionchange", onSelChange);
+  }, [book, collapseSelection]);
 
   // A− / A+ adjust the same main-size setting the slider edits.
   const adjustMainSize = useCallback(
@@ -591,6 +882,23 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     return out;
   }, [items, curPage, parts]);
 
+  /** v4: jump the reader to an exact item+part (Ask quote taps, Words rows). */
+  const jumpToPart = useCallback(
+    (item: number, part: number) => {
+      closeReadingOverlays();
+      setAskOpen(false);
+      const pl = partsRef.current[item];
+      setPos({
+        item: clamp(item, 0, itemsRef.current.length - 1),
+        part: pl ? clamp(part, 0, Math.max(0, pl.length - 1)) : 0,
+      });
+    },
+    [closeReadingOverlays],
+  );
+
+  // Saved vocab norms, longest-first is handled inside decorateText.
+  const vocabNorms = useMemo(() => vocab.map((v) => v.norm), [vocab]);
+
   const rows = [
     {
       key: "bookmark" as const,
@@ -669,17 +977,44 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   return (
     <div
       data-testid="reader-root"
-      className={`reader-root fixed inset-0 flex flex-col overflow-hidden${pop ? " fx" : ""}`}
-      // Single dismissal mechanism for the action popup: while it is open,
-      // a press ANYWHERE outside the card (capture phase, before any other
-      // handler) closes it and swallows the gesture — the tap can never
-      // also step, select, reveal chrome, or hit a chrome button.
+      className={`reader-root fixed inset-0 flex flex-col overflow-hidden${
+        pop || meaning || askOpen ? " fx" : ""
+      }`}
+      // One dismissal mechanism for every floating card (v3.2, extended in
+      // v4): while an overlay is open, a press ANYWHERE outside it (capture
+      // phase, before any other handler) closes it and swallows the gesture
+      // — the tap can never also step, select, reveal chrome, or hit a
+      // chrome button.
       onPointerDownCapture={(e) => {
-        if (!popRef.current) return;
-        if (menuRef.current?.contains(e.target as Node)) return;
-        closePop();
-        suppressUntil.current = Date.now() + 450;
-        e.stopPropagation();
+        const t = e.target as Node;
+        if (
+          menuRef.current?.contains(t) ||
+          pillRef.current?.contains(t) ||
+          meaningCardRef.current?.contains(t) ||
+          askLayerRef.current?.contains(t)
+        )
+          return;
+        let closed = false;
+        if (popRef.current) {
+          closePop();
+          closed = true;
+        }
+        if (meaningRef.current) {
+          closeMeaning();
+          closed = true;
+        }
+        if (selRef.current) {
+          collapseSelection();
+          closed = true;
+        }
+        if (askOpenRef.current) {
+          setAskOpen(false);
+          closed = true;
+        }
+        if (closed) {
+          suppressUntil.current = Date.now() + 450;
+          e.stopPropagation();
+        }
       }}
       onMouseMove={(e) => {
         // Desktop: hovering near the top or bottom edge reveals the chrome.
@@ -841,7 +1176,15 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
                         (mk.note ? " nt" : "")
                       }
                     >
-                      {t}
+                      {decorateText(t, vocabNorms).map((run, k) =>
+                        run.match ? (
+                          <span key={k} className="voc">
+                            {run.text}
+                          </span>
+                        ) : (
+                          <span key={k}>{run.text}</span>
+                        ),
+                      )}
                     </span>
                   );
                 })}
@@ -901,6 +1244,184 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           »
         </button>
       </nav>
+
+      {/* v4: the "?" — a ghost button that joins the unified auto-hiding
+          chrome: visible exactly when the chrome is, stacked above « ‹ › ». */}
+      <button
+        data-testid="ask-btn"
+        aria-label="Ask about this passage"
+        className={`ask-btn${chromeVisible ? " show" : ""}`}
+        onClick={() => {
+          if (Date.now() < suppressUntil.current) return;
+          showChrome();
+          setAskOpen(true);
+        }}
+      >
+        ?
+      </button>
+
+      {/* v4: the floating selection pill (Meaning / Copy), above the selection. */}
+      {sel && !meaning && (
+        <div
+          ref={pillRef}
+          data-testid="selection-pill"
+          className="sel-pill"
+          style={{ top: sel.top, left: sel.left }}
+        >
+          <button
+            data-testid="sel-meaning"
+            className="sel-primary"
+            onClick={() => void openMeaning()}
+          >
+            Meaning
+          </button>
+          <button data-testid="sel-copy" onClick={() => void copySelection()}>
+            Copy
+          </button>
+        </div>
+      )}
+
+      {/* v4: the meaning card — anchored at the sentence, popup-card styling. */}
+      {meaning && (
+        <div className="meaning-layer" data-testid="meaning-layer">
+          <div
+            ref={meaningCardRef}
+            data-testid="meaning-card"
+            className="menu meaning-card"
+            role="dialog"
+            aria-label="Word meaning"
+          >
+            {meaning.status === "loading" && (
+              <div className="meaning-status">Looking it up…</div>
+            )}
+            {meaning.status === "ready" && meaning.model && (
+              <>
+                <div className="meaning-word">{meaning.model.word}</div>
+                {meaning.model.phonetic && (
+                  <div className="meaning-phonetic">
+                    {meaning.model.phonetic}
+                  </div>
+                )}
+                {meaning.model.groups.map((g, gi) => (
+                  <div key={gi}>
+                    <div className="meaning-pos">{g.partOfSpeech}</div>
+                    {g.defs.map((d, di) => (
+                      <div key={di}>
+                        <div className="meaning-def">
+                          {di + 1}. {d.definition}
+                        </div>
+                        {d.example && (
+                          <div className="meaning-example">
+                            "{d.example}"
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {meaning.model.inContext && (
+                  <div className="meaning-context">
+                    <b>In this sentence</b>
+                    {meaning.model.inContext}
+                  </div>
+                )}
+                <div className="meaning-actions">
+                  <button
+                    data-testid="meaning-save"
+                    className={`meaning-save${meaning.saved ? " saved" : ""}`}
+                    disabled={meaning.saved}
+                    onClick={() => void saveWord()}
+                  >
+                    {meaning.saved ? "Saved ✓" : "Save word"}
+                  </button>
+                  <button
+                    data-testid="meaning-close"
+                    className="meaning-close"
+                    onClick={closeMeaning}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </>
+            )}
+            {meaning.status === "not-found" && (
+              <div className="meaning-status">
+                Not in the dictionary.
+                <br />
+                Check the spelling, or select fewer words.
+                <div className="meaning-actions">
+                  <button
+                    data-testid="meaning-close"
+                    className="meaning-close"
+                    onClick={closeMeaning}
+                    style={{ flex: 1 }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+            {meaning.status === "needs-key" && (
+              <div className="meaning-status">
+                Phrases need the AI to define them.
+                <br />
+                Add your free Gemini key to switch it on.
+                <div className="meaning-actions">
+                  <button
+                    data-testid="meaning-to-settings"
+                    className="meaning-save"
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      closeMeaning();
+                      onOpenSettings();
+                    }}
+                  >
+                    Add key in Settings
+                  </button>
+                  <button
+                    data-testid="meaning-close"
+                    className="meaning-close"
+                    onClick={closeMeaning}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+            {(meaning.status === "offline" || meaning.status === "error") && (
+              <div className="meaning-status">
+                {meaning.status === "offline"
+                  ? "You're offline — couldn't look that up. Try again with a connection."
+                  : "Something went wrong looking that up — try again."}
+                <div className="meaning-actions">
+                  <button
+                    data-testid="meaning-close"
+                    className="meaning-close"
+                    onClick={closeMeaning}
+                    style={{ flex: 1 }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* v4: the Ask sheet. */}
+      <div ref={askLayerRef}>
+        {askOpen && book && (
+          <AskSheet
+            bookId={bookId}
+            book={book}
+            itemIndex={I}
+            onClose={() => setAskOpen(false)}
+            onJump={jumpToPart}
+            onOpenSettings={onOpenSettings}
+          />
+        )}
+      </div>
 
       {/* Action popup: one card anchored at the sentence, staggered rows. */}
       {pop && (

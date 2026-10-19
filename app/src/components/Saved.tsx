@@ -1,9 +1,11 @@
 // Saved: every bookmark, highlight and note for one book, in reading order.
 // Tapping an entry opens the reader at that exact item+part.
+// A second tab, Words, holds the saved vocabulary for the book by day.
 import { useEffect, useMemo, useState } from "react";
 import type { BookDoc } from "../lib/types";
 import { getBook, getMarks } from "../lib/db";
 import { splitS } from "../lib/parts";
+import Words from "./Words";
 
 interface Props {
   bookId: string;
@@ -50,6 +52,7 @@ function TypeIcon({ e }: { e: Entry }) {
 export default function Saved({ bookId, onBack, onJump }: Props) {
   const [book, setBook] = useState<BookDoc | null>(null);
   const [marks, setMarks] = useState<Record<string, { highlight: boolean; bookmark: boolean; note: string | null }>>({});
+  const [tab, setTab] = useState<"saved" | "words">("saved");
 
   useEffect(() => {
     let cancelled = false;
@@ -113,7 +116,33 @@ export default function Saved({ bookId, onBack, onJump }: Props) {
           </div>
         </div>
 
-        {entries.length === 0 ? (
+        <div
+          data-testid="saved-tabs"
+          className="mt-6 inline-flex rounded-full border border-border bg-card p-1"
+          role="tablist"
+          aria-label="Saved and words"
+        >
+          {(["saved", "words"] as const).map((t) => (
+            <button
+              key={t}
+              data-testid={`saved-tab-${t}`}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`rounded-full px-5 py-1.5 text-sm font-medium ${
+                tab === t
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {t === "saved" ? "Saved" : "Words"}
+            </button>
+          ))}
+        </div>
+
+        {tab === "words" ? (
+          <Words bookId={bookId} onJump={onJump} />
+        ) : entries.length === 0 ? (
           <p data-testid="saved-empty" className="mt-10 text-center text-sm text-muted-foreground">
             Nothing saved yet — bookmarks, highlights and notes you add while
             reading will show up here.

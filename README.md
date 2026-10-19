@@ -10,6 +10,9 @@ previous page returns exactly as you left it. Bullets keep a thin hairline
 linking them to their parent point.
 
 100% local: no accounts, no servers, no uploads. Works fully offline.
+(One optional extra: ask the AI questions about a passage — that needs
+your own free Gemini key in Settings, stored on your phone only and never
+sent anywhere but Google's Gemini API.)
 
 ## Run it
 
@@ -56,6 +59,21 @@ offline afterwards.
 - **Saved:** the bookmark icon (reader top bar, library header) opens your
   saved bookmarks, highlights and notes for the book — tap any entry to
   jump the reader to that exact part.
+- **Word meanings:** select text on the current sentence (long-press on a
+  phone) to raise a small pill — **Meaning** opens a card with the
+  dictionary definition, phonetic, examples, and (with a key) the AI's
+  "as used in this sentence" line; **Copy** copies the text. Phrases and
+  idioms are defined by the AI when a key is set. **Save word** keeps it:
+  saved words get a faint dotted underline in the text and live under the
+  **Words** tab next to Saved, grouped by day — tap any row to jump back
+  to the sentence where you learned it.
+- **Ask (?):** the circular ghost button that joins the auto-hiding chrome
+  opens a chat sheet about the passage you're reading — it sends the
+  previous, current and next page (your current sentence marked, plus the
+  section heading) to Gemini and answers only from that text. Quoted
+  sentences in an answer are tappable: tap one and the reader jumps to it.
+  Bring your own free Gemini key (Settings → AI) — plain-word definitions
+  always work keyless via the free dictionary API.
 - **Settings:** the gear opens a dedicated settings page — font (Geist /
     Serif / Mono / Lexend / System), sentence sizes, text colours and
     opacity, highlight colour, with a live preview. Settings persist
@@ -73,9 +91,17 @@ app/src/
     extract.ts    PDF (pdfjs-dist) / EPUB (jszip + OPF walker) / TXT -> BookDoc
     types.ts      item stream model, per-part stepping, his page rule
     parts.ts      splitS: long sentences -> parts (his exact algorithm)
-    db.ts         IndexedDB: books, progress, per-part marks + notes
+    db.ts         IndexedDB: books, progress, per-part marks + notes, vocab, ask threads
     settings.tsx  reader settings (persisted) as CSS custom properties
     sample.ts     the bundled sample book
+    apikey.ts     Gemini key in localStorage (never logged, never shipped)
+    gemini.ts     Gemini 2.5 Flash client (chat + JSON mode, calm errors)
+    meaning.ts    dictionary lookup + lemmatizer retry + Gemini phrase/in-context
+    askContext.ts passage context builder + «quote» matching for the Ask sheet
+    vocab.ts      day grouping + saved-word text decoration
+  components/
+    AskSheet.tsx  bottom-sheet Q&A about the passage (thread per book)
+    Words.tsx     saved words grouped by day, tap-to-jump, delete
   components/
     Library.tsx   upload / paste / book list with progress
     Reader.tsx    his track reader: items, parts, clicks, popup, page field
