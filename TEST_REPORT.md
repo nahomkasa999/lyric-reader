@@ -523,3 +523,39 @@ screenshots regenerated unchanged.
 - Honest gaps: no physical device — the real finger long-press feel and
   the 500ms threshold on touch are unverified; pace numbers are a calm
   guess (900ms + 340ms/word), not measured against real reading.
+
+## v4.6 — bug #2 investigation: reported all-bright long sentence (Oct 19, 2026)
+
+- **Verdict: not reproducible on the current build — no code defect found.**
+  The failure was chased through every layer and each one is provably
+  correct on his exact input (3 paragraphs incl. the 200-char `**One thing
+  you must do:**…` paragraph, run through the real paste-UI import):
+  - `extractTxt` → 3 `para` items (123/200/163 chars); `splitS` → 2 parts
+    (75 + 125) for the long one (unit: `tests/paste-parts.test.ts`, 3).
+  - Reader maps every item type through identical `.pt` spans, `on` only on
+    the current part; CSS gives siblings 30% trail vs 100% bright.
+  - e2e `tests/e2e/paste-parts.spec.ts`: real paste flow → step to the long
+    paragraph → 2 `.pt` spans, only part 0 has `on`, computed colours differ
+    (oklch white vs white/0.3). Screenshot `screenshots/parts-dull-active-phone.png`
+    shows part 1 bright / part 2 dull — the behaviour he asked for.
+  - The deployed production bundle was inspected directly: it contains the
+    current `splitS` (130-char threshold) and the `data-p` part rendering.
+  - Pixel measurement of his screenshot: current item uniformly bright
+    (mean 221–236 per line, no step) vs 112 for the past item — his device
+    rendered something the shipped code cannot produce.
+- **Leading hypothesis**: the phone ran a stale pre-v3 bundle (the only code
+  that renders whole bright sentences; matches the earlier $100M screenshot
+  too). PWA staleness is invisible to him.
+- **Mitigation shipped**: Settings now shows `Lyric Reader · build <stamp>`
+  (`__BUILD_ID__` Vite define, build timestamp, overridable via
+  `LR_BUILD_ID`; `data-testid="build-id"`; e2e asserts the stamp format).
+  Next screenshot identifies the running build instantly.
+- **Unit: 117/117 passed** (13 files) — new `tests/paste-parts.test.ts` (3).
+- **e2e: 75/75 passed** (Chromium, `vite preview` on dist, 4.4 min) — new
+  `tests/e2e/paste-parts.spec.ts` (2: parted dull/active + screenshot;
+  build-stamp visible in Settings). Whole existing suite green.
+- `npx tsc -b` clean; `npm run build` green; build stamp verified present in
+  `dist/assets/index-*.js`.
+- Honest gaps: the defect never reproduced, so there is no failing-then-fixed
+  test — only proof of correct behaviour; the device-side cause (stale SW vs
+  something environmental) still needs his Settings screenshot to confirm.

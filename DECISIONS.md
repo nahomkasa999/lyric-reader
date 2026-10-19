@@ -729,3 +729,29 @@ added three small resilience items in the same pass:
   can't stack timers (covered by an e2e regression test).
 - **Long-press must not also toggle**: a fired flag is consumed by the
   following click (the long-press hold always ends in a click).
+
+## v4.6 — bug #2: reported all-bright long sentence, not reproducible (Oct 19, 2026)
+
+- **Finding: the current build provably parts his exact text.** His 3
+  paragraphs through the real paste import (`extractTxt`, same function the
+  TXT upload uses) yield 3 para items; `splitS` cuts the 200-char paragraph
+  into 2 parts (75 + 125 chars); the reader maps every item type through the
+  same `.pt` spans with `on` only on the current part; the CSS dims siblings
+  (30% trail vs 100% bright). A Playwright run through the REAL paste UI
+  asserts 2 parts, only part 0 with `on`, and computed colours that differ
+  (white vs 30% white) — screenshot `screenshots/parts-dull-active-phone.png`
+  shows part 1 bright / part 2 dull. The deployed production bundle was also
+  inspected: it contains the current `splitS` (130-char threshold) and the
+  `data-p` part rendering. Pixel measurement of his screenshot confirms the
+  current item really was uniformly bright (221–236 vs 112 for the past
+  item) — so his device rendered something the shipped code cannot produce.
+- **Leading hypothesis: his phone ran a stale bundle.** The v1/v2 reader had
+  no part rendering at all (whole bright sentences) — matching both this
+  screenshot and the earlier $100M one. PWA staleness is invisible to him,
+  and this is now the second time it has explained a "bug".
+- **Mitigation, not a behaviour change**: Settings now shows a build stamp
+  (`Lyric Reader · build 2026-10-19 10:03`, from a `__BUILD_ID__` Vite define
+  = build timestamp, overridable via `LR_BUILD_ID`). Next screenshot of
+  Settings identifies the running build instantly. No UI/UX change otherwise;
+  no key material involved.
+- Scoped out: no changes to splitS/segment/render — they are correct.

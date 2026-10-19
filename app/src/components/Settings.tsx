@@ -354,6 +354,14 @@ export default function Settings({ onBack }: Props) {
             The next one waits below.
           </p>
         </div>
+        {/* v4.6: build stamp — a screenshot of this page always tells
+            which build is actually running on the device. */}
+        <p
+          data-testid="build-id"
+          className="mt-8 text-center text-xs opacity-40"
+        >
+          Lyric Reader · build {__BUILD_ID__}
+        </p>
       </div>
     </div>
   );

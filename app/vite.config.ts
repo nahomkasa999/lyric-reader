@@ -4,6 +4,15 @@ import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  // Build identifier stamped into the bundle so a screenshot of the
+  // Settings page always tells which build is actually running on a
+  // device (v4.6: ended the "which build is on the phone" guessing).
+  define: {
+    __BUILD_ID__: JSON.stringify(
+      process.env.LR_BUILD_ID ??
+        new Date().toISOString().slice(0, 16).replace("T", " "),
+    ),
+  },
   plugins: [
     react(),
     tailwindcss(),
