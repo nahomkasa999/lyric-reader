@@ -1,4 +1,9 @@
-import { FONT_CHOICES, HIGHLIGHT_COLORS, useSettings } from "../lib/settings";
+import {
+  FONT_CHOICES,
+  FONT_STACKS,
+  HIGHLIGHT_COLORS,
+  useSettings,
+} from "../lib/settings";
 
 interface Props {
   onBack: () => void;
@@ -78,6 +83,7 @@ export default function Settings({ onBack }: Props) {
                 data-testid={`font-chip-${f}`}
                 onClick={() => update({ font: f })}
                 className={`set-chip${settings.font === f ? " on" : ""}`}
+                style={{ fontFamily: FONT_STACKS[f] }}
               >
                 {f}
               </button>

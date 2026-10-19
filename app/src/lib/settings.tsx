@@ -10,7 +10,12 @@ import {
   useState,
 } from "react";
 
-export type FontChoice = "Geist" | "Noto Serif Georgian" | "Geist Mono" | "System";
+export type FontChoice =
+  | "Geist"
+  | "Noto Serif Georgian"
+  | "Geist Mono"
+  | "Lexend"
+  | "System";
 
 export interface ReaderSettings {
   font: FontChoice;
@@ -34,6 +39,7 @@ export const FONT_STACKS: Record<FontChoice, string> = {
   Geist: "var(--font-sans)",
   "Noto Serif Georgian": "var(--font-serif)",
   "Geist Mono": "var(--font-mono)",
+  Lexend: "Lexend, var(--font-sans)",
   System: "ui-sans-serif, system-ui, sans-serif",
 };
 
@@ -41,15 +47,17 @@ export const FONT_CHOICES: FontChoice[] = [
   "Geist",
   "Noto Serif Georgian",
   "Geist Mono",
+  "Lexend",
   "System",
 ];
 
+// The user's own 5-colour highlight palette, exactly as in his code.
 export const HIGHLIGHT_COLORS = [
   "oklch(0.62 0.2 266)", // indigo (default)
-  "oklch(0.78 0.17 85)", // amber
-  "oklch(0.78 0.17 145)", // green
-  "oklch(0.72 0.2 350)", // rose
-  "oklch(0.78 0.14 215)", // sky
+  "oklch(0.85 0.17 90)", // amber
+  "oklch(0.75 0.18 150)", // green
+  "oklch(0.68 0.2 20)", // red
+  "oklch(0.72 0.19 330)", // pink
 ];
 
 export const DEFAULT_SETTINGS: ReaderSettings = {

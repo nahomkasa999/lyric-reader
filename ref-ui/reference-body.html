@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#000000"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><title>Lyric Reader</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Noto+Serif:wght@400;500;600&family=Lexend:wght@400;500;600&display=swap">
+
+
+
+</head>
+<body>
+<section id="home" class="view on">
+  <h1>Lyric Reader</h1>
+  <p class="sub">Read one sentence at a time. Everything stays on your phone.</p>
+  <label class="btn">Start reading a book<input id="file" type="file" accept=".epub,.pdf,.txt,application/epub+zip,application/pdf,text/plain" hidden></label>
+  <textarea id="paste" placeholder="Or paste text here"></textarea>
+  <button class="btn alt" id="pasteGo">Read pasted text</button>
+  <details id="set"><summary>Reading settings</summary>
+    <div class="row"><label>Font</label><div id="sff" class="chips"></div></div>
+    <div class="row"><label>Main sentence size</label><input id="sfs" type="range" min="18" max="48"></div>
+    <div class="row"><label>Top and bottom size</label><input id="sfs2" type="range" min="9" max="24"></div>
+    <div class="row"><label>Highlight colour</label><div id="shl" class="chips"></div></div>
+    <div class="row"><label>Main text colour and opacity</label><div class="cr"><input id="cm" type="color"><button id="cmx" class="x">Default</button><input id="om" type="range" min="20" max="100"></div></div>
+    <div class="row"><label>Top and bottom text colour and opacity</label><div class="cr"><input id="cs" type="color"><button id="csx" class="x">Default</button><input id="os" type="range" min="10" max="100"></div></div>
+    <button class="btn alt" id="sreset" style="margin-top:14px">Reset settings</button>
+    <div id="prev"><p class="a">The previous sentence fades above.</p><p class="b">This is the sentence you are reading.</p><p class="a">The next one waits below.</p></div>
+  </details>
+  <div id="msg"></div>
+  <div id="lib"></div>
+</section>
+<section id="reader" class="view">
+  <div id="bar"><button id="back">← Library</button><button id="pg" aria-label="Go to page"></button><span><button id="fm">A−</button><button id="fp">A+</button></span></div>
+  <div id="prog"><i></i></div>
+  <div id="stage"><div id="track"></div></div>
+  <div id="foot"><button id="cp" aria-label="Previous chapter">«</button><button id="pp2" aria-label="Previous page">‹</button><button id="pn" aria-label="Next page">›</button><button id="cn" aria-label="Next chapter">»</button></div>
+  <div id="pop" hidden><div class="menu" id="menu"><button id="aHl" aria-label="Highlight"><svg viewBox="0 0 24 24"><path d="M9 11l7-7 4 4-7 7z"/><path d="M9 11l-5 5v4h4l5-5"/></svg>Highlight</button><button id="aBm" aria-label="Bookmark"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>Bookmark</button><button id="aCp" aria-label="Copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>Copy</button></div></div>
+  <div id="jump" hidden><div class="sheet big"><div id="jt"></div><input id="jr" type="range" min="1" value="1"><p id="jp"></p><button class="btn" id="jg">Go to page</button><div id="jc"></div></div></div>
+</section>
+
+
+</body>
+</html>

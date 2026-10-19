@@ -1,16 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BookDoc, Position, Sentence } from "../lib/types";
+// Reader v3: the user's own reader mechanics, faithfully ported.
+// Item stream + per-part stepping (lib/parts.ts splitS), a translating
+// track that centres the current item (or current part), click-first input,
+// the action popup anchored at the sentence with the .fx focus effect,
+// and an inline editable page number in the top bar.
+// Extraction stays ours (lib/extract.ts); settings stay on their own page.
 import {
-  progressOf,
-  step,
-  trailSentences,
-  upcomingSentences,
-} from "../lib/types";
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { BookDoc, Item, Position } from "../lib/types";
+import { migratePosition, stepParts } from "../lib/types";
+import { splitS } from "../lib/parts";
 import {
   getBook,
   getMarks,
   getProgress,
   saveProgress,
+  setNote,
   toggleMark,
 } from "../lib/db";
 import { useSettings } from "../lib/settings";
@@ -19,22 +29,18 @@ interface Props {
   bookId: string;
   onBack: () => void;
   onOpenSettings: () => void;
+  onOpenSaved: () => void;
 }
-
-const WHEEL_LOCK_MS = 600;
-const WHEEL_THRESHOLD = 20;
-const SWIPE_THRESHOLD = 48;
-const TAP_SLOP = 12;
 
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, v));
 
-/** Shrink very long sentences so they fit without scrolling. */
-function currentFontPx(text: string, mainPx: number): number {
-  const len = text.length;
-  const f = len <= 90 ? 1 : len <= 170 ? 0.78 : len <= 280 ? 0.62 : 0.5;
-  return Math.round(mainPx * f);
+interface Mark {
+  highlight: boolean;
+  bookmark: boolean;
+  note: string | null;
 }
+const NO_MARK: Mark = { highlight: false, bookmark: false, note: null };
 
 function GearIcon() {
   return (
@@ -57,29 +63,41 @@ function GearIcon() {
 
 function HighlightIcon() {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      width="22"
-      height="22"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
+    <svg viewBox="0 0 24 24" aria-hidden>
       <path d="M9 11l7-7 4 4-7 7z" />
       <path d="M9 11l-5 5v4h4l5-5" />
     </svg>
   );
 }
-
 function BookmarkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path d="M6 3h12v18l-6-4-6 4z" />
+    </svg>
+  );
+}
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h8" />
+    </svg>
+  );
+}
+function NoteIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+    </svg>
+  );
+}
+function SavedIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      width="22"
-      height="22"
+      width="17"
+      height="17"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.8"
@@ -92,107 +110,62 @@ function BookmarkIcon() {
   );
 }
 
-function CopyIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="22"
-      height="22"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <rect x="9" y="9" width="11" height="11" rx="2" />
-      <path d="M5 15V6a2 2 0 0 1 2-2h8" />
-    </svg>
-  );
-}
-
-interface Mark {
-  highlight: boolean;
-  bookmark: boolean;
-}
-
-const NO_MARK: Mark = { highlight: false, bookmark: false };
-
-/** Sentence text with highlight wash + bookmark dot. */
-function SentenceText({
-  s,
-  mark,
-}: {
-  s: Sentence;
-  mark: Mark;
-}) {
-  return (
-    <span className={mark.highlight ? "hl-wash" : undefined}>
-      {s.text}
-      {mark.bookmark && <span className="bm-dot" aria-label="bookmarked" />}
-    </span>
-  );
-}
-
-function TrailLine({
-  s,
-  mark,
-  upcoming,
-}: {
-  s: Sentence;
-  mark: Mark;
-  upcoming: boolean;
-}) {
-  const lineClass = upcoming ? "upcoming-line" : "trail-line";
-  if (s.kind === "bullet") {
-    return (
-      <div
-        className={`trail-li ${lineClass}`}
-        style={{ marginLeft: s.level * 18 }}
-      >
-        <SentenceText s={s} mark={mark} />
-      </div>
-    );
-  }
-  if (s.kind === "heading") {
-    return (
-      <div className="trail-h">
-        <SentenceText s={s} mark={mark} />
-      </div>
-    );
-  }
-  return (
-    <span className={lineClass}>
-      <SentenceText s={s} mark={mark} />{" "}
-    </span>
-  );
-}
-
-export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
+export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: Props) {
   const [book, setBook] = useState<BookDoc | null>(null);
-  const [pos, setPos] = useState<Position>({ page: 0, sent: 0 });
+  const [pos, setPos] = useState<Position>({ item: 0, part: 0 });
   const [marks, setMarks] = useState<Record<string, Mark>>({});
   const [failed, setFailed] = useState(false);
-
-  // Modal + chrome state
-  const [popupOpen, setPopupOpen] = useState(false);
-  const [jumpOpen, setJumpOpen] = useState(false);
-  const [barVisible, setBarVisible] = useState(false);
+  // Action popup: which part it targets (null = closed).
+  const [pop, setPop] = useState<{ i: number; p: number } | null>(null);
   const [copied, setCopied] = useState(false);
-  const [jumpVal, setJumpVal] = useState("");
-  const [jumpHint, setJumpHint] = useState<string | null>(null);
+  const [barVisible, setBarVisible] = useState(false);
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  // Inline page-number editing.
+  const [editing, setEditing] = useState(false);
+  const [editVal, setEditVal] = useState("1");
 
   const { settings, update: updateSettings } = useSettings();
 
-  const wheelLock = useRef(0);
-  const pointerStart = useRef<{ x: number; y: number; t: number } | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Refs mirroring state so native handlers always see fresh values.
+  const posRef = useRef(pos);
+  posRef.current = pos;
+  const popRef = useRef(pop);
+  popRef.current = pop;
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  // Set when Escape cancels the edit so the blur it triggers doesn't commit.
+  const cancelEditRef = useRef(false);
+  const lastTap = useRef<{ t: number; key: string }>({ t: 0, key: "" });
+  const moved = useRef(false);
   const barTimer = useRef<number | null>(null);
-  const prevPageRef = useRef(0);
-  // Refs mirroring modal state so gesture handlers see fresh values.
-  const popupOpenRef = useRef(false);
-  const jumpOpenRef = useRef(false);
   const barVisibleRef = useRef(false);
 
+  const items: Item[] = book?.items ?? [];
+  // Parts per item (his splitS), cached per book.
+  const parts = useMemo(() => items.map((it) => splitS(it.text)), [items]);
+  const partsRef = useRef<string[][]>([]);
+  partsRef.current = parts;
+
+  const I = pos.item;
+  const P = pos.part;
+  const curPage = items[I]?.page ?? 0;
+  const pages = items.length ? items[items.length - 1].page + 1 : 0;
+  const cp = curPage + 1;
+  const pct = items.length
+    ? Math.round((I / Math.max(1, items.length - 1)) * 100)
+    : 0;
+
+  // Keep the edit field in sync with the real page when not editing.
+  useEffect(() => {
+    if (!editing) setEditVal(String(cp));
+  }, [cp, editing]);
+
+  // --- Load: book + saved position (old {page,sent} records convert) ---
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -207,14 +180,12 @@ export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
       setBook(b);
       setMarks(savedMarks);
       if (saved) {
-        const page = Math.min(saved.page, b.pages.length - 1);
-        const sent = Math.min(
-          saved.sent,
-          Math.max(0, (b.pages[page]?.sentences.length ?? 1) - 1),
-        );
-        const p = { page: Math.max(0, page), sent: Math.max(0, sent) };
-        setPos(p);
-        prevPageRef.current = p.page;
+        const m = migratePosition(b.items, saved);
+        const pl = splitS(b.items[m.item]?.text ?? "");
+        setPos({
+          item: m.item,
+          part: Math.min(m.part, Math.max(0, pl.length - 1)),
+        });
       }
     })();
     return () => {
@@ -222,17 +193,16 @@ export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
     };
   }, [bookId]);
 
-  // Persist reading position (debounced), plus an immediate flush when
-  // the page is hidden so a quick close never loses the spot.
-  const posRef = useRef(pos);
-  posRef.current = pos;
+  // --- Persist position (debounced) + flush on pagehide ---
+  const posSaveRef = useRef(pos);
+  posSaveRef.current = pos;
   useEffect(() => {
     if (!book) return;
     const t = window.setTimeout(() => {
-      saveProgress(bookId, posRef.current).catch(() => {});
+      saveProgress(bookId, posSaveRef.current).catch(() => {});
     }, 500);
     const flush = () => {
-      saveProgress(bookId, posRef.current).catch(() => {});
+      saveProgress(bookId, posSaveRef.current).catch(() => {});
     };
     window.addEventListener("pagehide", flush);
     return () => {
@@ -256,220 +226,262 @@ export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
     barVisibleRef.current = false;
     setBarVisible(false);
   }, []);
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       if (barTimer.current) window.clearTimeout(barTimer.current);
-    };
+    },
+    [],
+  );
+
+  // --- Core moves ---
+  const closePop = useCallback(() => {
+    popRef.current = null;
+    setPop(null);
+    setCopied(false);
   }, []);
+
+  const go = useCallback(
+    (dir: 1 | -1) => {
+      closePop();
+      setPos((p) => stepParts(partsRef.current, p, dir));
+    },
+    [closePop],
+  );
+  const goRef = useRef(go);
+  goRef.current = go;
+
+  const toPage = useCallback(
+    (p: number) => {
+      if (!pages) return;
+      const t = clamp(p, 0, pages - 1);
+      const idx = items.findIndex((it) => it.page === t);
+      if (idx < 0) return;
+      closePop();
+      setPos({ item: idx, part: 0 });
+      showBar(1200);
+    },
+    [pages, items, closePop, showBar],
+  );
+  const toPageRef = useRef(toPage);
+  toPageRef.current = toPage;
+
+  /** «/»: nearest heading item before/after the current one (his chap). */
+  const chap = useCallback(
+    (d: 1 | -1) => {
+      const { item: cur } = posRef.current;
+      let t = -1;
+      if (d > 0) {
+        t = items.findIndex((x, i) => i > cur && x.kind === "heading");
+      } else {
+        for (let i = cur - 1; i >= 0; i--) {
+          if (items[i].kind === "heading") {
+            t = i;
+            break;
+          }
+        }
+        if (t < 0) t = 0;
+      }
+      if (t < 0) return;
+      closePop();
+      setPos({ item: t, part: 0 });
+      showBar(1200);
+    },
+    [items, closePop, showBar],
+  );
 
   // Briefly reveal the bar on every page change.
+  const prevPageRef = useRef(curPage);
   useEffect(() => {
-    if (!book) return;
-    if (pos.page !== prevPageRef.current) {
-      prevPageRef.current = pos.page;
+    if (prevPageRef.current !== curPage) {
+      prevPageRef.current = curPage;
       showBar(1200);
     }
-  }, [book, pos.page, showBar]);
+  }, [curPage, showBar]);
 
-  const markOf = useCallback(
-    (id: string): Mark => marks[id] ?? NO_MARK,
-    [marks],
-  );
-
-  // --- Sentence stepping: exactly one per gesture, guaranteed by the
-  // functional update (no races, no double-advance). ---
-  const advance = useCallback(
-    (dir: 1 | -1) => {
-      if (!book) return;
-      setPos((p) => step(book.pages, p, dir));
-    },
-    [book],
-  );
-
-  const gotoPage = useCallback(
-    (page: number, sent = 0) => {
-      if (!book) return;
-      const p = clamp(page, 0, book.pages.length - 1);
-      const s = clamp(
-        sent,
-        0,
-        Math.max(0, (book.pages[p]?.sentences.length ?? 1) - 1),
-      );
-      setPos({ page: p, sent: s });
-      popupOpenRef.current = false;
-      jumpOpenRef.current = false;
-      setPopupOpen(false);
-      setJumpOpen(false);
-      showBar(1200);
-    },
-    [book, showBar],
-  );
-
-  // --- Sections (chapter starts): pages whose first sentence is a heading ---
-  const sectionPages = useMemo(
-    () =>
-      book
-        ? book.pages
-            .map((pg, i) => ({ i, h: pg.sentences[0]?.kind === "heading" }))
-            .filter((x) => x.h)
-            .map((x) => x.i)
-        : [],
-    [book],
-  );
-
-  const gotoPrevSection = useCallback(() => {
-    const prev = sectionPages.filter((i) => i < pos.page);
-    gotoPage(prev.length > 0 ? prev[prev.length - 1] : 0, 0);
-  }, [sectionPages, pos.page, gotoPage]);
-
-  const gotoNextSection = useCallback(() => {
-    if (!book) return;
-    const next = sectionPages.find((i) => i > pos.page);
-    if (next !== undefined) {
-      gotoPage(next, 0);
-    } else {
-      const last = book.pages.length - 1;
-      gotoPage(last, book.pages[last].sentences.length - 1);
+  // --- Track placement (his place()): centre the current item; if it has
+  // more than one part and is taller than half the stage, centre the
+  // current part instead. ---
+  const place = useCallback(() => {
+    const stage = stageRef.current;
+    const track = trackRef.current;
+    if (!stage || !track) return;
+    const el = track.querySelector<HTMLElement>(
+      `[data-item="${posRef.current.item}"]`,
+    );
+    if (!el) return;
+    let t: HTMLElement = el;
+    let o = 0;
+    if (
+      el.children.length > 1 &&
+      el.offsetHeight > stage.clientHeight * 0.5
+    ) {
+      const c = el.children[posRef.current.part] as HTMLElement | undefined;
+      if (c) {
+        t = c;
+        o = c.offsetTop;
+      }
     }
-  }, [sectionPages, pos.page, gotoPage, book]);
-
-  // --- Jump sheet ---
-  const openJump = useCallback(() => {
-    hideBar();
-    popupOpenRef.current = false;
-    setPopupOpen(false);
-    setJumpVal(String(pos.page + 1));
-    setJumpHint(null);
-    jumpOpenRef.current = true;
-    setJumpOpen(true);
-  }, [hideBar, pos.page]);
-
-  const closeJump = useCallback(() => {
-    jumpOpenRef.current = false;
-    setJumpOpen(false);
+    const y =
+      stage.clientHeight / 2 - (el.offsetTop + o + t.offsetHeight / 2);
+    track.style.transform = `translateY(${y}px)`;
   }, []);
 
-  const submitJump = useCallback(() => {
-    if (!book) return;
-    const n = book.pages.length;
-    const v = parseInt(jumpVal.trim(), 10);
-    if (!Number.isFinite(v)) {
-      setJumpHint(`Type a page number between 1 and ${n}.`);
-      return;
-    }
-    const target = clamp(v, 1, n);
-    if (target !== v) {
-      // Out of range: clamp and jump, but keep the sheet open so the
-      // hint is visible — the reader moves behind it.
-      setJumpHint(`Only ${n} pages — jumped to page ${target}.`);
-      setJumpVal(String(target));
-      setPos({ page: target - 1, sent: 0 });
-      showBar(1200);
-      return;
-    }
-    gotoPage(target - 1, 0);
-    closeJump();
-  }, [book, jumpVal, gotoPage, closeJump, showBar]);
+  useLayoutEffect(() => {
+    place();
+  }, [place, I, P, curPage, book, settings]);
 
-  // --- Action popup ---
-  const openPopup = useCallback(() => {
-    popupOpenRef.current = true;
-    setPopupOpen(true);
+  useEffect(() => {
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [place]);
+
+  // --- Action popup, anchored at the item (his openPop positioning) ---
+  const openPop = useCallback((i: number, p: number) => {
+    setPop({ i, p });
     setCopied(false);
-  }, []);
-  const closePopup = useCallback(() => {
-    popupOpenRef.current = false;
-    setPopupOpen(false);
-    setCopied(false);
-  }, []);
-
-
-  // --- Gestures ---
-  const onWheel = useCallback(
-    (e: React.WheelEvent) => {
-      const now = performance.now();
-      if (now - wheelLock.current < WHEEL_LOCK_MS) return;
-      if (Math.abs(e.deltaY) < WHEEL_THRESHOLD) return;
-      wheelLock.current = now;
-      advance(e.deltaY > 0 ? 1 : -1);
-    },
-    [advance],
-  );
-
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    pointerStart.current = { x: e.clientX, y: e.clientY, t: performance.now() };
+    setNoteEditing(false);
+    setNoteDraft("");
+    requestAnimationFrame(() => {
+      const track = trackRef.current;
+      const m = menuRef.current;
+      if (!track || !m) return;
+      const el = track.querySelector<HTMLElement>(`[data-item="${i}"]`);
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const mh = m.offsetHeight;
+      const mw = m.offsetWidth;
+      let top = r.bottom + 16;
+      if (top + mh > window.innerHeight - 16)
+        top = Math.max(16, r.top - mh - 16);
+      m.style.top = `${top}px`;
+      m.style.left = `${Math.max(
+        16,
+        Math.min(window.innerWidth - mw - 24, r.right - mw),
+      )}px`;
+    });
   }, []);
 
-  const onPointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      const s = pointerStart.current;
-      pointerStart.current = null;
+  // --- Input: wheel / keys / swipe / click (his exact semantics) ---
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    let wlock = false;
+    let wt = 0;
+    let ty = 0;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      window.clearTimeout(wt);
+      wt = window.setTimeout(() => {
+        wlock = false;
+      }, 200);
+      if (wlock || Math.abs(e.deltaY) < 4) return;
+      wlock = true;
+      goRef.current(e.deltaY > 0 ? 1 : -1);
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      ty = e.touches[0].clientY;
+      moved.current = false;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (moved.current) return;
+      const dy = ty - e.touches[0].clientY;
+      if (Math.abs(dy) > 30) {
+        goRef.current(dy > 0 ? 1 : -1);
+        moved.current = true;
+      }
+    };
+
+    const onClick = (e: MouseEvent) => {
+      if (moved.current) {
+        moved.current = false;
+        return;
+      }
+      const t = e.target as HTMLElement;
+      // Bottom hot-zone: reveal the nav instead of stepping.
+      if (e.clientY > window.innerHeight * 0.85) {
+        showBar();
+        return;
+      }
+      const s = t.closest("[data-item]");
       if (!s) return;
-      // Modals open: let their backdrops handle the tap.
-      if (popupOpenRef.current || jumpOpenRef.current) return;
-      // Taps on the bottom nav's own buttons must not advance.
-      if ((e.target as HTMLElement).closest("[data-bottom-nav]")) return;
-      // Taps on the top bar must not advance either.
-      if ((e.target as HTMLElement).closest("[data-topbar]")) return;
-      const dx = e.clientX - s.x;
-      const dy = e.clientY - s.y;
-      const dt = performance.now() - s.t;
-      const adx = Math.abs(dx);
-      const ady = Math.abs(dy);
-      if (Math.max(adx, ady) < TAP_SLOP && dt < 400) {
-        const h = window.innerHeight;
-        const y = e.clientY;
-        if (y > h * 0.85) {
-          // Bottom hot-zone: reveal the bar instead of stepping.
-          // (Always show, never toggle: the hover-reveal may already have
-          // fired on the way in, and a toggle would instantly undo it.
-          // The bar dismisses itself after 2.5s.)
-          showBar();
-          return;
+      const i = Number(s.getAttribute("data-item"));
+      const cur = posRef.current;
+      const pl = partsRef.current;
+      if (i !== cur.item) {
+        // Adjacent item: jump to it (forward = part 0, back = last part).
+        if (Math.abs(i - cur.item) === 1) {
+          const fwd = i > cur.item;
+          closePop();
+          setPos({ item: i, part: fwd ? 0 : pl[i].length - 1 });
         }
-        // Tap: top third = back, bottom third = forward,
-        // middle third = the sentence action popup.
-        if (y < h / 3) advance(-1);
-        else if (y > (2 * h) / 3) advance(1);
-        else openPopup();
         return;
       }
-      if (ady > SWIPE_THRESHOLD && ady > adx * 1.2) {
-        advance(dy < 0 ? 1 : -1);
+      const sp = t.closest("[data-p]");
+      const p = sp ? Number(sp.getAttribute("data-p")) : cur.part;
+      const key = `${cur.item}:${cur.part}`;
+      const now = Date.now();
+      if (p !== cur.part) {
+        // Click the muted half of a split sentence: activate that half.
+        setPos({ item: cur.item, part: p });
+        lastTap.current = { t: now, key: `${cur.item}:${p}` };
+        return;
       }
-    },
-    [advance, openPopup, showBar, hideBar],
-  );
+      // Double-tap the active part — or any tap on a single-part
+      // sentence — opens the action popup.
+      if (
+        pl[cur.item].length === 1 ||
+        (now - lastTap.current.t < 350 && lastTap.current.key === key)
+      ) {
+        openPop(cur.item, cur.part);
+        lastTap.current.t = 0;
+      } else {
+        lastTap.current = { t: now, key };
+      }
+    };
 
-  // Keyboard: arrows / space / page keys. One keypress = one sentence.
-  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (popupOpenRef.current || jumpOpenRef.current) {
-        if (e.key === "Escape") {
-          closePopup();
-          closeJump();
-        }
+      if (popRef.current) {
+        if (e.key === "Escape") closePop();
         return;
       }
-      if (e.key === "ArrowDown" || e.key === "ArrowRight" || e.key === " ") {
+      if (editingRef.current) return; // the page field owns its keys
+      if (
+        e.key === "ArrowDown" ||
+        e.key === "ArrowRight" ||
+        e.key === " " ||
+        e.key === "PageDown"
+      ) {
         e.preventDefault();
-        advance(1);
-      } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+        goRef.current(1);
+      } else if (
+        e.key === "ArrowUp" ||
+        e.key === "ArrowLeft" ||
+        e.key === "PageUp"
+      ) {
         e.preventDefault();
-        advance(-1);
-      } else if (e.key === "PageDown") {
-        e.preventDefault();
-        advance(1);
-      } else if (e.key === "PageUp") {
-        e.preventDefault();
-        advance(-1);
+        goRef.current(-1);
       } else if (e.key === "Escape") {
         hideBar();
       }
     };
+
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    stage.addEventListener("touchstart", onTouchStart, { passive: true });
+    stage.addEventListener("touchmove", onTouchMove, { passive: true });
+    stage.addEventListener("click", onClick);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [advance, closePopup, closeJump, hideBar]);
+    return () => {
+      stage.removeEventListener("wheel", onWheel);
+      stage.removeEventListener("touchstart", onTouchStart);
+      stage.removeEventListener("touchmove", onTouchMove);
+      stage.removeEventListener("click", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+    // `book` in deps: the effect must (re-)attach once the stage exists
+    // after the book loads — on first render we bail out at `!stage`.
+  }, [book, closePop, openPop, showBar, hideBar]);
 
   // A− / A+ adjust the same main-size setting the slider edits.
   const adjustMainSize = useCallback(
@@ -481,68 +493,125 @@ export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
     [settings.mainSize, updateSettings],
   );
 
-  const page = book?.pages[pos.page];
-  const sentences = page?.sentences ?? [];
-  const current: Sentence | undefined = sentences[pos.sent];
+  // --- Popup actions (act on the current PART, persisted per book) ---
+  const popKey = pop ? `${pop.i}:${pop.p}` : "";
+  const popMark: Mark = (popKey && marks[popKey]) || NO_MARK;
 
-  // Popup actions live here so they close over the fresh `current`
-  // sentence (a stale closure here silently disabled them in v2 dev).
   const toggleMarkKind = useCallback(
     async (kind: "highlight" | "bookmark") => {
-      if (!current) return;
+      const p = popRef.current;
+      if (!p) return;
       try {
-        const m = await toggleMark(bookId, current.id, kind);
-        setMarks((prev) => ({ ...prev, [current.id]: m }));
+        const m = await toggleMark(bookId, `${p.i}:${p.p}`, kind);
+        setMarks((prev) => ({ ...prev, [`${p.i}:${p.p}`]: m }));
       } catch {
         /* ignore */
       }
     },
-    [bookId, current],
+    [bookId],
   );
 
-  const doCopy = useCallback(async () => {
-    if (!current) return;
+  const saveNote = useCallback(async () => {
+    const p = popRef.current;
+    if (!p) return;
     try {
-      await navigator.clipboard.writeText(current.text);
+      const m = await setNote(bookId, `${p.i}:${p.p}`, noteDraftRef.current);
+      setMarks((prev) => ({ ...prev, [`${p.i}:${p.p}`]: m }));
+      setNoteEditing(false);
+    } catch {
+      /* ignore */
+    }
+  }, [bookId]);
+
+  const deleteNote = useCallback(async () => {
+    const p = popRef.current;
+    if (!p) return;
+    try {
+      const m = await setNote(bookId, `${p.i}:${p.p}`, null);
+      setMarks((prev) => ({ ...prev, [`${p.i}:${p.p}`]: m }));
+      setNoteEditing(false);
+    } catch {
+      /* ignore */
+    }
+  }, [bookId]);
+
+  const doCopy = useCallback(async () => {
+    const p = popRef.current;
+    if (!p) return;
+    const text = partsRef.current[p.i]?.[p.p] ?? "";
+    try {
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
       setCopied(false);
     }
-  }, [current]);
+  }, []);
 
-  const trail = useMemo(
-    () => (book ? trailSentences(book.pages, pos) : []),
-    [book, pos],
-  );
-  const upcoming = useMemo(
-    () => (book ? upcomingSentences(book.pages, pos) : []),
-    [book, pos],
-  );
-  const pct = book ? Math.round(progressOf(book, pos) * 100) : 0;
-  const totalPages = book?.pages.length ?? 0;
+  const noteDraftRef = useRef(noteDraft);
+  noteDraftRef.current = noteDraft;
 
-  // Bookmark list for the jump sheet (sorted by position).
-  const sentenceIndex = useMemo(() => {
-    const m = new Map<string, { page: number; sent: number; text: string }>();
-    book?.pages.forEach((pg, pi) =>
-      pg.sentences.forEach((s, si) =>
-        m.set(s.id, { page: pi, sent: si, text: s.text }),
-      ),
-    );
-    return m;
-  }, [book]);
-  const bookmarkList = useMemo(
-    () =>
-      Object.entries(marks)
-        .filter(([, m]) => m.bookmark)
-        .map(([id]) => ({ id, ...sentenceIndex.get(id)! }))
-        .filter((b) => b.text)
-        .sort((a, b) => a.page - b.page || a.sent - b.sent),
-    [marks, sentenceIndex],
-  );
+  const markOf = useCallback((key: string): Mark => marks[key] ?? NO_MARK, [marks]);
 
-  const currentMark = current ? markOf(current.id) : NO_MARK;
+  // Items on the current page only (his buildPage: the track holds one page).
+  const pageItems = useMemo(() => {
+    const out: { idx: number; item: Item; parts: string[] }[] = [];
+    items.forEach((item, idx) => {
+      if (item.page === curPage) out.push({ idx, item, parts: parts[idx] });
+    });
+    return out;
+  }, [items, curPage, parts]);
+
+  const rows = [
+    {
+      key: "bookmark" as const,
+      label: "Bookmark",
+      testid: "popup-bookmark",
+      icon: <BookmarkIcon />,
+      active: popMark.bookmark,
+      activeStyle: {
+        background: "var(--primary)",
+        color: "var(--primary-foreground)",
+      },
+      onClick: () => toggleMarkKind("bookmark"),
+    },
+    {
+      key: "highlight" as const,
+      label: "Highlight",
+      testid: "popup-highlight",
+      icon: <HighlightIcon />,
+      active: popMark.highlight,
+      activeStyle: { background: "var(--lr-hl)", color: "#000" },
+      onClick: () => toggleMarkKind("highlight"),
+    },
+    {
+      key: "note" as const,
+      label: popMark.note ? "Edit note" : "Note",
+      testid: "popup-note",
+      icon: <NoteIcon />,
+      active: !!popMark.note,
+      activeStyle: {
+        background: "var(--accent)",
+        color: "var(--foreground)",
+      },
+      onClick: () => {
+        setNoteDraft(popMark.note ?? "");
+        setNoteEditing(true);
+      },
+    },
+    {
+      key: "copy" as const,
+      label: copied ? "Copied" : "Copy",
+      testid: "popup-copy",
+      icon: <CopyIcon />,
+      active: copied,
+      activeStyle: {
+        background: "var(--primary)",
+        color: "var(--primary-foreground)",
+      },
+      onClick: doCopy,
+    },
+  ];
 
   if (failed) {
     return (
@@ -560,7 +629,7 @@ export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
     );
   }
 
-  if (!book || !page) {
+  if (!book || !items.length) {
     return (
       <div className="reader-root fixed inset-0 flex items-center justify-center">
         <p className="text-white/40 text-sm">Loading…</p>
@@ -568,55 +637,16 @@ export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
     );
   }
 
-  const popupRows = [
-    {
-      key: "highlight" as const,
-      label: "Highlight",
-      testid: "popup-highlight",
-      icon: <HighlightIcon />,
-      active: currentMark.highlight,
-      activeStyle: { background: "var(--lr-hl)", color: "#000" },
-      onClick: () => toggleMarkKind("highlight"),
-    },
-    {
-      key: "bookmark" as const,
-      label: "Bookmark",
-      testid: "popup-bookmark",
-      icon: <BookmarkIcon />,
-      active: currentMark.bookmark,
-      activeStyle: {
-        background: "var(--primary)",
-        color: "var(--primary-foreground)",
-      },
-      onClick: () => toggleMarkKind("bookmark"),
-    },
-    {
-      key: "copy" as const,
-      label: copied ? "Copied" : "Copy",
-      testid: "popup-copy",
-      icon: <CopyIcon />,
-      active: copied,
-      activeStyle: {
-        background: "var(--primary)",
-        color: "var(--primary-foreground)",
-      },
-      onClick: doCopy,
-    },
-  ];
-
   return (
     <div
       data-testid="reader-root"
-      className="reader-root fixed inset-0 flex flex-col overflow-hidden"
-      onWheel={onWheel}
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
+      className={`reader-root fixed inset-0 flex flex-col overflow-hidden${pop ? " fx" : ""}`}
       onMouseMove={(e) => {
         if (e.clientY > window.innerHeight * 0.85 && !barVisibleRef.current)
           showBar();
       }}
     >
-      {/* Top bar: library | page button | A− A+ gear */}
+      {/* Top bar: library | Page [n] / N · pct% | A− A+ gear */}
       <header
         data-topbar
         className="reader-bar shrink-0"
@@ -625,22 +655,56 @@ export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
         <button onClick={onBack} aria-label="Back to library">
           ← Library
         </button>
-        <button
-          data-testid="page-btn"
-          className="page-btn"
-          onClick={openJump}
-          aria-label="Go to page"
-        >
-          <span data-testid="page-label">
-            {pos.page + 1} / {totalPages}
-          </span>
-        </button>
+        <span className="page-label" data-testid="page-label">
+          Page
+          <input
+            data-testid="page-input"
+            className="page-input"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            aria-label="Page number"
+            value={editVal}
+            onFocus={(e) => {
+              setEditing(true);
+              e.target.select();
+            }}
+            onChange={(e) => setEditVal(e.target.value)}
+            onBlur={() => {
+              if (cancelEditRef.current) {
+                cancelEditRef.current = false;
+                return;
+              }
+              const v = parseInt(editVal, 10);
+              if (Number.isFinite(v)) toPageRef.current(clamp(v, 1, pages) - 1);
+              else setEditVal(String(cp));
+              setEditing(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              else if (e.key === "Escape") {
+                cancelEditRef.current = true;
+                setEditVal(String(cp));
+                setEditing(false);
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+          />
+          / {pages} · {pct}%
+        </span>
         <div className="flex items-center">
           <button aria-label="Smaller text" onClick={() => adjustMainSize(-2)}>
             A−
           </button>
           <button aria-label="Larger text" onClick={() => adjustMainSize(2)}>
             A+
+          </button>
+          <button
+            data-testid="saved-btn"
+            aria-label="Saved marks"
+            onClick={onOpenSaved}
+          >
+            <SavedIcon />
           </button>
           <button
             data-testid="settings-gear"
@@ -657,107 +721,56 @@ export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
         <i style={{ width: `${pct}%` }} />
       </div>
 
-      {/* Stage: trail top, current sentence center, upcoming bottom. */}
-      <div className="reader-stage relative min-h-0 flex-1">
-        {/* Top zone: already-read sentences of this page, muted, anchored top. */}
-        <div className="absolute inset-x-0 top-0">
-          <div
-            className="mx-auto w-full max-w-[56rem]"
-            style={{ padding: "1.25rem max(1.5rem,12%) 0" }}
-          >
-            <div
-              data-testid="trail-block"
-              className="trail-block overflow-hidden"
-              style={{
-                maxHeight: "24vh",
-                maskImage:
-                  "linear-gradient(to bottom, black 55%, transparent 98%)",
-                WebkitMaskImage:
-                  "linear-gradient(to bottom, black 55%, transparent 98%)",
-              }}
-            >
-              {trail.map((s) => (
-                <TrailLine
-                  key={s.id}
-                  s={s}
-                  mark={markOf(s.id)}
-                  upcoming={false}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Center: the ONE current sentence. */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div
-            className="w-full max-w-[56rem]"
-            style={{ padding: "0 max(1.5rem,12%)" }}
-          >
-            {current ? (
-              <div
-                key={current.id}
-                data-testid="current-sentence"
-                className={
-                  "current-sentence w-full" +
-                  (current.kind === "heading" ? " cur-heading" : "")
-                }
+      {/* Stage: his translating track, masked at the edges. */}
+      <div ref={stageRef} data-testid="stage" className="reader-stage min-h-0 flex-1">
+        <div ref={trackRef} data-testid="track" className="reader-track">
+          {pageItems.map(({ idx, item, parts: ps }) => {
+            const isCur = idx === I;
+            const cls =
+              "s" +
+              (item.kind === "heading" ? " h" : item.kind === "bullet" ? " li" : "") +
+              (isCur ? " cur" : idx < I ? " past" : "") +
+              (idx > I + 1 || idx < I - 2 ? " far" : "") +
+              (item.paraStart && idx > 0 ? " gap" : "");
+            return (
+              <p
+                key={idx}
+                data-item={idx}
+                data-testid={isCur ? "current-item" : `item-${idx}`}
+                className={cls}
                 style={
-                  current.kind === "heading"
-                    ? undefined
-                    : {
-                        fontSize: `${currentFontPx(current.text, settings.mainSize)}px`,
-                      }
+                  item.kind === "bullet"
+                    ? { marginLeft: item.depth * 18 }
+                    : undefined
                 }
               >
-                {current.kind === "bullet" ? (
-                  <div
-                    className="bullet-wrap"
-                    style={{ marginLeft: current.level * 18 }}
-                  >
-                    <SentenceText s={current} mark={currentMark} />
-                  </div>
-                ) : (
-                  <SentenceText s={current} mark={currentMark} />
-                )}
-              </div>
-            ) : (
-              <p className="text-white/40 text-sm">This page has no text.</p>
-            )}
-          </div>
-        </div>
-
-        {/* Bottom zone: upcoming sentences of this page, muted, anchored bottom. */}
-        <div className="absolute inset-x-0 bottom-0">
-          <div
-            className="mx-auto w-full max-w-[56rem]"
-            style={{ padding: "0 max(1.5rem,12%) 1.5rem" }}
-          >
-            <div
-              data-testid="upcoming-block"
-              className="trail-block overflow-hidden"
-              style={{
-                maxHeight: "20vh",
-                maskImage:
-                  "linear-gradient(to top, black 55%, transparent 98%)",
-                WebkitMaskImage:
-                  "linear-gradient(to top, black 55%, transparent 98%)",
-              }}
-            >
-              {upcoming.map((s) => (
-                <TrailLine
-                  key={s.id}
-                  s={s}
-                  mark={markOf(s.id)}
-                  upcoming={true}
-                />
-              ))}
-            </div>
-          </div>
+                {ps.map((t, p) => {
+                  const key = `${idx}:${p}`;
+                  const mk = markOf(key);
+                  return (
+                    <span
+                      key={p}
+                      data-p={p}
+                      data-testid={`part-${idx}-${p}`}
+                      className={
+                        "pt" +
+                        (isCur && p === P ? " on" : "") +
+                        (mk.highlight ? " hl" : "") +
+                        (mk.bookmark ? " bm" : "") +
+                        (mk.note ? " nt" : "")
+                      }
+                    >
+                      {t}
+                    </span>
+                  );
+                })}
+              </p>
+            );
+          })}
         </div>
       </div>
 
-      {/* Auto-hiding bottom nav: prev section / prev page / next page / next section */}
+      {/* Auto-hiding bottom nav: « prev heading · ‹ prev page · › next page · » next heading */}
       <nav
         data-bottom-nav
         data-testid="bottom-nav"
@@ -767,177 +780,96 @@ export default function Reader({ bookId, onBack, onOpenSettings }: Props) {
       >
         <button
           data-testid="nav-prev-section"
-          onClick={gotoPrevSection}
+          onClick={() => chap(-1)}
           aria-label="Previous section"
         >
           «
         </button>
         <button
           data-testid="nav-prev-page"
-          onClick={() => gotoPage(pos.page - 1, 0)}
+          onClick={() => toPage(curPage - 1)}
           aria-label="Previous page"
         >
           ‹
         </button>
         <button
           data-testid="nav-next-page"
-          onClick={() => gotoPage(pos.page + 1, 0)}
+          onClick={() => toPage(curPage + 1)}
           aria-label="Next page"
         >
           ›
         </button>
         <button
           data-testid="nav-next-section"
-          onClick={gotoNextSection}
+          onClick={() => chap(1)}
           aria-label="Next section"
         >
           »
         </button>
       </nav>
 
-      {/* One-card action popup (middle-third tap on the current sentence) */}
-      {popupOpen && (
-        <div
-          className="sheet-backdrop"
-          data-testid="action-popup"
-          onClick={closePopup}
-        >
+      {/* Action popup: one card anchored at the sentence, staggered rows. */}
+      {pop && (
+        <div className="pop-layer" data-testid="action-popup">
           <div
+            ref={menuRef}
             data-testid="popup-card"
-            className="sheet-card action-card flex flex-col gap-2"
-            style={{ padding: 12 }}
+            className="menu"
             role="dialog"
             aria-label="Sentence actions"
-            onClick={(e) => e.stopPropagation()}
           >
-            {popupRows.map((r) => (
-              <button
-                key={r.key}
-                data-testid={r.testid}
-                onClick={r.onClick}
-                className="action-row flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-[15px] font-medium text-foreground"
-                style={
-                  r.active
-                    ? r.activeStyle
-                    : {
-                        background: "var(--background)",
-                        border: "1px solid var(--border)",
-                      }
-                }
-              >
-                {r.icon}
-                <span>{r.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Jump sheet: type the page */}
-      {jumpOpen && (
-        <div
-          className="sheet-backdrop"
-          data-testid="jump-sheet"
-          onClick={closeJump}
-        >
-          <div
-            className="sheet-card"
-            role="dialog"
-            aria-label="Go to page"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-center text-lg font-semibold text-foreground">
-              Go to page
-            </h2>
-            <div className="mt-4 flex items-center justify-center gap-3">
-              <input
-                data-testid="jump-input"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoFocus
-                value={jumpVal}
-                onChange={(e) => {
-                  setJumpVal(e.target.value);
-                  setJumpHint(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") submitJump();
-                }}
-                className="jump-input"
-                aria-label="Page number"
-              />
-              <span className="text-sm text-muted-foreground">
-                of {totalPages} pages
-              </span>
-            </div>
-            {jumpHint && (
-              <p
-                data-testid="jump-hint"
-                className="mt-2 text-center text-xs text-muted-foreground"
-              >
-                {jumpHint}
-              </p>
-            )}
-            <button
-              data-testid="jump-go"
-              onClick={submitJump}
-              className="mt-4 block w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
-            >
-              Go to page
-            </button>
-
-            {sectionPages.length > 0 && (
-              <div className="mt-5">
-                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                  Sections
-                </p>
-                <div className="mt-1 max-h-[22vh] overflow-auto">
-                  {sectionPages.map((i) => (
+            {noteEditing ? (
+              <div className="note-editor" data-testid="note-editor">
+                <textarea
+                  data-testid="note-textarea"
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  placeholder="Write a note on this part…"
+                  rows={4}
+                  autoFocus
+                  className="note-textarea"
+                  aria-label="Note text"
+                />
+                <div className="note-editor-actions">
+                  {popMark.note && (
                     <button
-                      key={i}
-                      data-testid={`jump-section-${i}`}
-                      onClick={() => gotoPage(i, 0)}
-                      className="block w-full border-b border-border py-2.5 text-left"
+                      data-testid="note-delete"
+                      onClick={deleteNote}
+                      className="note-btn danger"
                     >
-                      <span className="block text-sm font-medium text-foreground">
-                        {book.pages[i].sentences[0]?.text}
-                      </span>
-                      <small className="text-muted-foreground">
-                        Page {i + 1}
-                      </small>
+                      Delete
                     </button>
-                  ))}
+                  )}
+                  <span className="flex-1" />
+                  <button
+                    data-testid="note-cancel"
+                    onClick={() => setNoteEditing(false)}
+                    className="note-btn"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    data-testid="note-save"
+                    onClick={saveNote}
+                    className="note-btn primary"
+                  >
+                    Save
+                  </button>
                 </div>
               </div>
-            )}
-
-            {bookmarkList.length > 0 && (
-              <div className="mt-4">
-                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                  Bookmarks
-                </p>
-                <div className="max-h-[22vh] overflow-auto">
-                  {bookmarkList.map((b) => (
-                    <button
-                      key={b.id}
-                      data-testid={`jump-bookmark-${b.page}-${b.sent}`}
-                      onClick={() => gotoPage(b.page, b.sent)}
-                      className="block w-full border-b border-border py-2.5 text-left"
-                    >
-                      <span className="block text-sm text-foreground">
-                        <span className="bm-dot !ml-0 !mr-2" aria-hidden />
-                        {b.text.length > 90
-                          ? b.text.slice(0, 90) + "…"
-                          : b.text}
-                      </span>
-                      <small className="text-muted-foreground">
-                        Page {b.page + 1}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-              </div>
+            ) : (
+              rows.map((r) => (
+                <button
+                  key={r.key}
+                  data-testid={r.testid}
+                  onClick={r.onClick}
+                  className="action-row"
+                  style={r.active ? r.activeStyle : undefined}
+                >
+                  {r.icon}
+                  <span>{r.label}</span>
+                </button>
+              ))
             )}
           </div>
         </div>

@@ -171,3 +171,72 @@ Old v1 shots (`reader-start-phone`, `reader-bullet-phone`,
 
 `npx tsc -b` clean, `npm run build` succeeds (dist regenerated with the new
 UI; prebuild regenerates fonts/icons as before).
+
+## v3 — the user's own reader mechanics + notes + Saved (Oct 19, 2026)
+
+The reader core was rebuilt as a faithful port of the user's reference code
+(item stream, his exact splitS, per-part stepping, translating track with
+his place() rule, click-first input, anchored popup with the .fx focus
+effect, inline page number). Extraction (extract/segment/structure) was not
+touched.
+
+### Unit (vitest) — 35/35 passed
+- segment.test.ts: 9 (Intl.Segmenter + abbreviation rules, unchanged)
+- structure.test.ts: 6 (unchanged)
+- parts.test.ts: 5 (NEW — splitS: ≤130 unsplit; 200-char → 2 parts at the
+  comma; 360-char → 3 parts; space fallback; parts rejoin to the original)
+- paging.test.ts: 12 (rewritten — his page rule: heading break + 7-item cap;
+  stepParts part-first/back-to-last-part/clamps; item-based progressOf;
+  migratePosition old→new)
+- extract.test.ts: 3 (updated to the item model — heading page breaks,
+  ≤7/page on the sample; EPUB title/headings/bullets; PDF keeps real pages)
+
+### E2E (Playwright, Chromium, phone 390×844, against vite preview of dist) — 33/33 passed
+- Core flows (6): opens at first item; one part per keypress; current part
+  bright / siblings muted; visibility window (far beyond I±1/I−2); page
+  boundary rebuilds track + (item,part) persists across reload; offline reload.
+- Clicks are the primary input (6): tap next/prev sentence steps; non-adjacent
+  tap does nothing; tap muted half of split sentence activates it;
+  double-tap active part opens popup; single tap on single-part opens popup.
+- Popup focus effect (1): .fx applied on open (chrome blurs), removed on
+  close (asserted via class + computed filter).
+- Popup actions on the part (3): highlight washes only the active part and
+  persists across reload; bookmark dot; copy writes the part text + "Copied".
+- Inline page number (4): label reads Page [n] / N · pct%; type + Enter jumps
+  (no popup anywhere); 999 clamps to last page, garbage reverts; Escape
+  cancels and restores.
+- Bottom nav (3): hidden → hot-zone tap reveals → auto-hides; hot-zone tap
+  doesn't advance; › next page, « previous heading item.
+- Settings page (5): gear opens page; main-size slider drives reader; Lexend
+  chip changes --lr-font; persistence across reload (40px + amber chip);
+  A−/A+ adjust the same setting; library gear entry point.
+- Notes (2): note on a part persists across reload with indicator dot;
+  deleting a note removes the indicator.
+- Saved view (3): empty state; bookmark+highlight+note listed, tapping the
+  highlight entry lands the reader on that exact part; reachable from the
+  library header.
+
+### Screenshots — 2/2 suites passed, 9 PNGs regenerated
+library, reader-mid (3-sentence spacing), reader-parts (part 2 lit),
+popup (anchored card + fx blur), page-input (edit state), bottom-nav,
+settings, saved (populated), reader-desktop. Eyeballed against the
+reference: spacing, mask fade, popup anchor and fx effect all match.
+
+### Bugs the new tests caught (all fixed)
+1. Input listeners never attached: the native stage-listener effect ran once
+   during the loading state (no stage yet) and never re-ran — key/click/wheel
+   were dead. Fixed by adding `book` to the effect deps.
+2. Escape in the page field committed the cancelled value: the blur() fired
+   the stale-closure onBlur which re-committed. Fixed with a cancel flag.
+3. Test-side: track .35s transition made click coordinates stale — helpers
+   now wait 450ms before reading boxes; navigate-by-text instead of
+   press-counting in the shots spec.
+4. Test-side: off-by-one press counts (11 presses = item 10 part 1) and
+   wrong page arithmetic in expectations.
+
+### Honest gaps
+- Chromium-only e2e (same as v1/v2); touch swipe covered by unit-adjacent
+  logic, not a real touch device.
+- `nav-prev-page` / `nav-next-section` share the tested toPage/chap paths
+  but aren't individually clicked.
+- Screenshots eyeballed by the builder, not by Nahom.

@@ -38,20 +38,26 @@ async function makePdf(): Promise<ArrayBuffer> {
 }
 
 describe("extractTxt (sample book)", () => {
-  it("produces pages of ~14 sentences with headings and nested bullets", async () => {
+  it("produces an item stream with heading page breaks, max 7 items/page", async () => {
     const book = await extractTxt(SAMPLE_TEXT, SAMPLE_TITLE, "sample");
     expect(book.title).toBe(SAMPLE_TITLE);
     expect(book.totalSentences).toBeGreaterThan(40);
-    expect(book.pages[0].label).toBe("Page 1");
-    expect(
-      book.pages.every((p) => p.sentences.length <= 14),
-    ).toBe(true);
-    const all = book.pages.flatMap((p) => p.sentences);
+    const all = book.items;
+    // At most 7 items per page, and every heading starts a fresh page.
+    const perPage = new Map<number, number>();
+    for (const it of all) perPage.set(it.page, (perPage.get(it.page) ?? 0) + 1);
+    expect(Math.max(...perPage.values())).toBeLessThanOrEqual(7);
+    all.forEach((it, i) => {
+      if (it.kind === "heading" && i > 0) {
+        expect(it.page).not.toBe(all[i - 1].page);
+      }
+    });
     expect(all.some((s) => s.kind === "heading")).toBe(true);
     const bullets = all.filter((s) => s.kind === "bullet");
     expect(bullets.length).toBeGreaterThan(0);
-    expect(Math.max(...bullets.map((b) => b.level))).toBeGreaterThan(0);
-    // Mockup sentences survive extraction in order
+    expect(Math.max(...bullets.map((b) => b.depth))).toBeGreaterThan(0);
+    expect(bullets.some((b) => b.paraStart)).toBe(false);
+    // Sample sentences survive extraction in order
     const texts = all.map((s) => s.text);
     const i1 = texts.findIndex((t) => t.includes("grandfather clock"));
     const i2 = texts.findIndex((t) => t.includes("edge of the stairs"));
@@ -64,12 +70,12 @@ describe("extractEpub", () => {
   it("reads title, headings, paragraphs and nested bullets in spine order", async () => {
     const book = await extractEpub(await makeEpub(), "fallback");
     expect(book.title).toBe("Fixture Book");
-    const all = book.pages.flatMap((p) => p.sentences);
+    const all = book.items;
     expect(all[0]).toMatchObject({ kind: "heading", text: "Chapter One" });
     // "Dr. Finch" must not be split
     expect(all.some((s) => s.text === "Dr. Finch arrived late.")).toBe(true);
     const bullets = all.filter((s) => s.kind === "bullet");
-    expect(bullets.map((b) => b.level)).toEqual([0, 1, 0]);
+    expect(bullets.map((b) => b.depth)).toEqual([0, 1, 0]);
     expect(all[all.length - 1].text).toBe("He left quietly.");
   });
 });
@@ -78,14 +84,13 @@ describe("extractPdf", () => {
   it("keeps one reader page per PDF page, in order", async () => {
     const book = await extractPdf(await makePdf(), "Fixture PDF");
     expect(book.title).toBe("Fixture PDF");
-    expect(book.pages.length).toBe(2);
-    expect(book.pages[0].label).toBe("Page 1");
-    expect(book.pages[1].label).toBe("Page 2");
-    expect(book.pages[0].sentences.map((s) => s.text)).toEqual([
+    const pages = [...new Set(book.items.map((i) => i.page))];
+    expect(pages).toEqual([0, 1]);
+    expect(book.items.filter((i) => i.page === 0).map((s) => s.text)).toEqual([
       "Dr. Smith walked home.",
       "The rain was cold.",
     ]);
-    expect(book.pages[1].sentences.map((s) => s.text)).toEqual([
+    expect(book.items.filter((i) => i.page === 1).map((s) => s.text)).toEqual([
       "He paused at the stairs.",
       "Then he ran!",
     ]);

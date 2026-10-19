@@ -1,4 +1,9 @@
-// Shared document model for Lyric Reader.
+// Document model for Lyric Reader (v3).
+//
+// The reader works on a flat ITEM stream (the user's reference mechanics):
+// every sentence is an item {kind, depth, text, page, paraStart}. Stepping
+// is per part (see lib/parts.ts splitS): position = (item, part) and moves
+// part-first, then item (back lands on the previous item's last part).
 
 export type BlockKind = "heading" | "para" | "bullet";
 
@@ -9,31 +14,32 @@ export interface Block {
   text: string;
 }
 
-export interface Sentence {
-  id: string;
-  text: string;
+export interface Item {
   kind: BlockKind;
-  level: number;
-}
-
-export interface Page {
-  /** stable label for display, e.g. "Page 3" or "Chapter 2 · Page 4" */
-  label: string;
-  sentences: Sentence[];
+  /** heading depth (1-6) or bullet nesting level (0-based) */
+  depth: number;
+  text: string;
+  /** reader page index (0-based) */
+  page: number;
+  /** first sentence of a paragraph block (paragraph-start styling) */
+  paraStart: boolean;
 }
 
 export interface BookDoc {
   id: string;
   title: string;
-  pages: Page[];
+  items: Item[];
+  /** total items (kept name for DB/library compatibility) */
   totalSentences: number;
   createdAt: number;
   source: "sample" | "upload" | "paste";
 }
 
 export interface Position {
-  page: number;
-  sent: number;
+  /** global item index */
+  item: number;
+  /** part index inside the item (lib/parts.ts) */
+  part: number;
 }
 
 let seq = 0;
@@ -42,86 +48,141 @@ export function nextId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${seq}`;
 }
 
-/** Flatten blocks into sentences and chunk them into pages. */
-export function paginate(
-  blocks: Block[],
-  sentencesPerPage: number,
-  splitIntoSentences: (text: string) => string[],
-  labelFor: (pageIndex: number) => string = (i) => `Page ${i + 1}`,
-): Page[] {
-  const sentences: Sentence[] = [];
-  for (const b of blocks) {
-    const parts =
-      b.kind === "heading" ? [b.text] : splitIntoSentences(b.text);
-    for (const t of parts) {
-      const text = t.trim();
-      if (!text) continue;
-      sentences.push({
-        id: nextId("s"),
-        text,
-        kind: b.kind,
-        level: b.level,
-      });
-    }
-  }
-  const pages: Page[] = [];
-  for (let i = 0; i < sentences.length; i += sentencesPerPage) {
-    pages.push({
-      label: labelFor(i / sentencesPerPage),
-      sentences: sentences.slice(i, i + sentencesPerPage),
-    });
-  }
-  if (pages.length === 0) {
-    pages.push({ label: labelFor(0), sentences: [] });
-  }
-  return pages;
+export interface ItemDraft {
+  kind: BlockKind;
+  depth: number;
+  text: string;
+  paraStart: boolean;
 }
 
-/** Move one step. Returns the new position (clamped at book ends). */
-export function step(
-  pages: Page[],
+/** Flatten blocks into items (headings stay whole; others are sentence-split). */
+export function flattenBlocks(
+  blocks: Block[],
+  splitIntoSentences: (text: string) => string[],
+): ItemDraft[] {
+  const drafts: ItemDraft[] = [];
+  for (const b of blocks) {
+    if (b.kind === "heading") {
+      const t = b.text.trim();
+      if (t) drafts.push({ kind: "heading", depth: b.level, text: t, paraStart: false });
+      continue;
+    }
+    const ss = splitIntoSentences(b.text);
+    ss.forEach((raw, i) => {
+      const t = raw.trim();
+      if (!t) return;
+      drafts.push({
+        kind: b.kind,
+        depth: b.level,
+        text: t,
+        paraStart: b.kind === "para" && i === 0,
+      });
+    });
+  }
+  return drafts;
+}
+
+/**
+ * Assign reader pages — the user's rule: a new page starts at a heading
+ * or after 7 items. (PDFs keep their real extracted pages instead.)
+ */
+export function assignPages(drafts: ItemDraft[]): Item[] {
+  let page = 0;
+  let n = 0;
+  return drafts.map((d, i) => {
+    if (i > 0 && (d.kind === "heading" || n >= 7)) {
+      page++;
+      n = 0;
+    }
+    const it: Item = { ...d, page };
+    n++;
+    return it;
+  });
+}
+
+/** Blocks -> paged items (EPUB / TXT / paste). */
+export function paginateBlocks(
+  blocks: Block[],
+  splitIntoSentences: (text: string) => string[],
+): Item[] {
+  return assignPages(flattenBlocks(blocks, splitIntoSentences));
+}
+
+/**
+ * Move one step (part-first, then item) — the user's go(n) exactly:
+ * forward: next part if any, else next item at part 0;
+ * back: previous part if any, else previous item at its LAST part.
+ * Clamps at both book ends.
+ */
+export function stepParts(
+  parts: string[][],
   pos: Position,
   dir: 1 | -1,
 ): Position {
-  const page = pages[pos.page];
-  if (!page) return { page: 0, sent: 0 };
-  if (dir === 1) {
-    if (pos.sent < page.sentences.length - 1)
-      return { page: pos.page, sent: pos.sent + 1 };
-    if (pos.page < pages.length - 1) return { page: pos.page + 1, sent: 0 };
+  if (dir > 0) {
+    if (pos.part < parts[pos.item].length - 1)
+      return { item: pos.item, part: pos.part + 1 };
+    if (pos.item < parts.length - 1) return { item: pos.item + 1, part: 0 };
     return pos; // end of book
   }
-  if (pos.sent > 0) return { page: pos.page, sent: pos.sent - 1 };
-  if (pos.page > 0) {
-    const prev = pages[pos.page - 1].sentences.length;
-    return { page: pos.page - 1, sent: Math.max(0, prev - 1) };
-  }
+  if (pos.part > 0) return { item: pos.item, part: pos.part - 1 };
+  if (pos.item > 0)
+    return { item: pos.item - 1, part: parts[pos.item - 1].length - 1 };
   return pos; // start of book
 }
 
-/** Sentences already read on the current page (the muted top block). */
-export function trailSentences(pages: Page[], pos: Position): Sentence[] {
-  return pages[pos.page]?.sentences.slice(0, pos.sent) ?? [];
-}
-
-/** Sentences still to come on the current page (the muted bottom block). */
-export function upcomingSentences(
-  pages: Page[],
-  pos: Position,
-): Sentence[] {
-  return pages[pos.page]?.sentences.slice(pos.sent + 1) ?? [];
-}
-
-/** Overall progress as a fraction 0..1. */
+/** Overall progress as a fraction 0..1 — item-based like the reference. */
 export function progressOf(book: BookDoc, pos: Position): number {
-  if (book.totalSentences === 0) return 0;
-  let done = 0;
-  for (let p = 0; p < pos.page && p < book.pages.length; p++) {
-    done += book.pages[p].sentences.length;
-  }
-  done += Math.min(
-    pos.sent,
-    (book.pages[pos.page]?.sentences.length ?? 1) - 1,
+  if (book.totalSentences <= 1) return 0;
+  return Math.min(
+    1,
+    Math.max(0, pos.item) / Math.max(1, book.totalSentences - 1),
   );
-  return Math.min(1, done / book.totalSentences);
+}
+
+/**
+ * Migrate a stored book from the old shape (pages of sentences, v1/v2)
+ * to the item stream. Lossless for the text; v2's sentence-id marks
+ * simply won't match the new part keys (noted in DECISIONS.md).
+ */
+export function migrateBook(stored: unknown): BookDoc {
+  const b = stored as Record<string, unknown>;
+  if (Array.isArray(b.items)) return b as unknown as BookDoc;
+  const pages = (b.pages ?? []) as Array<{
+    sentences?: Array<{ text?: string; kind?: BlockKind; level?: number }>;
+  }>;
+  const items: Item[] = [];
+  pages.forEach((p, pi) => {
+    for (const s of p.sentences ?? []) {
+      items.push({
+        kind: (s.kind ?? "para") as BlockKind,
+        depth: s.level ?? 0,
+        text: s.text ?? "",
+        page: pi,
+        paraStart: false,
+      });
+    }
+  });
+  return {
+    id: String(b.id ?? ""),
+    title: String(b.title ?? "Untitled"),
+    items,
+    totalSentences: items.length,
+    createdAt: Number(b.createdAt ?? 0),
+    source: (b.source ?? "upload") as BookDoc["source"],
+  };
+}
+
+/** Convert an old {page, sent} progress record to {item, part}. */
+export function migratePosition(
+  items: Item[],
+  saved: { page?: number; sent?: number; item?: number; part?: number },
+): Position {
+  if (typeof saved.item === "number") {
+    const item = Math.min(Math.max(0, saved.item), items.length - 1);
+    return { item: Math.max(0, item), part: Math.max(0, saved.part ?? 0) };
+  }
+  const page = Math.max(0, Math.min(saved.page ?? 0, items[items.length - 1]?.page ?? 0));
+  const idx = items.findIndex((it) => it.page === page);
+  return { item: idx >= 0 ? idx : 0, part: 0 };
 }

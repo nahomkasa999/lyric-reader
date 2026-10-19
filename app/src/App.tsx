@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Library from "./components/Library";
 import Reader from "./components/Reader";
+import Saved from "./components/Saved";
 import Settings from "./components/Settings";
 import { SettingsProvider } from "./lib/settings";
 import { extractTxt } from "./lib/extract";
@@ -10,12 +11,13 @@ import {
   listBooks,
   markSampleSeeded,
   saveBook,
+  saveProgress,
 } from "./lib/db";
 import { SAMPLE_TEXT, SAMPLE_TITLE } from "./lib/sample";
 
 const LAST_BOOK_KEY = "lyric-reader.last-book";
 
-type View = "library" | "reader" | "settings";
+type View = "library" | "reader" | "settings" | "saved";
 
 function readLastBook(): string | null {
   try {
@@ -32,6 +34,10 @@ function Shell() {
   );
   const [openBookId, setOpenBookId] = useState<string | null>(readLastBook);
   const [settingsReturn, setSettingsReturn] = useState<"library" | "reader">(
+    "library",
+  );
+  const [savedBookId, setSavedBookId] = useState<string | null>(null);
+  const [savedReturn, setSavedReturn] = useState<"library" | "reader">(
     "library",
   );
   const [seeded, setSeeded] = useState(false);
@@ -106,6 +112,31 @@ function Shell() {
     setView("settings");
   }, []);
 
+  const openSaved = useCallback((bookId: string, from: "library" | "reader") => {
+    setSavedBookId(bookId);
+    setSavedReturn(from);
+    setView("saved");
+  }, []);
+
+  /** Jump the reader to an exact saved part: persist the position first,
+      then open the book — the reader restores it as the saved position. */
+  const jumpToSaved = useCallback(
+    (bookId: string, item: number, part: number) => {
+      saveProgress(bookId, { item, part })
+        .catch(() => {})
+        .finally(() => {
+          setOpenBookId(bookId);
+          try {
+            localStorage.setItem(LAST_BOOK_KEY, bookId);
+          } catch {
+            /* ignore */
+          }
+          setView("reader");
+        });
+    },
+    [],
+  );
+
   if (!seeded) {
     return (
       <div className="min-h-dvh bg-background text-foreground flex items-center justify-center">
@@ -124,18 +155,35 @@ function Shell() {
     );
   }
 
+  if (view === "saved" && savedBookId) {
+    return (
+      <Saved
+        bookId={savedBookId}
+        onBack={() =>
+          setView(savedReturn === "reader" && openBookId ? "reader" : "library")
+        }
+        onJump={jumpToSaved}
+      />
+    );
+  }
+
   if (view === "reader" && openBookId) {
     return (
       <Reader
         bookId={openBookId}
         onBack={closeBook}
         onOpenSettings={() => openSettingsFrom("reader")}
+        onOpenSaved={() => openSaved(openBookId, "reader")}
       />
     );
   }
 
   return (
-    <Library onOpen={openBook} onOpenSettings={() => openSettingsFrom("library")} />
+    <Library
+      onOpen={openBook}
+      onOpenSettings={() => openSettingsFrom("library")}
+      onOpenSaved={(bookId) => openSaved(bookId, "library")}
+    />
   );
 }
 

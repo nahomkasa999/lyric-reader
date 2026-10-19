@@ -8,15 +8,16 @@ import {
   saveBook,
 } from "../lib/db";
 import type { BookMeta } from "../lib/db";
-import { progressOf } from "../lib/types";
+import { migratePosition, progressOf } from "../lib/types";
 import type { Position } from "../lib/types";
 
 interface Props {
   onOpen: (bookId: string) => void;
   onOpenSettings: () => void;
+  onOpenSaved: (bookId: string) => void;
 }
 
-export default function Library({ onOpen, onOpenSettings }: Props) {
+export default function Library({ onOpen, onOpenSettings, onOpenSaved }: Props) {
   const [books, setBooks] = useState<BookMeta[]>([]);
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -32,7 +33,9 @@ export default function Library({ onOpen, onOpenSettings }: Props) {
     for (const b of list) {
       const book = await getBook(b.id);
       const pos: Position | undefined = await getProgress(b.id);
-      p[b.id] = book ? progressOf(book, pos ?? { page: 0, sent: 0 }) : 0;
+      p[b.id] = book
+        ? progressOf(book, migratePosition(book.items, pos ?? { item: 0, part: 0 }))
+        : 0;
     }
     setProgress(p);
   }, []);
@@ -104,6 +107,38 @@ export default function Library({ onOpen, onOpenSettings }: Props) {
               Read one sentence at a time. Everything stays on your phone.
             </p>
           </div>
+          {(() => {
+            let target: string | null = null;
+            try {
+              target = localStorage.getItem("lyric-reader.last-book");
+            } catch {
+              /* ignore */
+            }
+            const id = target ?? books[0]?.id ?? null;
+            if (!id) return null;
+            return (
+              <button
+                data-testid="library-saved-btn"
+                onClick={() => onOpenSaved(id)}
+                aria-label="Saved marks"
+                className="mt-1 shrink-0 rounded-lg border border-border bg-card p-2.5 text-muted-foreground"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M6 3h12v18l-6-4-6 4z" />
+                </svg>
+              </button>
+            );
+          })()}
           <button
             data-testid="settings-gear"
             onClick={onOpenSettings}

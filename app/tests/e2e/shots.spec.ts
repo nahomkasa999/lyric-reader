@@ -10,23 +10,13 @@ async function openSample(page: Page) {
   await page.goto("/");
   await page.getByTestId("upload-btn").waitFor();
   await page.locator('[data-testid^="open-book-"]').first().click();
-  await page.getByTestId("current-sentence").waitFor();
+  await page.getByTestId("current-item").waitFor();
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(500); // let the entry animation settle
 }
 
-async function stepToText(page: Page, needle: string, max = 80) {
-  const current = page.getByTestId("current-sentence");
-  for (let i = 0; i < max; i++) {
-    const t = await current.innerText();
-    if (t.includes(needle)) return;
-    await page.keyboard.press("ArrowDown");
-  }
-  throw new Error(`never reached text containing "${needle}"`);
-}
-
 test.describe("screenshots", () => {
-  test("phone: library, reader, jump sheet, popup, bottom nav, settings", async ({
+  test("phone: library, reader, split sentence, popup, page input, bottom nav, settings", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -38,25 +28,41 @@ test.describe("screenshots", () => {
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/library-phone.png` });
 
-    // Reader mid-page (trail above, big sentence, upcoming below)
+    // Reader at a page start (3-zone spacing: past / current / next)
     await openSample(page);
-    for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowDown");
+    const current = page.getByTestId("current-item");
+    for (let i = 0; i < 40 && !(await current.innerText()).includes("edge of the stairs"); i++)
+      await page.keyboard.press("ArrowDown");
     await page.waitForTimeout(450);
     await page.screenshot({ path: `${SHOTS}/reader-mid-phone.png` });
 
-    // Jump sheet with typed input
-    await page.getByTestId("page-btn").click();
-    await page.getByTestId("jump-sheet").waitFor();
-    await page.getByTestId("jump-input").fill("3");
-    await page.waitForTimeout(250);
-    await page.screenshot({ path: `${SHOTS}/jump-sheet-phone.png` });
+    // Split long sentence: navigate to the brass-lamp sentence, step to part 2
+    for (let i = 0; i < 40 && !(await current.innerText()).includes("brass lamp"); i++)
+      await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown"); // part 2 lit, part 1 muted
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: `${SHOTS}/reader-parts-phone.png` });
+
+    // Action popup anchored at the sentence, with the fx focus effect
+    // (double-tap part 0 of the split sentence — deterministic)
+    await page.waitForTimeout(450); // let the track settle
+    const pbox = await current.locator('[data-p="0"]').boundingBox();
+    if (!pbox) throw new Error("no part box");
+    const px = pbox.x + pbox.width / 2;
+    const py = pbox.y + pbox.height / 2;
+    await page.mouse.click(px, py);
+    await page.mouse.click(px, py);
+    await page.getByTestId("popup-card").waitFor();
+    await page.waitForTimeout(700); // stagger + anchor settle
+    await page.screenshot({ path: `${SHOTS}/popup-phone.png` });
     await page.keyboard.press("Escape");
 
-    // Action popup card open
-    await page.mouse.click(195, 422);
-    await page.getByTestId("popup-card").waitFor();
-    await page.waitForTimeout(600); // let the stagger finish
-    await page.screenshot({ path: `${SHOTS}/popup-phone.png` });
+    // Inline page input in edit state
+    const input = page.getByTestId("page-input");
+    await input.click();
+    await input.fill("4");
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: `${SHOTS}/page-input-phone.png` });
     await page.keyboard.press("Escape");
 
     // Bottom nav visible
@@ -73,6 +79,45 @@ test.describe("screenshots", () => {
       path: `${SHOTS}/settings-phone.png`,
       fullPage: true,
     });
+    await page.getByTestId("settings-back").click();
+
+    // Saved view, populated: bookmark item 2, note on the brass-lamp part
+    await page.getByTestId("reader-root").waitFor();
+    const input2 = page.getByTestId("page-input");
+    await input2.click();
+    await input2.fill("1");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(450);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.waitForTimeout(450);
+    {
+      const b = await page.getByTestId("current-item").boundingBox();
+      await page.mouse.click(b!.x + b!.width / 2, b!.y + b!.height / 2);
+      await page.getByTestId("popup-bookmark").click();
+      await page.keyboard.press("Escape");
+    }
+    await input2.click();
+    await input2.fill("2");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(450);
+    const cur2 = page.getByTestId("current-item");
+    for (let i = 0; i < 40 && !(await cur2.innerText()).includes("brass lamp"); i++)
+      await page.keyboard.press("ArrowDown");
+    await page.waitForTimeout(450);
+    {
+      const pb = await cur2.locator('[data-p="0"]').boundingBox();
+      await page.mouse.click(pb!.x + pb!.width / 2, pb!.y + pb!.height / 2);
+      await page.mouse.click(pb!.x + pb!.width / 2, pb!.y + pb!.height / 2);
+      await page.getByTestId("popup-note").click();
+      await page.getByTestId("note-textarea").fill("the lamp is a clue");
+      await page.getByTestId("note-save").click();
+      await page.keyboard.press("Escape");
+    }
+    await page.getByTestId("saved-btn").click();
+    await page.getByTestId("saved-page").waitFor();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOTS}/saved-phone.png` });
   });
 
   test("desktop: reader mid-page", async ({ page }) => {

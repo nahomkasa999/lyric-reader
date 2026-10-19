@@ -233,3 +233,129 @@ and how to change it. Nothing here is load-bearing — veto anything.
     uppercase via CSS, so `innerText` is "THE MIDNIGHT STAIRCASE" while the
     clipboard correctly gets "The Midnight Staircase". Asserting raw text
     is the right behaviour — pasting shouldn't inherit display casing.
+
+## v3: the user's own reader mechanics (Oct 19, 2026)
+
+40. **v3 throws away v2's three-zone stage; the reader IS his track now.**
+    Nahom rejected the v2 stage outright ("keep only the extractor; ALL the
+    UI is his"). The reader is now a faithful port of his code: item stream,
+    per-part stepping via his exact splitS, the translating track with his
+    place() centring rule (current part centred when a multi-part item is
+    taller than half the stage), his visibility window (far beyond I±1 / I−2),
+    his input (wheel 200ms lock / |deltaY|≥4, keys, 30px touch swipe,
+    click-first). Ported algorithms live in lib/parts.ts (splitS, exact) and
+    lib/types.ts (paginate rule, stepParts, progressOf). The engine that stays
+    ours: extract/segment/structure (file parsing), plus the v2-approved
+    chrome (Settings page, auto-hiding nav, one-card popup).
+    → Change: components/Reader.tsx rewritten; lib/types.ts rewritten.
+
+41. **Pagination = his rule for EPUB/TXT/paste: heading or 7 items.**
+    The v2 14-sentence pages are gone. PDFs keep real extracted pages.
+    Headings are never sentence-split. Old stored books (pages shape) migrate
+    transparently on load (migrateBook in lib/types.ts, persisted once).
+    → Change: paginateBlocks/assignPages in lib/types.ts.
+
+42. **Position is (item, part), persisted as such.**
+    Old {page, sent} progress records convert to the first item of the
+    saved page (migratePosition). v2's sentence-id marks no longer match the
+    new "itemIndex:partIndex" part keys — they simply don't render, which is
+    acceptable for a pre-release; no migration was built. Marks die with the
+    book as before. → Change: lib/db.ts marks store key format.
+
+43. **No page popup at all — inline editable page number in the top bar.**
+    The bar reads `Page [ 3 ] / 10 · 42%` where the number is a borderless
+    field: click/focus selects it, type, Enter or blur commits (clamps
+    1..N, jumps to that page's first item), Esc cancels and restores,
+    non-numeric reverts. Both jump sheets (his slider sheet and v2's typed
+    sheet) are deleted, section/bookmark lists with them. The progress
+    percentage is item-based like his.
+    → Change: the page-input in Reader.tsx.
+
+44. **Popup: his anchor + trigger, our one-card + stagger.**
+    Double-tap the active part (or single tap on a single-part sentence)
+    opens ONE card anchored below the item (+16px, flips above near the
+    bottom, right-aligned, clamped) — his openPop math exactly. The three
+    rows (Highlight/Bookmark/Copy, icon + label) keep v2's staggered
+    entrance. Actions target the PART: highlight wash and bookmark dot render
+    on that part span only; copy copies the part's text. Esc closes; stepping
+    closes (his code ignored arrows while the popup was open — wheel/swipe/
+    tap steps now also dismiss it, which is the saner reading of his intent).
+    → Change: popup block in Reader.tsx.
+
+45. **Popup focus effect (his .fx): blur chrome, zoom the sentence.**
+    Opening the popup adds .fx to the reader root: top bar / progress /
+    bottom nav blur(10px), non-current sentences blur(9px), non-active parts
+    of the current sentence blur(7px), and the current sentence scales 1.06
+    (origin left center) — the "floating" feeling from his CSS. Filter and
+    transform transitions are ~0.3s; closing removes it all. Ported exactly
+    from his #reader.fx rules, mapped onto our class names.
+    → Change: .fx rules in index.css; `fx` class toggle in Reader.tsx.
+
+46. **Clicks are the primary input; taps never fight the nav.**
+    His click tree is ported verbatim: adjacent item → jump (forward = part
+    0, back = last part), other part of current sentence → select it, double
+    tap / single-part tap → popup. The bottom hot-zone tap reveals the nav
+    instead of stepping (v2 behaviour kept). `cursor: pointer` on sentences
+    is a deliberate addition (his CSS has none) so desktop users see the
+    clickability. → Change: native click handler in Reader.tsx.
+
+47. **Spacing kept at his values: 3 sentences visible, lots of air.**
+    Item margin `max(2.6em, 18vh)` + the far window (I−2..I+1) + the stage
+    mask reproduce his "one top, one middle, one bottom" look. The old v2
+    desktop 56rem content cap is gone (his CSS has none). Verified in the v3
+    screenshots rather than by assertion.
+
+48. **Bottom nav «/» = his chapter jumps (heading items).**
+    « = nearest heading item before the current one (else item 0), » = first
+    heading item after it; both land at part 0. ‹/› = prev/next page's first
+    item. The v2 auto-hide mechanics (hover, hot-zone tap, page-change
+    reveal, 2.5s hide) are unchanged.
+    → Change: chap() in Reader.tsx.
+
+49. **Settings model aligned to his S, Lexend added properly.**
+    Highlight palette is now his exact 5 oklch colours (indigo .62/.2/266,
+    amber .85/.17/90, green .75/.18/150, red .68/.2/20, pink .72/.19/330).
+    Font chips render in their own typeface (his detail). Lexend ships
+    offline: @fontsource/lexend added as a dependency, its 400/600 latin
+    woff2 copied by scripts/copy-fonts.mjs and @font-face'd in index.css.
+    Font order: Geist, Noto Serif Georgian, Geist Mono, Lexend, System.
+    → Change: lib/settings.tsx, Settings.tsx, copy-fonts.mjs, index.css.
+
+50. **Long-sentence shrink tiers are gone.** v2 shrank the font for long
+    sentences; v3 doesn't need it — his part-splitting + part-centring
+    handles long items by design. Current item is always the main size.
+
+## v3 additions: notes + Saved view (Oct 19, 2026, pre-launch)
+
+51. **Popup card now has four rows: Bookmark, Highlight, Note, Copy.**
+    Note was the user's explicit addition; the order is his. The stagger
+    extends to 200ms for the fourth row. Tapping Note swaps the card to a
+    small editor (textarea prefilled with the existing note, Save / Cancel /
+    Delete when a note exists) and back to the rows on save.
+    → Change: rows array + note editor in Reader.tsx.
+
+52. **Notes are per-part, stored additively in the marks store.**
+    PartMark gains `note: string | null` (old records without the field read
+    as null); setNote() upserts, and deletes the record entirely when all of
+    highlight/bookmark/note are empty, to keep the store tidy. No DB version
+    bump needed — the store shape is unchanged.
+    → Change: lib/db.ts (PartMark.note, setNote).
+
+53. **Note indicator: a small dot in the highlight colour after the part.**
+    Bookmark already owns the primary-colour dot; the note dot uses
+    --lr-hl so the two marks are visually distinct but related. Tasteful and
+    tiny at trail sizes. → Change: .pt.nt::after in index.css.
+
+54. **Saved view: one place for a book's bookmarks, highlights and notes.**
+    Dedicated screen listing every marked part in reading order: type icon(s)
+    (bookmark/highlight/note, in popup row order), the part's text snippet,
+    its page number, and the note text when present. Tapping an entry opens
+    the reader at that exact item+part (implemented by persisting the
+    position first, then opening the book — the reader restores it as the
+    saved position). Entry points: bookmark icon in the reader top bar, and a
+    bookmark icon in the library header that opens Saved for the last-open
+    book (falling back to the newest book; hidden when the library is
+    empty). Empty state: "Nothing saved yet — …". No delete-from-list (he
+    said skip unless trivial — deletion lives in the popup editor).
+    → Change: components/Saved.tsx, App.tsx (saved view + jumpToSaved),
+    Library.tsx (header button), Reader.tsx (top-bar button).

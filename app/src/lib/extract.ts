@@ -1,27 +1,21 @@
 // Extraction pipeline: file bytes -> BookDoc. Fully client-side.
+// (Untouched in v3 except the model: blocks now flatten into the item
+// stream and take the user's page rule — headings or 7 items per page.)
 import JSZip from "jszip";
 import { pdfjsLib } from "./pdfWorker";
-import type { Block, BookDoc } from "./types";
-import { nextId, paginate } from "./types";
+import type { Block, BookDoc, Item } from "./types";
+import { flattenBlocks, nextId, paginateBlocks } from "./types";
 import { splitSentences } from "./segment";
 import { parseTextBlocks } from "./structure";
 
-/** Non-PDF books are paginated into ~14-sentence pages (see DECISIONS.md). */
-export const SENTENCES_PER_PAGE = 14;
-
 export type Source = "upload" | "paste" | "sample";
 
-function makeBook(
-  title: string,
-  pages: BookDoc["pages"],
-  source: Source,
-): BookDoc {
-  const total = pages.reduce((n, p) => n + p.sentences.length, 0);
+function makeBook(title: string, items: Item[], source: Source): BookDoc {
   return {
     id: nextId("book"),
     title: title || "Untitled",
-    pages,
-    totalSentences: total,
+    items,
+    totalSentences: items.length,
     createdAt: Date.now(),
     source,
   };
@@ -33,8 +27,7 @@ export async function extractTxt(
   source: Source = "upload",
 ): Promise<BookDoc> {
   const blocks = parseTextBlocks(text);
-  const pages = paginate(blocks, SENTENCES_PER_PAGE, splitSentences);
-  return makeBook(title, pages, source);
+  return makeBook(title, paginateBlocks(blocks, splitSentences), source);
 }
 
 /* ---------------- PDF ---------------- */
@@ -81,20 +74,20 @@ export async function extractPdf(
   title: string,
 ): Promise<BookDoc> {
   const pdf = await pdfjsLib.getDocument({ data }).promise;
-  const pages: BookDoc["pages"] = [];
+  const items: Item[] = [];
   for (let n = 1; n <= pdf.numPages; n++) {
     const page = await pdf.getPage(n);
     const lines = await pageLines(page);
     const blocks = parseTextBlocks(lines.join("\n"));
-    const chunked = paginate(blocks, Number.MAX_SAFE_INTEGER, splitSentences, () => `Page ${n}`);
-    // One reader page per PDF page (see DECISIONS.md)
-    pages.push({ label: `Page ${n}`, sentences: chunked.flatMap((p) => p.sentences) });
+    // One reader page per PDF page (the user's rule keeps real pages).
+    const drafts = flattenBlocks(blocks, splitSentences);
+    for (const d of drafts) items.push({ ...d, page: n - 1 });
     page.cleanup();
   }
   // pdf.destroy() exists at runtime in pdfjs-dist v4/v5; the bundled
   // types omit it, so call it defensively.
   await (pdf as unknown as { destroy?: () => Promise<void> }).destroy?.().catch(() => {});
-  return makeBook(title, pages, "upload");
+  return makeBook(title, items, "upload");
 }
 
 /* ---------------- EPUB ---------------- */
@@ -203,8 +196,7 @@ export async function extractEpub(
     const body = doc.querySelector("body");
     if (body) walkEpubBody(body, 0, blocks);
   }
-  const pages = paginate(blocks, SENTENCES_PER_PAGE, splitSentences);
-  return makeBook(title, pages, "upload");
+  return makeBook(title, paginateBlocks(blocks, splitSentences), "upload");
 }
 
 export async function extractFile(file: File): Promise<BookDoc> {

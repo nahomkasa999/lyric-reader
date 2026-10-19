@@ -13,6 +13,7 @@ mkdirSync(out, { recursive: true });
 const geistSans = join(appRoot, "node_modules", "geist", "dist", "fonts", "geist-sans");
 const geistMono = join(appRoot, "node_modules", "geist", "dist", "fonts", "geist-mono");
 const noto = join(appRoot, "node_modules", "@fontsource", "noto-serif-georgian", "files");
+const lexend = join(appRoot, "node_modules", "@fontsource", "lexend", "files");
 
 const copies = [
   [join(geistSans, "Geist-Regular.woff2"), "Geist-Regular.woff2"],
@@ -26,6 +27,8 @@ const copies = [
     join(noto, "noto-serif-georgian-latin-ext-600-normal.woff2"),
     "NotoSerifGeorgian-SemiBold-latinext.woff2",
   ],
+  [join(lexend, "lexend-latin-400-normal.woff2"), "Lexend-Regular.woff2"],
+  [join(lexend, "lexend-latin-600-normal.woff2"), "Lexend-SemiBold.woff2"],
 ];
 
 for (const [src, name] of copies) {

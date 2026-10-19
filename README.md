@@ -37,18 +37,29 @@ offline afterwards.
 - **Library:** upload a PDF, EPUB or TXT, or paste text. A sample book
   (*Sample — The Midnight Staircase*, 60 sentences) is preloaded so you can
   try the reader instantly.
-- **Reader:** swipe up/down, tap the bottom/top third, scroll the mouse
-  wheel, or use arrow keys / space — each gesture moves exactly one sentence.
-  The top bar shows `← Library`, the page as `3 / 7`, A−/A+ and a settings
-  gear. Tap the page number to **type** a page and jump to it (sections and
-  bookmarks are listed there too). Tap the **middle third** (the current
-  sentence) to open the action card: Highlight, Bookmark, Copy — these are
-  saved per book. The `« ‹ › »` page bar at the bottom hides itself; hover
+- **Reader:** the book is an item stream on a scrolling track — the
+  current sentence stays centred and bright, the trail sits above in muted
+  colour, the next below. Long sentences split into parts: each gesture
+  moves one part, the active part stays bright while its siblings sit muted.
+  Clicks are the primary input: tap the next/previous sentence to step, tap
+  a muted half to activate it, double-tap the active part (or single-tap a
+  short sentence) for the action card. Wheel, arrow keys and swipe work too.
+  The top bar shows `← Library`, `Page [ 3 ] / 10 · 42%` (the number is
+  editable right in the bar — type and hit Enter), A−/A+, a Saved button and
+  a settings gear. The `« ‹ › »` page bar at the bottom hides itself; hover
   or tap near the bottom edge to bring it back.
-- **Settings:** the gear opens a dedicated settings page — font, sentence
-  sizes, text colours and opacity, highlight colour, with a live preview.
-  Settings persist on-device.
-- Your place (book + page + sentence) is saved on-device and restored on
+- **Action card:** Bookmark, Highlight, Note, Copy — one card anchored at
+  the sentence, rows staggering in. Opening it blurs the chrome and zooms
+  the sentence slightly (the focus effect). Marks and notes are per-part and
+  saved per book; note parts get a small dot.
+- **Saved:** the bookmark icon (reader top bar, library header) opens your
+  saved bookmarks, highlights and notes for the book — tap any entry to
+  jump the reader to that exact part.
+- **Settings:** the gear opens a dedicated settings page — font (Geist /
+    Serif / Mono / Lexend / System), sentence sizes, text colours and
+    opacity, highlight colour, with a live preview. Settings persist
+    on-device.
+- Your place (book + item + part) is saved on-device and restored on
   reopen — even offline.
 
 ## Architecture (brief)
@@ -59,13 +70,15 @@ app/src/
     segment.ts    sentence splitter (Intl.Segmenter + abbreviation rules)
     structure.ts  plain-text -> blocks (heading/para/bullet + level)
     extract.ts    PDF (pdfjs-dist) / EPUB (jszip + OPF walker) / TXT -> BookDoc
-    types.ts      Book/Page/Sentence model, step/trail/progress logic
-    db.ts         IndexedDB: books, progress, highlights/bookmarks (marks)
+    types.ts      item stream model, per-part stepping, his page rule
+    parts.ts      splitS: long sentences -> parts (his exact algorithm)
+    db.ts         IndexedDB: books, progress, per-part marks + notes
     settings.tsx  reader settings (persisted) as CSS custom properties
     sample.ts     the bundled sample book
   components/
     Library.tsx   upload / paste / book list with progress
-    Reader.tsx    the three-zone lyric reader + gestures + popup card
+    Reader.tsx    his track reader: items, parts, clicks, popup, page field
+    Saved.tsx     saved bookmarks / highlights / notes for a book
     Settings.tsx  the settings page (font, sizes, colours, preview)
     App.tsx       shell, dark mode, sample seeding, last-book resume
 ```
@@ -76,8 +89,8 @@ is pure and unit-tested; the Reader is a thin view over it.
 ## Tests
 
 ```bash
-npx vitest run                  # unit: 30 tests
-npx playwright test              # e2e: 23 interaction + 2 screenshot suites
+npx vitest run                  # unit: 35 tests
+npx playwright test              # e2e: 33 interaction + 2 screenshot suites
 ```
 
 Results are recorded in [TEST_REPORT.md](TEST_REPORT.md); screenshots in

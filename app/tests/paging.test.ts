@@ -1,100 +1,122 @@
 import { describe, expect, it } from "vitest";
 import {
-  paginate,
+  assignPages,
+  migratePosition,
+  paginateBlocks,
   progressOf,
-  step,
-  trailSentences,
-  upcomingSentences,
+  stepParts,
   type Block,
   type BookDoc,
-  type Page,
+  type Item,
 } from "../src/lib/types";
 
-const S = (text: string) => ({ id: text, text, kind: "para" as const, level: 0 });
-const pages: Page[] = [
-  { label: "Page 1", sentences: [S("a"), S("b"), S("c")] },
-  { label: "Page 2", sentences: [S("d"), S("e")] },
-];
-const book: BookDoc = {
-  id: "b",
-  title: "T",
-  pages,
-  totalSentences: 5,
-  createdAt: 0,
-  source: "sample",
-};
-
-describe("step()", () => {
-  it("moves one sentence forward within a page", () => {
-    expect(step(pages, { page: 0, sent: 0 }, 1)).toEqual({ page: 0, sent: 1 });
-  });
-
-  it("crosses to the next page at the end, clearing the trail", () => {
-    expect(step(pages, { page: 0, sent: 2 }, 1)).toEqual({ page: 1, sent: 0 });
-  });
-
-  it("clamps at the end of the book", () => {
-    expect(step(pages, { page: 1, sent: 1 }, 1)).toEqual({ page: 1, sent: 1 });
-  });
-
-  it("crosses back to the previous page's last sentence", () => {
-    expect(step(pages, { page: 1, sent: 0 }, -1)).toEqual({ page: 0, sent: 2 });
-  });
-
-  it("clamps at the start of the book", () => {
-    expect(step(pages, { page: 0, sent: 0 }, -1)).toEqual({ page: 0, sent: 0 });
-  });
+const P = (over: Partial<Item> = {}): Item => ({
+  kind: "para",
+  depth: 0,
+  text: "x",
+  page: 0,
+  paraStart: false,
+  ...over,
 });
 
-describe("trail / upcoming", () => {
-  it("trail holds the already-read sentences of the current page", () => {
-    expect(trailSentences(pages, { page: 0, sent: 2 }).map((s) => s.text)).toEqual([
-      "a",
-      "b",
-    ]);
-  });
-
-  it("trail is empty at a page start (clean slate after boundary)", () => {
-    expect(trailSentences(pages, { page: 1, sent: 0 })).toEqual([]);
-  });
-
-  it("trail is fully restored when scrolling back across the boundary", () => {
-    // At page 2 start, step back -> page 1 last sentence -> trail = a, b
-    const back = step(pages, { page: 1, sent: 0 }, -1);
-    expect(back).toEqual({ page: 0, sent: 2 });
-    expect(trailSentences(pages, back).map((s) => s.text)).toEqual(["a", "b"]);
-  });
-
-  it("upcoming holds the sentences still to come on the page", () => {
-    expect(
-      upcomingSentences(pages, { page: 0, sent: 0 }).map((s) => s.text),
-    ).toEqual(["b", "c"]);
-  });
-});
-
-describe("paginate()", () => {
-  it("chunks sentences into pages of the given size", () => {
+describe("paginateBlocks() — the user's page rule", () => {
+  it("starts a new page at a heading", () => {
     const blocks: Block[] = [
-      { kind: "para", level: 0, text: "One. Two. Three. Four. Five." },
+      { kind: "heading", level: 1, text: "Chapter One" },
+      { kind: "para", level: 0, text: "One. Two." },
+      { kind: "heading", level: 1, text: "Chapter Two" },
+      { kind: "para", level: 0, text: "Three." },
     ];
-    const ps = paginate(blocks, 2, (t) => t.split(/(?<=[.])\s+/));
-    expect(ps.length).toBe(3);
-    expect(ps[0].sentences.map((s) => s.text)).toEqual(["One.", "Two."]);
-    expect(ps[2].sentences.map((s) => s.text)).toEqual(["Five."]);
+    const items = paginateBlocks(blocks, (t) => t.split(/(?<=[.])\s+/));
+    expect(items.map((i) => i.page)).toEqual([0, 0, 0, 1, 1]);
+    expect(items[0].kind).toBe("heading");
+    expect(items[3].kind).toBe("heading");
   });
 
-  it("keeps headings as their own sentence", () => {
-    const blocks: Block[] = [{ kind: "heading", level: 1, text: "Hi there. Wow." }];
-    const ps = paginate(blocks, 14, (t) => t.split(" "));
-    expect(ps[0].sentences.length).toBe(1);
-    expect(ps[0].sentences[0].kind).toBe("heading");
+  it("caps pages at 7 items", () => {
+    const blocks: Block[] = [
+      { kind: "para", level: 0, text: Array.from({ length: 10 }, (_, i) => `S${i}.`).join(" ") },
+    ];
+    const items = paginateBlocks(blocks, (t) => t.split(/(?<=[.])\s+/));
+    expect(items.length).toBe(10);
+    expect(items.slice(0, 7).every((i) => i.page === 0)).toBe(true);
+    expect(items.slice(7).every((i) => i.page === 1)).toBe(true);
+  });
+
+  it("keeps headings whole (one item) and marks paragraph starts", () => {
+    const blocks: Block[] = [
+      { kind: "heading", level: 1, text: "Hi there. Wow." },
+      { kind: "para", level: 0, text: "First. Second." },
+    ];
+    const items = paginateBlocks(blocks, (t) => t.split(/(?<=[.])\s+/));
+    expect(items[0]).toMatchObject({ kind: "heading", text: "Hi there. Wow." });
+    expect(items[1]).toMatchObject({ kind: "para", paraStart: true });
+    expect(items[2]).toMatchObject({ kind: "para", paraStart: false });
+  });
+
+  it("assignPages never leaves an empty book", () => {
+    expect(assignPages([])).toEqual([]);
   });
 });
 
-describe("progressOf()", () => {
-  it("computes overall progress", () => {
-    expect(progressOf(book, { page: 0, sent: 0 })).toBe(0);
-    expect(progressOf(book, { page: 0, sent: 2 })).toBeCloseTo(2 / 5);
-    expect(progressOf(book, { page: 1, sent: 1 })).toBeCloseTo(4 / 5);
+describe("stepParts() — per-part stepping", () => {
+  // items: [2 parts][1 part][3 parts]
+  const parts = [["a1", "a2"], ["b1"], ["c1", "c2", "c3"]];
+
+  it("moves part-first within an item", () => {
+    expect(stepParts(parts, { item: 0, part: 0 }, 1)).toEqual({ item: 0, part: 1 });
+  });
+
+  it("moves to the next item at part 0", () => {
+    expect(stepParts(parts, { item: 0, part: 1 }, 1)).toEqual({ item: 1, part: 0 });
+  });
+
+  it("going back lands on the previous item's LAST part", () => {
+    expect(stepParts(parts, { item: 2, part: 0 }, -1)).toEqual({ item: 1, part: 0 });
+    expect(stepParts(parts, { item: 1, part: 0 }, -1)).toEqual({ item: 0, part: 1 });
+  });
+
+  it("clamps at both book ends", () => {
+    expect(stepParts(parts, { item: 2, part: 2 }, 1)).toEqual({ item: 2, part: 2 });
+    expect(stepParts(parts, { item: 0, part: 0 }, -1)).toEqual({ item: 0, part: 0 });
+  });
+});
+
+describe("progressOf() — item-based", () => {
+  const book = (n: number): BookDoc => ({
+    id: "b",
+    title: "T",
+    items: Array.from({ length: n }, (_, i) => P({ text: `s${i}` })),
+    totalSentences: n,
+    createdAt: 0,
+    source: "sample",
+  });
+
+  it("is 0 at the start and approaches 1 at the end", () => {
+    const b = book(5);
+    expect(progressOf(b, { item: 0, part: 0 })).toBe(0);
+    expect(progressOf(b, { item: 2, part: 0 })).toBeCloseTo(2 / 4);
+    expect(progressOf(b, { item: 4, part: 0 })).toBeCloseTo(1);
+  });
+});
+
+describe("migratePosition()", () => {
+  const items = [
+    P({ page: 0, text: "a" }),
+    P({ page: 0, text: "b" }),
+    P({ page: 1, text: "c" }),
+  ];
+
+  it("passes new positions through", () => {
+    expect(migratePosition(items, { item: 2, part: 1 })).toEqual({ item: 2, part: 1 });
+  });
+
+  it("converts old {page, sent} records to the first item of that page", () => {
+    expect(migratePosition(items, { page: 1, sent: 0 })).toEqual({ item: 2, part: 0 });
+    expect(migratePosition(items, { page: 0, sent: 1 })).toEqual({ item: 0, part: 0 });
+  });
+
+  it("clamps out-of-range saved positions", () => {
+    expect(migratePosition(items, { item: 99, part: 0 })).toEqual({ item: 2, part: 0 });
   });
 });

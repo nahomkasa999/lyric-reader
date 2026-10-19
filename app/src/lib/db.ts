@@ -1,5 +1,6 @@
-// Minimal IndexedDB storage (no dependency): books + reading progress.
+// Minimal IndexedDB storage (no dependency): books + reading progress + marks.
 import type { BookDoc, Position } from "./types";
+import { migrateBook } from "./types";
 
 const DB_NAME = "lyric-reader";
 const DB_VERSION = 2;
@@ -13,8 +14,6 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore("books", { keyPath: "id" });
       if (!db.objectStoreNames.contains("progress"))
         db.createObjectStore("progress");
-      // v2: per-sentence marks (highlights + bookmarks), keyed
-      // `${bookId}:${sentenceId}` so marks are easy to clear per book.
       if (!db.objectStoreNames.contains("marks"))
         db.createObjectStore("marks", { keyPath: "id" });
     };
@@ -47,8 +46,16 @@ export async function saveBook(book: BookDoc): Promise<void> {
   await tx("books", "readwrite", (s) => s.put(book));
 }
 
+/** Stored books in the old (v1/v2) pages shape migrate transparently. */
 export async function getBook(id: string): Promise<BookDoc | undefined> {
-  return tx("books", "readonly", (s) => s.get(id));
+  const raw = await tx<unknown>("books", "readonly", (s) => s.get(id));
+  if (!raw) return undefined;
+  const book = migrateBook(raw);
+  // Persist the migrated shape once so this is a one-time cost.
+  if (!(raw as Record<string, unknown>).items) {
+    tx("books", "readwrite", (s) => s.put(book)).catch(() => {});
+  }
+  return book;
 }
 
 export interface BookMeta {
@@ -65,13 +72,16 @@ export async function listBooks(): Promise<BookMeta[]> {
     const t = db.transaction("books", "readonly");
     const req = t.objectStore("books").getAll();
     req.onsuccess = () => {
-      const books = (req.result as BookDoc[]).map((b) => ({
-        id: b.id,
-        title: b.title,
-        totalSentences: b.totalSentences,
-        createdAt: b.createdAt,
-        source: b.source,
-      }));
+      const books = (req.result as unknown[]).map((raw) => {
+        const b = migrateBook(raw);
+        return {
+          id: b.id,
+          title: b.title,
+          totalSentences: b.totalSentences,
+          createdAt: b.createdAt,
+          source: b.source,
+        };
+      });
       books.sort((a, b) => b.createdAt - a.createdAt);
       resolve(books);
       db.close();
@@ -89,32 +99,45 @@ export async function deleteBook(id: string): Promise<void> {
   await deleteMarksForBook(id);
 }
 
-export interface SentenceMark {
-  /** `${bookId}:${sentenceId}` */
+export interface PartMark {
+  /** `${bookId}:${itemIndex}:${partIndex}` */
   id: string;
   bookId: string;
-  sentenceId: string;
+  /** part key, e.g. "12:1" */
+  partKey: string;
   highlight: boolean;
   bookmark: boolean;
+  /** reader note text, null when none */
+  note: string | null;
 }
 
-const markId = (bookId: string, sentenceId: string) =>
-  `${bookId}:${sentenceId}`;
+export interface MarkState {
+  highlight: boolean;
+  bookmark: boolean;
+  note: string | null;
+}
 
-/** All marks for a book, keyed by sentence id. */
+
+
+const markId = (bookId: string, partKey: string) => `${bookId}:${partKey}`;
+
+/** All marks for a book, keyed by part key ("itemIndex:partIndex"). */
 export async function getMarks(
   bookId: string,
-): Promise<Record<string, { highlight: boolean; bookmark: boolean }>> {
+): Promise<Record<string, MarkState>> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const t = db.transaction("marks", "readonly");
     const req = t.objectStore("marks").getAll();
     req.onsuccess = () => {
-      const out: Record<string, { highlight: boolean; bookmark: boolean }> =
-        {};
-      for (const m of req.result as SentenceMark[]) {
+      const out: Record<string, MarkState> = {};
+      for (const m of req.result as PartMark[]) {
         if (m.bookId === bookId) {
-          out[m.sentenceId] = { highlight: m.highlight, bookmark: m.bookmark };
+          out[m.partKey] = {
+            highlight: !!m.highlight,
+            bookmark: !!m.bookmark,
+            note: m.note ?? null,
+          };
         }
       }
       resolve(out);
@@ -127,41 +150,110 @@ export async function getMarks(
   });
 }
 
-/** Toggle one kind of mark on a sentence; returns the sentence's marks. */
+function readMark(
+  store: IDBObjectStore,
+  id: string,
+  bookId: string,
+  partKey: string,
+): Promise<PartMark> {
+  return new Promise((resolve, reject) => {
+    const get = store.get(id);
+    get.onsuccess = () => {
+      const cur = (get.result as PartMark | undefined) ?? {
+        id,
+        bookId,
+        partKey,
+        highlight: false,
+        bookmark: false,
+        note: null,
+      };
+      // Tolerate records written before the note field existed.
+      if (cur.note === undefined) cur.note = null;
+      resolve(cur);
+    };
+    get.onerror = () => reject(get.error);
+  });
+}
+
+function stateOf(m: PartMark): MarkState {
+  return { highlight: m.highlight, bookmark: m.bookmark, note: m.note };
+}
+
+/** Toggle one kind of mark on a part; returns that part's marks. */
 export async function toggleMark(
   bookId: string,
-  sentenceId: string,
+  partKey: string,
   kind: "highlight" | "bookmark",
-): Promise<{ highlight: boolean; bookmark: boolean }> {
-  const id = markId(bookId, sentenceId);
+): Promise<MarkState> {
+  const id = markId(bookId, partKey);
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const t = db.transaction("marks", "readwrite");
     const store = t.objectStore("marks");
-    const get = store.get(id);
-    get.onsuccess = () => {
-      const cur = (get.result as SentenceMark | undefined) ?? {
-        id,
-        bookId,
-        sentenceId,
-        highlight: false,
-        bookmark: false,
-      };
-      cur[kind] = !cur[kind];
-      const put = store.put(cur);
-      put.onsuccess = () => {
-        resolve({ highlight: cur.highlight, bookmark: cur.bookmark });
+    readMark(store, id, bookId, partKey).then(
+      (cur) => {
+        cur[kind] = !cur[kind];
+        const put = store.put(cur);
+        put.onsuccess = () => {
+          resolve(stateOf(cur));
+          db.close();
+        };
+        put.onerror = () => {
+          reject(put.error);
+          db.close();
+        };
+      },
+      (e) => {
+        reject(e);
         db.close();
-      };
-      put.onerror = () => {
-        reject(put.error);
+      },
+    );
+  });
+}
+
+/**
+ * Set (or clear, with null/empty) the note on a part.
+ * Records whose marks are all empty are deleted to keep the store tidy.
+ */
+export async function setNote(
+  bookId: string,
+  partKey: string,
+  text: string | null,
+): Promise<MarkState> {
+  const id = markId(bookId, partKey);
+  const note = text && text.trim() ? text.trim() : null;
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction("marks", "readwrite");
+    const store = t.objectStore("marks");
+    readMark(store, id, bookId, partKey).then(
+      (cur) => {
+        cur.note = note;
+        const done = () => {
+          resolve(stateOf(cur));
+          db.close();
+        };
+        if (!cur.highlight && !cur.bookmark && cur.note == null) {
+          const del = store.delete(id);
+          del.onsuccess = done;
+          del.onerror = () => {
+            reject(del.error);
+            db.close();
+          };
+        } else {
+          const put = store.put(cur);
+          put.onsuccess = done;
+          put.onerror = () => {
+            reject(put.error);
+            db.close();
+          };
+        }
+      },
+      (e) => {
+        reject(e);
         db.close();
-      };
-    };
-    get.onerror = () => {
-      reject(get.error);
-      db.close();
-    };
+      },
+    );
   });
 }
 
