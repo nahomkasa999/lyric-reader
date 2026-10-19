@@ -118,7 +118,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   // Action popup: which part it targets (null = closed).
   const [pop, setPop] = useState<{ i: number; p: number } | null>(null);
   const [copied, setCopied] = useState(false);
-  const [barVisible, setBarVisible] = useState(false);
+  // One shared visibility state for ALL chrome: top bar + progress + bottom
+  // nav. Default = hidden while reading (v3.1: the user's "full focus" ask).
+  const [chromeVisible, setChromeVisible] = useState(false);
   const [noteEditing, setNoteEditing] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   // Inline page-number editing.
@@ -142,8 +144,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const cancelEditRef = useRef(false);
   const lastTap = useRef<{ t: number; key: string }>({ t: 0, key: "" });
   const moved = useRef(false);
-  const barTimer = useRef<number | null>(null);
-  const barVisibleRef = useRef(false);
+  const chromeTimer = useRef<number | null>(null);
+  const chromeRef = useRef(false);
 
   const items: Item[] = book?.items ?? [];
   // Parts per item (his splitS), cached per book.
@@ -179,6 +181,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       if (cancelled) return;
       setBook(b);
       setMarks(savedMarks);
+      // First open: flash the chrome briefly so the user sees where
+      // everything is, then it hides itself for full-focus reading.
+      showChromeRef.current(1600);
       if (saved) {
         const m = migratePosition(b.items, saved);
         const pl = splitS(b.items[m.item]?.text ?? "");
@@ -211,24 +216,34 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     };
   }, [book, bookId, pos]);
 
-  // --- Bottom nav show/hide ---
-  const showBar = useCallback((ms = 2500) => {
-    barVisibleRef.current = true;
-    setBarVisible(true);
-    if (barTimer.current) window.clearTimeout(barTimer.current);
-    barTimer.current = window.setTimeout(() => {
-      barVisibleRef.current = false;
-      setBarVisible(false);
+  // --- Unified chrome show/hide (v3.1): top bar + progress + bottom nav
+  // share one state and one idle timer. Hidden = opacity 0 + slide +
+  // visibility:hidden + no pointer events (an opacity-0 bar must never
+  // intercept taps — that bug bit us in v2). Never hides while the page
+  // input is being edited: the timer re-arms instead.
+  const showChrome = useCallback((ms = 2500) => {
+    chromeRef.current = true;
+    setChromeVisible(true);
+    if (chromeTimer.current) window.clearTimeout(chromeTimer.current);
+    chromeTimer.current = window.setTimeout(() => {
+      if (editingRef.current) {
+        showChrome(2500);
+        return;
+      }
+      chromeRef.current = false;
+      setChromeVisible(false);
     }, ms);
   }, []);
-  const hideBar = useCallback(() => {
-    if (barTimer.current) window.clearTimeout(barTimer.current);
-    barVisibleRef.current = false;
-    setBarVisible(false);
+  const hideChrome = useCallback(() => {
+    if (chromeTimer.current) window.clearTimeout(chromeTimer.current);
+    chromeRef.current = false;
+    setChromeVisible(false);
   }, []);
+  const showChromeRef = useRef(showChrome);
+  showChromeRef.current = showChrome;
   useEffect(
     () => () => {
-      if (barTimer.current) window.clearTimeout(barTimer.current);
+      if (chromeTimer.current) window.clearTimeout(chromeTimer.current);
     },
     [],
   );
@@ -258,9 +273,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       if (idx < 0) return;
       closePop();
       setPos({ item: idx, part: 0 });
-      showBar(1200);
+      showChrome(1200);
     },
-    [pages, items, closePop, showBar],
+    [pages, items, closePop, showChrome],
   );
   const toPageRef = useRef(toPage);
   toPageRef.current = toPage;
@@ -284,9 +299,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       if (t < 0) return;
       closePop();
       setPos({ item: t, part: 0 });
-      showBar(1200);
+      showChrome(1200);
     },
-    [items, closePop, showBar],
+    [items, closePop, showChrome],
   );
 
   // Briefly reveal the bar on every page change.
@@ -294,9 +309,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   useEffect(() => {
     if (prevPageRef.current !== curPage) {
       prevPageRef.current = curPage;
-      showBar(1200);
+      showChrome(1200);
     }
-  }, [curPage, showBar]);
+  }, [curPage, showChrome]);
 
   // --- Track placement (his place()): centre the current item; if it has
   // more than one part and is taller than half the stage, centre the
@@ -399,9 +414,16 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         return;
       }
       const t = e.target as HTMLElement;
-      // Bottom hot-zone: reveal the nav instead of stepping.
+      // Hot zones: taps at the top ~12% or bottom 15% of the stage reveal
+      // the chrome (unified, v3.1) instead of stepping — never advance here.
+      const stageRect = stage.getBoundingClientRect();
+      if (e.clientY - stageRect.top < stageRect.height * 0.12) {
+        showChrome();
+        return;
+      }
+      // Bottom hot-zone: reveal the chrome instead of stepping.
       if (e.clientY > window.innerHeight * 0.85) {
-        showBar();
+        showChrome();
         return;
       }
       const s = t.closest("[data-item]");
@@ -463,7 +485,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         e.preventDefault();
         goRef.current(-1);
       } else if (e.key === "Escape") {
-        hideBar();
+        hideChrome();
       }
     };
 
@@ -481,7 +503,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     };
     // `book` in deps: the effect must (re-)attach once the stage exists
     // after the book loads — on first render we bail out at `!stage`.
-  }, [book, closePop, openPop, showBar, hideBar]);
+  }, [book, closePop, openPop, showChrome, hideChrome]);
 
   // A− / A+ adjust the same main-size setting the slider edits.
   const adjustMainSize = useCallback(
@@ -642,15 +664,23 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       data-testid="reader-root"
       className={`reader-root fixed inset-0 flex flex-col overflow-hidden${pop ? " fx" : ""}`}
       onMouseMove={(e) => {
-        if (e.clientY > window.innerHeight * 0.85 && !barVisibleRef.current)
-          showBar();
+        // Desktop: hovering near the top or bottom edge reveals the chrome.
+        const r = stageRef.current?.getBoundingClientRect();
+        const nearTop = r ? e.clientY - r.top < r.height * 0.12 : false;
+        const nearBottom = e.clientY > window.innerHeight * 0.85;
+        if ((nearTop || nearBottom) && !chromeRef.current) showChrome();
       }}
     >
-      {/* Top bar: library | Page [n] / N · pct% | A− A+ gear */}
+      {/* Top bar: library | Page [n] / N · pct% | A− A+ gear.
+          Hides with the rest of the chrome (v3.1) but keeps its layout
+          space so the stage never resizes and the track never jumps. */}
       <header
         data-topbar
-        className="reader-bar shrink-0"
+        data-testid="top-bar"
+        className={`reader-bar shrink-0${chromeVisible ? "" : " chrome-hidden"}`}
         style={{ paddingTop: "calc(10px + env(safe-area-inset-top))" }}
+        onFocus={() => showChrome()}
+        onPointerDown={() => showChrome()}
       >
         <button onClick={onBack} aria-label="Back to library">
           ← Library
@@ -716,8 +746,12 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         </div>
       </header>
 
-      {/* Hairline progress */}
-      <div className="reader-progress shrink-0" aria-hidden>
+      {/* Hairline progress: visible with the chrome only (v3.1) */}
+      <div
+        data-testid="reader-progress"
+        className={`reader-progress shrink-0${chromeVisible ? "" : " chrome-hidden"}`}
+        aria-hidden
+      >
         <i style={{ width: `${pct}%` }} />
       </div>
 
@@ -774,9 +808,10 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       <nav
         data-bottom-nav
         data-testid="bottom-nav"
-        className={`bottom-nav${barVisible ? " show" : ""}`}
+        className={`bottom-nav${chromeVisible ? " show" : ""}`}
         aria-label="Page navigation"
-        onFocus={() => showBar()}
+        onFocus={() => showChrome()}
+        onPointerDown={() => showChrome()}
       >
         <button
           data-testid="nav-prev-section"

@@ -46,8 +46,9 @@ offline afterwards.
   short sentence) for the action card. Wheel, arrow keys and swipe work too.
   The top bar shows `← Library`, `Page [ 3 ] / 10 · 42%` (the number is
   editable right in the bar — type and hit Enter), A−/A+, a Saved button and
-  a settings gear. The `« ‹ › »` page bar at the bottom hides itself; hover
-  or tap near the bottom edge to bring it back.
+  a settings gear. Top bar, progress hairline and the `« ‹ › »` page bar all
+  auto-hide together for full-focus reading — tap or hover near the top or
+  bottom edge to bring them back.
 - **Action card:** Bookmark, Highlight, Note, Copy — one card anchored at
   the sentence, rows staggering in. Opening it blurs the chrome and zooms
   the sentence slightly (the focus effect). Marks and notes are per-part and

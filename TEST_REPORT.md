@@ -240,3 +240,55 @@ reference: spacing, mask fade, popup anchor and fx effect all match.
 - `nav-prev-page` / `nav-next-section` share the tested toPage/chap paths
   but aren't individually clicked.
 - Screenshots eyeballed by the builder, not by Nahom.
+
+## v3.1 — unified auto-hiding chrome (Oct 19, 2026, morning)
+
+Nahom's follow-up: the top bar + progress bar should disappear exactly like
+the bottom nav, for full-focus reading. Top bar, progress hairline and
+bottom « ‹ › » now share one visibility state and one 2.5s idle timer
+(Reader.tsx `chromeVisible`/`showChrome`; `.chrome-hidden` in index.css keeps
+layout space so the stage never resizes). Reveal: top ~12% hot-zone tap,
+bottom hot-zone tap, edge hover, 1.2s page-change flash, focus into chrome,
+1.6s on first open. The timer re-arms while the inline page input is being
+edited; the popup never forces chrome visible.
+
+### Unit (vitest) — 35/35 passed
+Unchanged from v3 (lib untouched).
+
+### E2E (Playwright, Chromium, phone 390×844, against vite preview of dist) — 40/40 passed
+- Core (6), clicks (6), fx (1), popup actions (3), inline page (4),
+  bottom nav (3), settings (5), notes (2), Saved (3): all green, with the
+  chrome-interacting tests updated to reveal the chrome first (existing
+  `revealChrome` helper).
+- New "unified auto-hiding chrome" (7): all hidden after settle; top
+  hot-zone tap reveals all three and they hide again; hot-zone tap does not
+  advance; reveal → type page → Enter jumps → chrome hides; no auto-hide
+  while the page input is being edited; middle sentence tap opens the popup
+  without revealing chrome; page change flashes the chrome.
+
+### Screenshots — 2/2 suites passed, 10 PNGs
+Regenerated: reader-mid (chrome-free stage), reader-parts (chrome-free),
+reader-desktop (chrome-free); new reader-chrome-phone (chrome revealed).
+Unchanged: library, popup, page-input, bottom-nav, settings, saved.
+Eyeballed: the chrome-free stage is pure black with the ~3-sentence spacing;
+the revealed shot shows top bar + progress + bottom nav together.
+
+### Bugs the new tests caught (all fixed)
+1. First e2e run failed 16 tests — the suite ran against a stale `dist`
+   (tests target `vite preview`); rebuilt and re-ran. Lesson: rebuild
+   before e2e, never trust `reuseExistingServer` to pick up source changes.
+2. "double-tap on the active part" flaked in full-suite runs: that test read
+   click coordinates inline without waiting out the .35s track transition,
+   so clicks landed on stale positions. Switched it to the `dblTapPart`
+   helper (which settles first), matching the other click tests.
+3. Test-side: `chromeHidden` waited for the `chrome-hidden` class, but the
+   screenshot caught the 250ms fade (and an unfinished .35s track slide)
+   mid-transition on desktop — screenshots now use `chromeSettled` (class +
+   600ms) for settled-stage shots.
+
+### Honest gaps
+- Chromium-only e2e (same as v1–v3); touch swipe covered by synthesized
+  pointer/touch events, not a physical device.
+- `nav-prev-page` / `nav-next-section` share the tested toPage/chap paths
+  but aren't individually clicked.
+- Screenshots eyeballed by the builder, not by Nahom.

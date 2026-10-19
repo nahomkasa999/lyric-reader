@@ -1,4 +1,4 @@
-import { test, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import path from "node:path";
 
 const SHOTS = path.resolve(
@@ -15,6 +15,31 @@ async function openSample(page: Page) {
   await page.waitForTimeout(500); // let the entry animation settle
 }
 
+/** Reveal the unified auto-hiding chrome (v3.1): tap the top hot-zone. */
+async function revealChrome(page: Page) {
+  await page.waitForTimeout(450); // let the track transition settle
+  const box = await page.getByTestId("stage").boundingBox();
+  if (!box) throw new Error("stage has no box");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.05);
+  await expect(page.getByTestId("top-bar")).toBeVisible();
+}
+
+/** Wait until the whole chrome is hidden — the chrome-free reading stage. */
+async function chromeHidden(page: Page) {
+  await expect(page.getByTestId("top-bar")).toHaveClass(/chrome-hidden/, {
+    timeout: 10000,
+  });
+}
+
+/**
+ * chromeHidden + a beat for the 250ms chrome fade AND any .35s track
+ * transition to finish, so screenshots catch the settled stage.
+ */
+async function chromeSettled(page: Page) {
+  await chromeHidden(page);
+  await page.waitForTimeout(600);
+}
+
 test.describe("screenshots", () => {
   test("phone: library, reader, split sentence, popup, page input, bottom nav, settings", async ({
     page,
@@ -28,20 +53,26 @@ test.describe("screenshots", () => {
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/library-phone.png` });
 
-    // Reader at a page start (3-zone spacing: past / current / next)
+    // Reader at a page start — chrome-free stage (3-sentence spacing)
     await openSample(page);
     const current = page.getByTestId("current-item");
     for (let i = 0; i < 40 && !(await current.innerText()).includes("edge of the stairs"); i++)
       await page.keyboard.press("ArrowDown");
-    await page.waitForTimeout(450);
+    await chromeSettled(page);
     await page.screenshot({ path: `${SHOTS}/reader-mid-phone.png` });
 
     // Split long sentence: navigate to the brass-lamp sentence, step to part 2
     for (let i = 0; i < 40 && !(await current.innerText()).includes("brass lamp"); i++)
       await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown"); // part 2 lit, part 1 muted
-    await page.waitForTimeout(450);
+    await chromeSettled(page);
     await page.screenshot({ path: `${SHOTS}/reader-parts-phone.png` });
+
+    // Chrome revealed (top hot-zone) — full chrome visible
+    await revealChrome(page);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${SHOTS}/reader-chrome-phone.png` });
+    await chromeHidden(page);
 
     // Action popup anchored at the sentence, with the fx focus effect
     // (double-tap part 0 of the split sentence — deterministic)
@@ -58,6 +89,7 @@ test.describe("screenshots", () => {
     await page.keyboard.press("Escape");
 
     // Inline page input in edit state
+    await revealChrome(page);
     const input = page.getByTestId("page-input");
     await input.click();
     await input.fill("4");
@@ -67,11 +99,12 @@ test.describe("screenshots", () => {
 
     // Bottom nav visible
     await page.mouse.click(195, 790);
-    await page.getByTestId("bottom-nav").waitFor();
+    await expect(page.getByTestId("bottom-nav")).toBeVisible();
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${SHOTS}/bottom-nav-phone.png` });
 
     // Settings page
+    await revealChrome(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("settings-page").waitFor();
     await page.waitForTimeout(300);
@@ -83,6 +116,7 @@ test.describe("screenshots", () => {
 
     // Saved view, populated: bookmark item 2, note on the brass-lamp part
     await page.getByTestId("reader-root").waitFor();
+    await revealChrome(page);
     const input2 = page.getByTestId("page-input");
     await input2.click();
     await input2.fill("1");
@@ -97,6 +131,7 @@ test.describe("screenshots", () => {
       await page.getByTestId("popup-bookmark").click();
       await page.keyboard.press("Escape");
     }
+    await revealChrome(page);
     await input2.click();
     await input2.fill("2");
     await page.keyboard.press("Enter");
@@ -114,6 +149,7 @@ test.describe("screenshots", () => {
       await page.getByTestId("note-save").click();
       await page.keyboard.press("Escape");
     }
+    await revealChrome(page);
     await page.getByTestId("saved-btn").click();
     await page.getByTestId("saved-page").waitFor();
     await page.waitForTimeout(300);
@@ -124,7 +160,7 @@ test.describe("screenshots", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await openSample(page);
     for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowDown");
-    await page.waitForTimeout(450);
+    await chromeSettled(page);
     await page.screenshot({ path: `${SHOTS}/reader-desktop.png` });
   });
 });

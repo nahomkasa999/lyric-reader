@@ -359,3 +359,23 @@ and how to change it. Nothing here is load-bearing — veto anything.
     said skip unless trivial — deletion lives in the popup editor).
     → Change: components/Saved.tsx, App.tsx (saved view + jumpToSaved),
     Library.tsx (header button), Reader.tsx (top-bar button).
+
+## v3.1: unified auto-hiding chrome (Oct 19, 2026, morning)
+
+55. **Top bar + progress now auto-hide exactly like the bottom nav.**
+    Nahom's ask ("so I get the full focus"): all three share ONE visibility
+    state and one 2.5s idle timer. Default = hidden while reading. Hidden
+    means opacity 0 + slide (bar up 8px, nav down) + visibility:hidden +
+    pointer-events:none — the v2 bug where opacity:0 alone still counted as
+    visible must never recur. Reveal triggers: tap the top ~12% hot-zone of
+    the stage (new, symmetric to the bottom hot-zone), bottom hot-zone tap,
+    hover near the top/bottom edge (desktop), 1.2s flash on page change,
+    keyboard focus entering any chrome control, 1.6s reveal on first open so
+    he can see where everything is. The bar keeps its layout space when
+    hidden so the stage never resizes and the track never jumps — no layout
+    shift on hide/show. The timer re-arms (doesn't hide) while the inline
+    page input is being edited. The popup doesn't force-show chrome on
+    close. Hot-zone taps never advance the sentence.
+    → Change: Reader.tsx (chromeVisible/showChrome/showChromeRef unified),
+    index.css (.chrome-hidden on .reader-bar/.reader-progress), e2e specs
+    (revealChrome helper; new "unified auto-hiding chrome" suite).

@@ -49,6 +49,27 @@ async function dblTapPart(
   await page.getByTestId("popup-card").waitFor();
 }
 
+/** Reveal the unified auto-hiding chrome (v3.1): tap the top hot-zone. */
+async function revealChrome(page: import("@playwright/test").Page) {
+  await settle(page);
+  const box = await page.getByTestId("stage").boundingBox();
+  if (!box) throw new Error("stage has no box");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.05);
+  await expect(page.getByTestId("top-bar")).toBeVisible();
+}
+
+/** Wait until top bar + progress + bottom nav are all hidden. */
+async function chromeHidden(page: import("@playwright/test").Page) {
+  await expect(page.getByTestId("top-bar")).toHaveClass(/chrome-hidden/, {
+    timeout: 8000,
+  });
+  await expect(page.getByTestId("reader-progress")).toHaveClass(
+    /chrome-hidden/,
+    { timeout: 8000 },
+  );
+  await expect(page.getByTestId("bottom-nav")).toBeHidden();
+}
+
 test.describe("Lyric Reader — core flows", () => {
   test("opens the sample book at the first item (a heading)", async ({ page }) => {
     await openSample(page);
@@ -180,14 +201,9 @@ test.describe("Lyric Reader — clicks are the primary input", () => {
   test("double-tap on the active part opens the popup", async ({ page }) => {
     await openSample(page);
     for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
-    const current = page.getByTestId("current-item");
-    const part = current.locator('[data-p="0"]');
-    const box = await part.boundingBox();
-    if (!box) throw new Error("no box");
-    const x = box.x + box.width / 2;
-    const y = box.y + box.height / 2;
-    await page.mouse.click(x, y);
-    await page.mouse.click(x, y);
+    // dblTapPart settles the .35s track transition first — stale coordinates
+    // made this test flaky in full-suite runs (v3.1 fix).
+    await dblTapPart(page, 0);
     await expect(page.getByTestId("popup-card")).toBeVisible();
   });
 
@@ -286,6 +302,7 @@ test.describe("Lyric Reader — inline page number", () => {
     page,
   }) => {
     await openSample(page);
+    await revealChrome(page);
     const input = page.getByTestId("page-input");
     await input.click();
     await input.fill("4");
@@ -298,6 +315,7 @@ test.describe("Lyric Reader — inline page number", () => {
 
   test("999 clamps to the last page; garbage reverts", async ({ page }) => {
     await openSample(page);
+    await revealChrome(page);
     const input = page.getByTestId("page-input");
     await input.click();
     await input.fill("999");
@@ -311,6 +329,7 @@ test.describe("Lyric Reader — inline page number", () => {
 
   test("Escape cancels the edit and restores the number", async ({ page }) => {
     await openSample(page);
+    await revealChrome(page);
     const input = page.getByTestId("page-input");
     await input.click();
     await input.fill("5");
@@ -359,11 +378,104 @@ test.describe("Lyric Reader — bottom nav", () => {
   });
 });
 
+test.describe("Lyric Reader — unified auto-hiding chrome", () => {
+  test("after settle, top bar + progress + bottom nav are all hidden", async ({
+    page,
+  }) => {
+    await openSample(page);
+    await chromeHidden(page);
+  });
+
+  test("top hot-zone tap reveals all chrome; it hides again on its own", async ({
+    page,
+  }) => {
+    await openSample(page);
+    await chromeHidden(page);
+    const stage = page.getByTestId("stage");
+    const box = await stage.boundingBox();
+    if (!box) throw new Error("stage has no box");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.05);
+    await expect(page.getByTestId("top-bar")).toBeVisible();
+    await expect(page.getByTestId("reader-progress")).toBeVisible();
+    await expect(page.getByTestId("bottom-nav")).toBeVisible();
+    await chromeHidden(page); // auto-hide after 2.5s
+  });
+
+  test("top hot-zone tap does not advance the position", async ({ page }) => {
+    await openSample(page);
+    await chromeHidden(page);
+    const before = await currentText(page);
+    const box = await page.getByTestId("stage").boundingBox();
+    if (!box) throw new Error("stage has no box");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.05);
+    await page.waitForTimeout(300);
+    expect(await currentText(page)).toBe(before);
+    await chromeHidden(page);
+  });
+
+  test("reveal, type a page, Enter jumps — then the chrome hides again", async ({
+    page,
+  }) => {
+    await openSample(page);
+    await chromeHidden(page);
+    await revealChrome(page);
+    const input = page.getByTestId("page-input");
+    await input.fill("4");
+    await page.keyboard.press("Enter");
+    await expect(input).toHaveValue("4");
+    await expect(page.getByTestId("current-item")).toContainText(
+      "Take the poker",
+    );
+    await chromeHidden(page);
+  });
+
+  test("chrome does not auto-hide while the page input is being edited", async ({
+    page,
+  }) => {
+    await openSample(page);
+    await chromeHidden(page);
+    await revealChrome(page);
+    const input = page.getByTestId("page-input");
+    await input.click();
+    await input.fill("3");
+    await page.waitForTimeout(3200); // past the 2.5s idle timer
+    await expect(page.getByTestId("top-bar")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await chromeHidden(page);
+  });
+
+  test("a sentence tap in the middle does not reveal the chrome", async ({
+    page,
+  }) => {
+    await openSample(page);
+    await chromeHidden(page);
+    await settle(page);
+    const box = await page.getByTestId("current-item").boundingBox();
+    if (!box) throw new Error("current item has no box");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    // Single-part sentence: the popup opens, but the chrome stays hidden.
+    await expect(page.getByTestId("action-popup")).toBeVisible();
+    await expect(page.getByTestId("top-bar")).toHaveClass(/chrome-hidden/);
+    await page.keyboard.press("Escape");
+  });
+
+  test("page change flashes the chrome", async ({ page }) => {
+    await openSample(page);
+    await chromeHidden(page);
+    await page.mouse.click(195, 790); // bottom hot-zone reveals
+    await page.getByTestId("nav-next-page").click();
+    await expect(page.getByTestId("top-bar")).toBeVisible();
+    await expect(page.getByTestId("page-input")).toHaveValue("2");
+    await chromeHidden(page); // the 1.2s flash expires
+  });
+});
+
 test.describe("Lyric Reader — settings page", () => {
   test("gear opens the settings page; main-size slider drives the reader", async ({
     page,
   }) => {
     await openSample(page);
+    await revealChrome(page);
     await page.getByTestId("settings-gear").click();
     await expect(page.getByTestId("settings-page")).toBeVisible();
     const slider = page.getByTestId("setting-main-size");
@@ -380,6 +492,7 @@ test.describe("Lyric Reader — settings page", () => {
     page,
   }) => {
     await openSample(page);
+    await revealChrome(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("font-chip-Lexend").click();
     const stack = await page.evaluate(() =>
@@ -390,6 +503,7 @@ test.describe("Lyric Reader — settings page", () => {
 
   test("settings persist across reload", async ({ page }) => {
     await openSample(page);
+    await revealChrome(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("setting-main-size").fill("40");
     await page.getByTestId("hl-chip-1").click();
@@ -411,6 +525,7 @@ test.describe("Lyric Reader — settings page", () => {
     page,
   }) => {
     await openSample(page);
+    await revealChrome(page);
     await page.getByRole("button", { name: "Larger text" }).click();
     const size = await page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue(
@@ -476,6 +591,7 @@ test.describe("Lyric Reader — notes", () => {
 test.describe("Lyric Reader — Saved view", () => {
   test("empty state when nothing is saved", async ({ page }) => {
     await openSample(page);
+    await revealChrome(page);
     await page.getByTestId("saved-btn").click();
     await expect(page.getByTestId("saved-page")).toBeVisible();
     await expect(page.getByTestId("saved-empty")).toContainText(
@@ -507,6 +623,7 @@ test.describe("Lyric Reader — Saved view", () => {
     await page.getByTestId("note-save").click();
     await page.keyboard.press("Escape");
 
+    await revealChrome(page);
     await page.getByTestId("saved-btn").click();
     await expect(page.getByTestId("saved-page")).toBeVisible();
     await expect(page.getByTestId("saved-entry-2-0")).toBeVisible();
