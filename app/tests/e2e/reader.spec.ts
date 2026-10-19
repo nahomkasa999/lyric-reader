@@ -22,6 +22,22 @@ async function settle(page: import("@playwright/test").Page) {
   await page.waitForTimeout(450);
 }
 
+/**
+ * Walk forward until the split brass-lamp sentence is current. Content-based
+ * (not a fixed press count) so adding/removing part splits can't break it.
+ */
+async function goToBrass(page: import("@playwright/test").Page) {
+  const current = page.getByTestId("current-item");
+  for (
+    let i = 0;
+    i < 60 && !(await current.innerText()).includes("brass lamp");
+    i++
+  )
+    await page.keyboard.press("ArrowDown");
+  await expect(current).toContainText("brass lamp");
+  return current;
+}
+
 /** Click the centre of the current item (the single-part popup path). */
 async function tapCurrentItem(page: import("@playwright/test").Page) {
   await settle(page);
@@ -85,9 +101,9 @@ test.describe("Lyric Reader — core flows", () => {
     const current = page.getByTestId("current-item");
     await page.keyboard.press("ArrowDown");
     await expect(current).toContainText("grandfather clock");
-    for (let i = 0; i < 9; i++) await page.keyboard.press("ArrowDown");
-    // Item 10 is the 2-part brass-lamp sentence.
-    await expect(current).toContainText("brass lamp");
+    // The brass-lamp sentence is split; land on part 0.
+    await goToBrass(page);
+    await expect(current.locator('[data-p="0"]')).toHaveClass(/on/);
     // One more step moves to part 2 of the SAME sentence (per-part stepping).
     await page.keyboard.press("ArrowDown");
     await expect(current).toContainText("brass lamp");
@@ -101,8 +117,8 @@ test.describe("Lyric Reader — core flows", () => {
     page,
   }) => {
     await openSample(page);
-    // 11 presses: items 1..10, then part 1 of the split brass-lamp sentence.
-    for (let i = 0; i < 11; i++) await page.keyboard.press("ArrowDown");
+    await goToBrass(page);
+    await page.keyboard.press("ArrowDown");
     const current = page.getByTestId("current-item");
     const parts = current.locator(".pt");
     await expect(parts).toHaveCount(2);
@@ -125,8 +141,9 @@ test.describe("Lyric Reader — core flows", () => {
     page,
   }) => {
     await openSample(page);
-    // Walk to item 10 (page 2, the 2-part sentence), then to its part 2.
-    for (let i = 0; i < 11; i++) await page.keyboard.press("ArrowDown");
+    // Walk to the 2-part brass-lamp sentence (page 2), then to its part 2.
+    await goToBrass(page);
+    await page.keyboard.press("ArrowDown");
     await expect(page.getByTestId("page-input")).toHaveValue("2");
     await page.waitForTimeout(900); // debounced save
     const text = await currentText(page);
@@ -189,7 +206,7 @@ test.describe("Lyric Reader — clicks are the primary input", () => {
     page,
   }) => {
     await openSample(page);
-    for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
+    await goToBrass(page);
     const current = page.getByTestId("current-item");
     const part2 = current.locator('[data-p="1"]');
     const box = await part2.boundingBox();
@@ -200,7 +217,7 @@ test.describe("Lyric Reader — clicks are the primary input", () => {
 
   test("double-tap on the active part opens the popup", async ({ page }) => {
     await openSample(page);
-    for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
+    await goToBrass(page);
     // dblTapPart settles the .35s track transition first — stale coordinates
     // made this test flaky in full-suite runs (v3.1 fix).
     await dblTapPart(page, 0);
@@ -251,7 +268,7 @@ test.describe("Lyric Reader — popup focus effect", () => {
 test.describe("Lyric Reader — popup actions work on the part", () => {
   test("highlight washes only the active part and persists", async ({ page }) => {
     await openSample(page);
-    for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
+    await goToBrass(page);
     await dblTapPart(page, 0);
     const row = page.getByTestId("popup-highlight");
     await row.click();
@@ -280,7 +297,7 @@ test.describe("Lyric Reader — popup actions work on the part", () => {
   test("copy writes the part text and shows Copied", async ({ page, context }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await openSample(page);
-    for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
+    await goToBrass(page);
     await dblTapPart(page, 0);
     await page.getByTestId("popup-copy").click();
     await expect(page.getByTestId("popup-copy")).toContainText("Copied");
@@ -552,7 +569,7 @@ test.describe("Lyric Reader — notes", () => {
     page,
   }) => {
     await openSample(page);
-    for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
+    await goToBrass(page);
     await dblTapPart(page, 0);
     await page.getByTestId("popup-note").click();
     await expect(page.getByTestId("note-editor")).toBeVisible();
@@ -573,7 +590,7 @@ test.describe("Lyric Reader — notes", () => {
 
   test("deleting a note removes the indicator", async ({ page }) => {
     await openSample(page);
-    for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
+    await goToBrass(page);
     await dblTapPart(page, 0);
     await page.getByTestId("popup-note").click();
     await page.getByTestId("note-textarea").fill("temporary");
@@ -611,8 +628,8 @@ test.describe("Lyric Reader — Saved view", () => {
     await tapCurrentItem(page);
     await page.getByTestId("popup-bookmark").click();
     await page.keyboard.press("Escape");
-    // Highlight part 1 of the split brass-lamp sentence (item 10).
-    for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowDown");
+    // Highlight part 1 of the split brass-lamp sentence.
+    await goToBrass(page);
     await dblTapPart(page, 1);
     await page.getByTestId("popup-highlight").click();
     await page.keyboard.press("Escape");

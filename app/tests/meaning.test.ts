@@ -2,32 +2,56 @@ import { describe, expect, it, vi } from "vitest";
 import {
   lemmatize,
   lookupMeaning,
-  parseDictionaryEntry,
+  parseFreeDictionaryEntry,
+  parseWiktionaryEntry,
+  stripHtml,
 } from "../src/lib/meaning";
 
-const DICT_LANTERN = [
-  {
-    word: "lantern",
-    phonetic: "/ˈlæntərn/",
-    meanings: [
-      {
-        partOfSpeech: "noun",
-        definitions: [
-          {
-            definition: "A case of transparent material made to protect a flame.",
-            example: "He carried a lantern into the dark.",
-          },
-          { definition: "The light chamber of a lighthouse." },
-          { definition: "A third definition that should be dropped." },
-        ],
-      },
-      {
-        partOfSpeech: "verb",
-        definitions: [{ definition: "To furnish with a lantern." }],
-      },
-    ],
-  },
-];
+// v4.3: free dictionary shape (freedictionaryapi.com — a clean Wiktionary).
+const FREE_LANTERN = {
+  word: "lantern",
+  entries: [
+    {
+      language: { code: "en", name: "English" },
+      partOfSpeech: "noun",
+      pronunciations: [
+        { type: "ipa", text: "/ˈlæntərn/", tags: [] },
+      ],
+      senses: [
+        {
+          definition:
+            "A case of transparent material made to protect a flame.",
+          examples: ["He carried a lantern into the dark."],
+        },
+        { definition: "The light chamber of a lighthouse." },
+        { definition: "A third definition that should be dropped." },
+      ],
+    },
+    {
+      language: { code: "en", name: "English" },
+      partOfSpeech: "verb",
+      senses: [{ definition: "To furnish with a lantern." }],
+    },
+  ],
+};
+
+// v4.3: direct Wiktionary REST fallback shape (definitions contain HTML).
+const WIKT_LANTERN = {
+  en: [
+    {
+      partOfSpeech: "Noun",
+      language: "English",
+      definitions: [
+        {
+          definition:
+            'A <a href="/wiki/device">device</a> that gives light.',
+          examples: ["She lit a <b>lantern</b>."],
+        },
+        { definition: "The light chamber of a lighthouse." },
+      ],
+    },
+  ],
+};
 
 function stubFetch(handler: (url: string) => unknown) {
   return vi.fn(async (url: string) => {
@@ -43,9 +67,9 @@ function stubFetch(handler: (url: string) => unknown) {
   });
 }
 
-describe("parseDictionaryEntry", () => {
-  it("parses word, phonetic, parts of speech, first 2 definitions each", () => {
-    const m = parseDictionaryEntry(DICT_LANTERN);
+describe("parseFreeDictionaryEntry", () => {
+  it("parses word, IPA, parts of speech, first 2 senses each", () => {
+    const m = parseFreeDictionaryEntry(FREE_LANTERN);
     expect(m).not.toBeNull();
     expect(m!.word).toBe("lantern");
     expect(m!.phonetic).toBe("/ˈlæntərn/");
@@ -57,28 +81,51 @@ describe("parseDictionaryEntry", () => {
     );
   });
 
-  it("falls back to phonetics[].text when phonetic is missing", () => {
-    const m = parseDictionaryEntry([
-      {
-        word: "lantern",
-        phonetics: [{}, { text: "/x/" }],
-        meanings: [{ partOfSpeech: "n", definitions: [{ definition: "d" }] }],
-      },
-    ]);
-    expect(m!.phonetic).toBe("/x/");
+  it("ignores non-English entries", () => {
+    const m = parseFreeDictionaryEntry({
+      word: "lamp",
+      entries: [
+        {
+          language: { code: "de" },
+          partOfSpeech: "noun",
+          senses: [{ definition: "Lampe" }],
+        },
+      ],
+    });
+    expect(m).toBeNull();
   });
 
   it("returns null for empty or unusable payloads", () => {
-    expect(parseDictionaryEntry([])).toBeNull();
-    expect(parseDictionaryEntry({})).toBeNull();
+    expect(parseFreeDictionaryEntry({})).toBeNull();
+    expect(parseFreeDictionaryEntry({ entries: [] })).toBeNull();
     expect(
-      parseDictionaryEntry([{ word: "x", meanings: [] }]),
+      parseFreeDictionaryEntry({
+        word: "x",
+        entries: [{ language: { code: "en" }, senses: [] }],
+      }),
     ).toBeNull();
-    expect(
-      parseDictionaryEntry([
-        { word: "x", meanings: [{ partOfSpeech: "n", definitions: [] }] },
-      ]),
-    ).toBeNull();
+  });
+});
+
+describe("parseWiktionaryEntry / stripHtml", () => {
+  it("strips tags and decodes entities", () => {
+    expect(stripHtml('A <a href="#">device</a> &amp; "light"')).toBe(
+      'A device & "light"',
+    );
+  });
+
+  it("parses definitions and lowercases the part of speech", () => {
+    const m = parseWiktionaryEntry(WIKT_LANTERN, "lantern");
+    expect(m).not.toBeNull();
+    expect(m!.word).toBe("lantern");
+    expect(m!.groups[0].partOfSpeech).toBe("noun");
+    expect(m!.groups[0].defs[0].definition).toBe("A device that gives light.");
+    expect(m!.groups[0].defs[0].example).toBe("She lit a lantern.");
+  });
+
+  it("returns null when there is no English section", () => {
+    expect(parseWiktionaryEntry({})).toBeNull();
+    expect(parseWiktionaryEntry({ fr: [] })).toBeNull();
   });
 });
 
@@ -99,7 +146,7 @@ describe("lemmatize", () => {
 
 describe("lookupMeaning", () => {
   it("finds a single word in the dictionary", async () => {
-    const f = stubFetch(() => DICT_LANTERN);
+    const f = stubFetch(() => FREE_LANTERN);
     const out = await lookupMeaning({
       text: "lantern",
       sentence: "He lit the lantern.",
@@ -116,7 +163,9 @@ describe("lookupMeaning", () => {
     const seen: string[] = [];
     const f = stubFetch((url: string) => {
       seen.push(url);
-      return url.endsWith("/lantern") ? DICT_LANTERN : 404;
+      return url.endsWith("/lantern")
+        ? FREE_LANTERN
+        : { word: "lanterns", entries: [] };
     });
     const out = await lookupMeaning({
       text: "lanterns",
@@ -131,7 +180,7 @@ describe("lookupMeaning", () => {
   });
 
   it("reports not-found when both forms miss", async () => {
-    const f = stubFetch(() => 404);
+    const f = stubFetch(() => ({ word: "x", entries: [] }));
     const out = await lookupMeaning({
       text: "xylophonesque",
       sentence: "s",
@@ -141,7 +190,25 @@ describe("lookupMeaning", () => {
     expect(out.status).toBe("not-found");
   });
 
-  it("reports offline on network failure", async () => {
+  it("falls back to Wiktionary when the free dictionary is unreachable", async () => {
+    const f = stubFetch((url: string) =>
+      url.includes("freedictionaryapi")
+        ? "network-error"
+        : WIKT_LANTERN,
+    );
+    const out = await lookupMeaning({
+      text: "lantern",
+      sentence: "s",
+      apiKey: "",
+      fetchFn: f as unknown as typeof fetch,
+    });
+    expect(out.status).toBe("ready");
+    expect(out.model!.groups[0].defs[0].definition).toBe(
+      "A device that gives light.",
+    );
+  });
+
+  it("reports offline when every dictionary host fails", async () => {
     const f = stubFetch(() => "network-error");
     const out = await lookupMeaning({
       text: "lantern",
@@ -167,7 +234,6 @@ describe("lookupMeaning", () => {
   });
 
   it("a phrase with a key comes from Gemini JSON", async () => {
-    const f = stubFetch(() => "network-error"); // dictionary must not be hit
     const geminiFetch = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -192,10 +258,7 @@ describe("lookupMeaning", () => {
       text: "raining cats and dogs",
       sentence: "It was raining cats and dogs.",
       apiKey: "KEY",
-      fetchFn: ((url: string) =>
-        url.includes("dictionaryapi.dev")
-          ? f(url)
-          : geminiFetch(url)) as typeof fetch,
+      fetchFn: geminiFetch,
     });
     expect(out.status).toBe("ready");
     expect(out.model!.groups[0].partOfSpeech).toBe("phrase");
@@ -257,6 +320,9 @@ describe("v4.1 — dictionary failure falls back to Gemini", () => {
     }) as unknown as typeof fetch;
   }
 
+  const isDict = (url: string) =>
+    url.includes("freedictionaryapi") || url.includes("wiktionary");
+
   it("a dead dictionary + key yields an AI definition in the same card shape", async () => {
     const f = aiFetch();
     const out = await lookupMeaning({
@@ -264,7 +330,7 @@ describe("v4.1 — dictionary failure falls back to Gemini", () => {
       sentence: "He lit the brass lamp.",
       apiKey: "KEY",
       fetchFn: ((url: string) =>
-        url.includes("dictionaryapi.dev")
+        isDict(url)
           ? Promise.reject(new TypeError("offline"))
           : f(url)) as typeof fetch,
     });
@@ -277,15 +343,19 @@ describe("v4.1 — dictionary failure falls back to Gemini", () => {
     expect(out.model!.inContext).toContain("brass one");
   });
 
-  it("a dictionary 404 after the lemmatizer retry also falls back with a key", async () => {
+  it("a dictionary miss after the lemmatizer retry also falls back with a key", async () => {
     const f = aiFetch();
     const out = await lookupMeaning({
       text: "xylophonesque",
       sentence: "s",
       apiKey: "KEY",
       fetchFn: ((url: string) =>
-        url.includes("dictionaryapi.dev")
-          ? Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+        isDict(url)
+          ? Promise.resolve({
+              ok: true,
+              status: 200,
+              json: async () => ({ word: "x", entries: [] }),
+            })
           : f(url)) as unknown as typeof fetch,
     });
     expect(out.status).toBe("ready");

@@ -36,49 +36,119 @@ export interface MeaningOutcome {
   query?: string;
 }
 
-interface DictEntry {
+interface FreeDictSense {
+  definition?: string;
+  examples?: Array<string | { example?: string }>;
+}
+interface FreeDictEntry {
+  language?: { code?: string };
+  partOfSpeech?: string;
+  pronunciations?: Array<{ type?: string; text?: string }>;
+  senses?: FreeDictSense[];
+}
+interface FreeDictPayload {
   word?: string;
-  phonetic?: string;
-  phonetics?: Array<{ text?: string }>;
-  meanings?: Array<{
-    partOfSpeech?: string;
-    definitions?: Array<{ definition?: string; example?: string }>;
-  }>;
+  entries?: FreeDictEntry[];
 }
 
-/** First entry -> our view model. Null when nothing usable parsed. */
-export function parseDictionaryEntry(json: unknown): MeaningModel | null {
-  if (!Array.isArray(json) || !json.length) return null;
-  const e = json[0] as DictEntry;
-  if (!e || !Array.isArray(e.meanings) || !e.meanings.length) return null;
-  const phonetic =
-    e.phonetic ??
-    e.phonetics?.map((p) => p.text).find((t) => t && t.trim()) ??
-    undefined;
+/**
+ * v4.3: Free Dictionary API shape (https://freedictionaryapi.com) — already
+ * parsed Wiktionary data with IPA and clean strings, served with CORS.
+ */
+export function parseFreeDictionaryEntry(
+  json: unknown,
+): MeaningModel | null {
+  const p = json as FreeDictPayload;
+  if (!p || !Array.isArray(p.entries)) return null;
+  const entries = p.entries.filter(
+    (e) => !e.language?.code || e.language.code === "en",
+  );
+  if (!entries.length) return null;
+  const phonetic = entries
+    .flatMap((e) => e.pronunciations ?? [])
+    .find((pr) => pr.type === "ipa" && pr.text?.trim())?.text;
   const groups: DictPos[] = [];
-  for (const m of e.meanings) {
+  for (const e of entries) {
     const defs: DictDef[] = [];
-    for (const d of m.definitions ?? []) {
-      if (!d.definition?.trim()) continue;
-      defs.push({
-        definition: d.definition.trim(),
-        example: d.example?.trim() || undefined,
-      });
+    for (const sense of e.senses ?? []) {
+      const definition = sense.definition?.trim();
+      if (!definition) continue;
+      const example = (sense.examples ?? [])
+        .map((x) => (typeof x === "string" ? x : x?.example))
+        .find((x) => x && x.trim());
+      defs.push({ definition, example: example?.trim() || undefined });
       if (defs.length >= 2) break;
     }
     if (defs.length) {
       groups.push({
-        partOfSpeech: m.partOfSpeech?.trim() || "word",
+        partOfSpeech: e.partOfSpeech?.trim() || "word",
         defs,
       });
     }
   }
   if (!groups.length) return null;
   return {
-    word: e.word?.trim() || "",
+    word: p.word?.trim() || "",
     phonetic: phonetic?.trim() || undefined,
     groups,
   };
+}
+
+interface WiktDef {
+  definition?: string;
+  examples?: string[];
+}
+interface WiktEntry {
+  partOfSpeech?: string;
+  definitions?: WiktDef[];
+}
+
+/** Strip the wiki markup/HTML that Wiktionary definitions contain. */
+export function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;|&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#(\d+);/g, (_, d: string) =>
+      String.fromCodePoint(Number(d)),
+    )
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) =>
+      String.fromCodePoint(parseInt(h, 16)),
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Wiktionary REST definition shape (fallback when the free API is down). */
+export function parseWiktionaryEntry(
+  json: unknown,
+  word = "",
+): MeaningModel | null {
+  const p = json as { en?: WiktEntry[] };
+  if (!p || !Array.isArray(p.en) || !p.en.length) return null;
+  const groups: DictPos[] = [];
+  for (const e of p.en) {
+    const defs: DictDef[] = [];
+    for (const d of e.definitions ?? []) {
+      const definition = stripHtml(d.definition ?? "");
+      if (!definition) continue;
+      const example = (d.examples ?? []).map(stripHtml).find(Boolean);
+      defs.push({ definition, example: example || undefined });
+      if (defs.length >= 2) break;
+    }
+    if (defs.length) {
+      groups.push({
+        partOfSpeech: (e.partOfSpeech ?? "word").toLowerCase(),
+        defs,
+      });
+    }
+  }
+  if (!groups.length) return null;
+  return { word, groups };
 }
 
 /**
@@ -100,7 +170,12 @@ export function lemmatize(word: string): string | null {
   return null;
 }
 
-const DICT_URL = "https://api.dictionaryapi.dev/api/v2/entries/en/";
+// v4.3: api.dictionaryapi.dev now answers with a Cloudflare 403 challenge
+// (no CORS), which made every lookup show as "offline". The free dictionary
+// API proxies Wiktionary and returns clean JSON + CORS; the Wiktionary REST
+// endpoint is the last-resort fallback if that host is unreachable.
+const FREE_DICT_URL = "https://freedictionaryapi.com/api/v1/entries/en/";
+const WIKT_URL = "https://en.wiktionary.org/api/rest_v1/page/definition/";
 
 interface LookupOpts {
   text: string;
@@ -113,33 +188,61 @@ function cleanText(t: string): string {
   return t.replace(/^["'“”‘’\(\[]+|["'“”‘’\)\]\.,;:!?]+$/g, "").trim();
 }
 
-async function fetchWord(
-  word: string,
+interface JsonResult {
+  ok: boolean;
+  status: number;
+  json?: unknown;
+}
+
+async function fetchJson(
+  url: string,
   fetchFn: typeof fetch,
   timeoutMs = 6000,
-): Promise<MeaningModel | "not-found" | "offline"> {
-  // v4.1: a 6s timeout so a hanging dictionary can't stall the lookup
-  // forever (his connection timed out on it in Ethiopia).
+): Promise<JsonResult> {
+  // A timeout so a hanging dictionary can't stall the lookup forever.
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetchFn(DICT_URL + encodeURIComponent(word), {
-      signal: ctl.signal,
-    });
-    if (res.status === 404) return "not-found";
-    if (!res.ok) return "offline";
+    const res = await fetchFn(url, { signal: ctl.signal });
+    if (!res.ok) return { ok: false, status: res.status };
     try {
-      const json = await res.json();
-      const parsed = parseDictionaryEntry(json);
-      return parsed ?? "not-found";
+      return { ok: true, status: res.status, json: await res.json() };
     } catch {
-      return "offline";
+      return { ok: false, status: res.status };
     }
   } catch {
-    return "offline";
+    return { ok: false, status: 0 };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchFreeWord(
+  word: string,
+  fetchFn: typeof fetch,
+): Promise<MeaningModel | "not-found" | "offline"> {
+  const r = await fetchJson(FREE_DICT_URL + encodeURIComponent(word), fetchFn);
+  if (!r.ok) return r.status === 404 ? "not-found" : "offline";
+  return parseFreeDictionaryEntry(r.json) ?? "not-found";
+}
+
+async function fetchWiktionaryWord(
+  word: string,
+  fetchFn: typeof fetch,
+): Promise<MeaningModel | "not-found" | "offline"> {
+  const r = await fetchJson(WIKT_URL + encodeURIComponent(word), fetchFn);
+  if (!r.ok) return r.status === 404 ? "not-found" : "offline";
+  return parseWiktionaryEntry(r.json, word) ?? "not-found";
+}
+
+/** Free dictionary first; direct Wiktionary only if that host failed. */
+async function fetchWord(
+  word: string,
+  fetchFn: typeof fetch,
+): Promise<MeaningModel | "not-found" | "offline"> {
+  const free = await fetchFreeWord(word, fetchFn);
+  if (free !== "offline") return free;
+  return fetchWiktionaryWord(word, fetchFn);
 }
 
 interface AiMeaning {
