@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { BookDoc } from "../lib/types";
 import { splitS } from "../lib/parts";
 import { buildAskContext, findQuote, splitQuotes } from "../lib/askContext";
-import { geminiGenerate, GeminiError } from "../lib/gemini";
+import { aiGenerate, GeminiError } from "../lib/ai";
 import { getEffectiveApiKey } from "../lib/apikey";
 import { getAskThread, saveAskThread, type AskMessage } from "../lib/db";
 
@@ -93,8 +93,8 @@ export default function AskSheet({
         role: (m.role === "ai" ? "model" : "user") as "user" | "model",
         text: m.text,
       }));
-      const text = await geminiGenerate({
-        key,
+      const text = await aiGenerate({
+        apiKey: key,
         system: ctx.systemInstruction,
         messages: [
           ...history,

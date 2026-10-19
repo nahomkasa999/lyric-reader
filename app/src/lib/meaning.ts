@@ -1,7 +1,8 @@
 // Meaning lookup: free dictionary API for single words (exact, instant),
 // Gemini for phrases / idioms / "as used in this sentence".
 // fetch is injectable so tests run fully offline with stubs.
-import { geminiGenerate, GeminiError } from "./gemini";
+import { GeminiError } from "./gemini";
+import { aiGenerate } from "./ai";
 
 export interface DictDef {
   definition: string;
@@ -266,8 +267,8 @@ export async function geminiFullMeaning(
   fetchFn?: typeof fetch,
 ): Promise<MeaningModel | null> {
   try {
-    const raw = await geminiGenerate({
-      key: apiKey,
+    const raw = await aiGenerate({
+      apiKey: apiKey,
       json: true,
       maxTokens: 1024,
       system:
@@ -323,8 +324,8 @@ export async function geminiMeaning(
   fetchFn?: typeof fetch,
 ): Promise<AiMeaning | null> {
   try {
-    const raw = await geminiGenerate({
-      key: apiKey,
+    const raw = await aiGenerate({
+      apiKey: apiKey,
       json: true,
       maxTokens: 1024,
       system:
@@ -364,8 +365,8 @@ export async function geminiInContext(
   fetchFn?: typeof fetch,
 ): Promise<string | null> {
   try {
-    const text = await geminiGenerate({
-      key: apiKey,
+    const text = await aiGenerate({
+      apiKey: apiKey,
       maxTokens: 512,
       system: "Reply with a single short sentence, no quotes or preamble.",
       messages: [

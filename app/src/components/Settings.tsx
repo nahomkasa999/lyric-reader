@@ -12,6 +12,12 @@ import {
   setApiKey,
 } from "../lib/apikey";
 import { testApiKey } from "../lib/gemini";
+import {
+  getOpenRouterKey,
+  removeOpenRouterKey,
+  setOpenRouterKey,
+  testOpenRouterKey,
+} from "../lib/openrouter";
 
 interface Props {
   onBack: () => void;
@@ -167,6 +173,95 @@ function AiKeySection() {
   );
 }
 
+function OpenRouterKeySection() {
+  const [key, setKey] = useState(() => getOpenRouterKey());
+  const [show, setShow] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const personal = key.trim().length > 0;
+
+  return (
+    <Row label="OpenRouter (fallback)">
+      <div className="flex items-center gap-2">
+        <input
+          data-testid="openrouter-key"
+          type={show ? "text" : "password"}
+          value={key}
+          onChange={(e) => {
+            setKey(e.target.value);
+            setOpenRouterKey(e.target.value);
+            setResult(null);
+          }}
+          placeholder="sk-or-…"
+          autoComplete="off"
+          spellCheck={false}
+          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-sm"
+          aria-label="OpenRouter API key"
+        />
+        <button
+          data-testid="openrouter-key-eye"
+          onClick={() => setShow((s) => !s)}
+          aria-label={show ? "Hide key" : "Show key"}
+          className="set-chip shrink-0"
+        >
+          {show ? "Hide" : "Show"}
+        </button>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+        Free key from{" "}
+        <a
+          href="https://openrouter.ai/keys"
+          target="_blank"
+          rel="noreferrer"
+          className="underline"
+        >
+          OpenRouter
+        </a>{" "}
+        — used only if Gemini fails. Stays on this phone only, sent only to
+        OpenRouter.
+      </p>
+      <div className="mt-2 flex items-center gap-3 flex-wrap">
+        <button
+          data-testid="openrouter-test"
+          onClick={async () => {
+            setTesting(true);
+            setResult(null);
+            const r = await testOpenRouterKey(key.trim());
+            setTesting(false);
+            setResult(
+              r.ok
+                ? `✓ Key works — using ${r.model}`
+                : `✗ ${r.reason}`,
+            );
+          }}
+          disabled={testing}
+          className="set-chip shrink-0"
+        >
+          {testing ? "Testing…" : "Test key"}
+        </button>
+        {personal && (
+          <button
+            data-testid="openrouter-remove-key"
+            onClick={() => {
+              removeOpenRouterKey();
+              setKey("");
+              setResult(null);
+            }}
+            className="set-chip shrink-0"
+          >
+            Remove OpenRouter key
+          </button>
+        )}
+        {result && (
+          <span data-testid="openrouter-test-result" className="text-sm">
+            {result}
+          </span>
+        )}
+      </div>
+    </Row>
+  );
+}
+
 export default function Settings({ onBack }: Props) {
   const { settings, update, reset } = useSettings();
 
@@ -308,6 +403,7 @@ export default function Settings({ onBack }: Props) {
         </Row>
 
         <AiKeySection />
+        <OpenRouterKeySection />
 
         <button
           data-testid="settings-reset"
