@@ -220,8 +220,9 @@ async function fetchJson(
 async function fetchFreeWord(
   word: string,
   fetchFn: typeof fetch,
+  timeoutMs = 6000,
 ): Promise<MeaningModel | "not-found" | "offline"> {
-  const r = await fetchJson(FREE_DICT_URL + encodeURIComponent(word), fetchFn);
+  const r = await fetchJson(FREE_DICT_URL + encodeURIComponent(word), fetchFn, timeoutMs);
   if (!r.ok) return r.status === 404 ? "not-found" : "offline";
   return parseFreeDictionaryEntry(r.json) ?? "not-found";
 }
@@ -229,8 +230,9 @@ async function fetchFreeWord(
 async function fetchWiktionaryWord(
   word: string,
   fetchFn: typeof fetch,
+  timeoutMs = 6000,
 ): Promise<MeaningModel | "not-found" | "offline"> {
-  const r = await fetchJson(WIKT_URL + encodeURIComponent(word), fetchFn);
+  const r = await fetchJson(WIKT_URL + encodeURIComponent(word), fetchFn, timeoutMs);
   if (!r.ok) return r.status === 404 ? "not-found" : "offline";
   return parseWiktionaryEntry(r.json, word) ?? "not-found";
 }
@@ -239,10 +241,11 @@ async function fetchWiktionaryWord(
 async function fetchWord(
   word: string,
   fetchFn: typeof fetch,
+  timeoutMs = 6000,
 ): Promise<MeaningModel | "not-found" | "offline"> {
-  const free = await fetchFreeWord(word, fetchFn);
+  const free = await fetchFreeWord(word, fetchFn, timeoutMs);
   if (free !== "offline") return free;
-  return fetchWiktionaryWord(word, fetchFn);
+  return fetchWiktionaryWord(word, fetchFn, timeoutMs);
 }
 
 interface AiMeaning {

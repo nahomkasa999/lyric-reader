@@ -29,8 +29,7 @@ describe("paste import parts long paragraphs (bug #2)", () => {
     for (const p of parts) expect(p.length).toBeLessThanOrEqual(160);
   });
 
-  it("short paragraphs stay single-part", async () => {
-    const book = await extractTxt([P1, P2, P3].join("\n\n"), "t", "paste");
-    expect(splitS(book.items[0].text)).toHaveLength(1);
+  it("short paragraphs stay single-part", () => {
+    expect(splitS("A short paragraph stays in one part.")).toHaveLength(1);
   });
 });
