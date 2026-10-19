@@ -269,7 +269,7 @@ export async function geminiFullMeaning(
     const raw = await geminiGenerate({
       key: apiKey,
       json: true,
-      maxTokens: 320,
+      maxTokens: 1024,
       system:
         "You are a concise dictionary for a reader of English books. Reply with JSON only.",
       messages: [
@@ -326,7 +326,7 @@ export async function geminiMeaning(
     const raw = await geminiGenerate({
       key: apiKey,
       json: true,
-      maxTokens: 220,
+      maxTokens: 1024,
       system:
         "You are a concise dictionary for a reader of English books. Reply with JSON only.",
       messages: [
@@ -366,7 +366,7 @@ export async function geminiInContext(
   try {
     const text = await geminiGenerate({
       key: apiKey,
-      maxTokens: 60,
+      maxTokens: 512,
       system: "Reply with a single short sentence, no quotes or preamble.",
       messages: [
         {

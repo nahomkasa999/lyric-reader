@@ -103,7 +103,7 @@ export default function AskSheet({
             text: `PASSAGE:\n${ctx.contextText}\n\nMY QUESTION: ${q}`,
           },
         ],
-        maxTokens: 500,
+        maxTokens: 1500,
       });
       persist([...withUser, { role: "ai", text: text.trim() }]);
     } catch (e) {

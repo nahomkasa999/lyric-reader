@@ -188,7 +188,7 @@ interface GenOpts {
 
 interface GenResponse {
   candidates?: Array<{
-    content?: { parts?: Array<{ text?: string }> };
+    content?: { parts?: Array<{ text?: string; thought?: boolean }> };
     finishReason?: string;
   }>;
   promptFeedback?: { blockReason?: string };
@@ -217,7 +217,7 @@ async function generateWithModel(
     contents,
     generationConfig: {
       temperature: 0.3,
-      maxOutputTokens: opts.maxTokens ?? 600,
+      maxOutputTokens: opts.maxTokens ?? 1024,
       ...(opts.json ? { responseMimeType: "application/json" } : {}),
     },
   };
@@ -301,14 +301,20 @@ async function generateWithModel(
       "The AI declined that request. Try asking it differently.",
     );
   }
+  // v4.4: thinking models burn tokens on internal reasoning before any visible
+  // text, so a tiny maxOutputTokens can leave only thoughts — which must never
+  // reach the caller. Skip parts flagged as thoughts when joining text.
   const text =
     data.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "")
+      ?.filter((p) => !p.thought)
+      .map((p) => p.text ?? "")
       .join("") ?? "";
   if (!text.trim()) {
+    const finish = data.candidates?.[0]?.finishReason;
+    const suffix = finish ? ` (finish: ${finish})` : "";
     throw new GeminiError(
       "unknown",
-      "The AI came back empty — try asking again.",
+      `The AI came back empty${suffix} — try asking again.`,
     );
   }
   return text;
@@ -338,7 +344,7 @@ export async function testApiKey(
       key: k,
       model,
       messages: [{ role: "user", text: "Reply with exactly this word: ok" }],
-      maxTokens: 10,
+      maxTokens: 512,
       fetchFn,
     });
     return { ok: true, model };

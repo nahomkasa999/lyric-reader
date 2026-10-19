@@ -278,4 +278,32 @@ describe("geminiGenerate 404 recovery", () => {
       message: expect.stringContaining("Google: API key not valid."),
     });
   });
+
+  it("reports MAX_TOKENS when thinking consumes the whole budget", async () => {
+    // v4.4: a thinking model fills the candidate with thoughts only, so the
+    // visible text is empty and the finishReason must reach the caller.
+    const f = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        candidates: [
+          {
+            content: { parts: [{ thought: true }] },
+            finishReason: "MAX_TOKENS",
+          },
+        ],
+      }),
+    }));
+    await expect(
+      geminiGenerate({
+        key: "test-key-0001",
+        model: "gemini-3.5-flash",
+        messages: [{ role: "user", text: "Reply with exactly this word: ok" }],
+        fetchFn: f as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({
+      code: "unknown",
+      message: expect.stringContaining("MAX_TOKENS"),
+    });
+  });
 });
