@@ -24,8 +24,15 @@ export class GeminiError extends Error {
   }
 }
 
+/**
+ * v4.2: Google's documented rolling alias for the newest Flash model.
+ * Used as the hard fallback when discovery can't help (per the official
+ * REST example Nahom sent): if every discovered name 404s — or discovery
+ * itself fails — we call the alias once before surfacing an error.
+ */
+export const GEMINI_FLASH_ALIAS = "gemini-flash-latest";
 /** Last-resort model if on-device discovery can't run yet. */
-const GEMINI_MODEL_FALLBACK = "gemini-2.5-flash";
+const GEMINI_MODEL_FALLBACK = GEMINI_FLASH_ALIAS;
 const MODEL_STORAGE_KEY = "lr-gemini-model";
 const MODELS_URL =
   "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100";
@@ -53,20 +60,60 @@ function lsDel(k: string): void {
 }
 
 /**
+ * v4.2: no Gemini call may hang indefinitely — his phone sits on a slow
+ * network, and an unresolved promise means a stuck "Looking it up…" card.
+ */
+const GEMINI_TIMEOUT_MS = 20_000;
+
+async function fetchWithTimeout(
+  fetchFn: typeof fetch,
+  url: string,
+  init: RequestInit,
+  ms: number = GEMINI_TIMEOUT_MS,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetchFn(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Fetch with one automatic retry on network failure / timeout. */
+async function fetchTolerant(
+  fetchFn: typeof fetch,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetchWithTimeout(fetchFn, url, init);
+  } catch {
+    return await fetchWithTimeout(fetchFn, url, init);
+  }
+}
+
+function isAbort(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "AbortError";
+}
+
+/**
  * Pick the best model name from a models.list payload, pure and unit-tested.
- * Preference: gemini-3.5-flash first, then 3-flash, 2.5-flash, 2-flash, then
- * any other flash-class model; within a tier, non-preview beats preview and
- * non-lite beats lite. `names` are already filtered to generateContent-capable.
+ * Preference: gemini-3.5-flash first, then the documented `gemini-flash-latest`
+ * rolling alias, then 3-flash, 2.5-flash, 2-flash, then any other flash-class
+ * model; within a tier, non-preview beats preview and non-lite beats lite.
+ * `names` are already filtered to generateContent-capable.
  */
 export function pickModel(names: string[]): string | null {
   const tierOf = (n: string): number => {
     const l = n.toLowerCase();
     if (/3\.5-flash/.test(l)) return 0;
-    if (/3-flash/.test(l)) return 1;
-    if (/2\.5-flash/.test(l)) return 2;
-    if (/2(-|\.)0-flash/.test(l)) return 3;
-    if (/flash/.test(l)) return 4;
-    return 5;
+    if (/flash-latest/.test(l)) return 1;
+    if (/3-flash/.test(l)) return 2;
+    if (/2\.5-flash/.test(l)) return 3;
+    if (/2(-|\.)0-flash/.test(l)) return 4;
+    if (/flash/.test(l)) return 5;
+    return 6;
   };
   const penalty = (n: string): number => {
     const l = n.toLowerCase();
@@ -89,7 +136,7 @@ export async function discoverModel(
 ): Promise<string | null> {
   const f = fetchFn ?? fetch;
   try {
-    const res = await f(MODELS_URL, {
+    const res = await fetchTolerant(f, MODELS_URL, {
       headers: { "x-goog-api-key": key },
     });
     if (!res.ok) return null;
@@ -179,7 +226,7 @@ async function generateWithModel(
   }
   let res: Response;
   try {
-    res = await fetchFn(url, {
+    res = await fetchTolerant(fetchFn, url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -187,10 +234,12 @@ async function generateWithModel(
       },
       body: JSON.stringify(body),
     });
-  } catch {
+  } catch (e) {
     throw new GeminiError(
       "network",
-      "Couldn't reach Google's servers — check your connection and try again.",
+      isAbort(e)
+        ? "The AI took too long to answer — check your connection and try again."
+        : "Couldn't reach Google's servers — check your connection and try again.",
     );
   }
   let data: GenResponse;
@@ -202,19 +251,27 @@ async function generateWithModel(
   if (!res.ok) {
     const code = data.error?.code ?? res.status;
     const msg = data.error?.message ?? "";
+    // v4.2: surface Google's own error text (truncated) next to our mapped
+    // messages, so a failure can be diagnosed from a screenshot alone.
+    const raw = String(msg).replace(/\s+/g, " ").trim().slice(0, 140);
+    const suffix = raw ? ` (Google: ${raw})` : "";
     if (code === 400 || /key/i.test(msg))
       throw new GeminiError(
         "invalid-key",
-        "That key didn't work — double-check it in Settings, or grab a fresh one from Google AI Studio.",
+        "That key didn't work — double-check it in Settings, or grab a fresh one from Google AI Studio." +
+          suffix,
       );
     if (code === 429 || code === 503)
       throw new GeminiError(
         "quota",
-        "The AI is rate-limited right now — wait a little and retry.",
+        "The AI is rate-limited right now — wait a little and retry." + suffix,
       );
     if (code === 404 && !opts.model && !opts._retried) {
       // v4.1: the stored/hardcoded model name isn't valid for this key —
       // re-discover what the key can actually use, then retry once.
+      // v4.2: if discovery dead-ends too (or just repeats the same name),
+      // fall back to Google's documented `gemini-flash-latest` alias once
+      // before surfacing an error.
       lsDel(MODEL_STORAGE_KEY);
       const fresh = await discoverModel(opts.key, fetchFn);
       if (fresh && fresh !== model) {
@@ -224,10 +281,18 @@ async function generateWithModel(
           fetchFn,
         );
       }
+      if (model !== GEMINI_FLASH_ALIAS) {
+        lsSet(MODEL_STORAGE_KEY, GEMINI_FLASH_ALIAS);
+        return generateWithModel(
+          GEMINI_FLASH_ALIAS,
+          { ...opts, _retried: true },
+          fetchFn,
+        );
+      }
     }
     throw new GeminiError(
       "unknown",
-      `The AI call failed (${code}). Try again in a moment.`,
+      `The AI call failed (${code}). Try again in a moment.` + suffix,
     );
   }
   if (data.promptFeedback?.blockReason) {

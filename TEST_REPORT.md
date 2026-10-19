@@ -441,3 +441,19 @@ screenshots regenerated unchanged.
 - `CSS.highlights` fallback (word-only, no paint/drag) is coded but not
   exercised — no test browser lacks the API.
 - Screenshots eyeballed by the builder, not by Nahom.
+
+## v4.2 — docs-aligned Gemini + key links + timeouts (Oct 19, 2026)
+
+- Unit: **88/88 across 10 files** (11 new: `apikey.test.ts` 4 for the
+  `#k=` hash parser; `gemini.test.ts` now 16 — alias ordering, alias
+  fallback after dead discovery, direct-alias first call, error-only-
+  after-alias-fails, one-retry-then-success, network-fails-twice,
+  Google-raw-error surfacing). No e2e in this pass (small edit).
+- `npx tsc -b` clean; `npm run build` green (PWA 27 entries, ~1060 KiB).
+- Docs: `DECISIONS.md` v4.2 entry (full docs-audit findings, incl. why
+  the new Interactions API was NOT adopted), `lib/gemini.ts`,
+  `lib/apikey.ts`, `App.tsx` (key-import effect + toast).
+- Honest gaps: no live Google API from this VM (auth-key header and the
+  alias path are verified only by stubs); the `#k=` link flow and the
+  20s-timeout behaviour have no e2e coverage — his phone is the first
+  real run of both.

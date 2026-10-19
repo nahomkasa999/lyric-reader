@@ -592,3 +592,53 @@ Decision, three layers (all of them, not one):
    anchoring, reflows the text, and widens the card past the clamped
    position (measured 214px at anchor, 230px after fonts — 10px off the
    right edge). Content/async growth is covered the same way.
+
+## v4.2: official Gemini docs audit + key-import link + timeouts + raw errors (Oct 19, 2026)
+
+Nahom sent Google's own REST example (his curl: `POST
+/v1beta/models/gemini-flash-latest:generateContent`, header
+`X-goog-api-key`) and asked that our integration match the official docs
+exactly. Pages checked (fetched 2026-10-19): quickstart, text-generation,
+api-key, and the classic REST surface his curl implies. Findings:
+
+1. **Key header** — docs use lowercase `x-goog-api-key`; ours already
+   matched exactly. HTTP headers are case-insensitive anyway; no change.
+2. **Key types** — the API is transitioning from standard keys (AIza…)
+   to authorization/auth keys (**AQ.…**, bound to a service account,
+   restricted to the Generative Language API by default). Nahom's key is
+   an auth key; it authenticates with the SAME `x-goog-api-key` header, so
+   the app needs no format logic: it accepts any pasted key string
+   (length ≥ 1 for storage, ≥ 8 to accept from a setup link).
+3. **`gemini-flash-latest`** — Google's documented rolling alias for the
+   newest Flash. Our picker puts it second (after explicit
+   `gemini-3.5-flash`), and it is now the HARD fallback: no stored model
+   + failed discovery calls the alias directly, and a 404 on any model
+   re-discovers once then tries the alias once before surfacing an error.
+4. **Classic request body is already exact**: `contents[].parts[].text`,
+   `generationConfig{temperature,maxOutputTokens,responseMimeType}`, and
+   `system_instruction` (snake_case per the reference). `models.list`
+   response handling matches (`models[].name`,
+   `supportedGenerationMethods`; we take pageSize=100, no pagination —
+   deliberate: a one-page flash list is all we need).
+5. **NOT migrating to the new Interactions API** (`POST /v1beta/interactions`
+   with `{model, input, system_instruction, generation_config}`), even
+   though the current docs lead with it: Nahom's phone already reached
+   `generateContent` (a routed 404 on the model name proves the endpoint
+   is alive for his key), and the new surface's response shape can't be
+   verified from this VM. Logged as a future-migration candidate only.
+
+His v4.1 phone report (key "not returning", dictionary-unreachable state)
+added three small resilience items in the same pass:
+- **`#k=<key>` setup links**: app load parses the hash fragment, stores
+  the key in the existing localStorage slot, strips the fragment via
+  `history.replaceState` (it must not linger in the URL/history), then
+  auto-runs discovery and toasts `Gemini key saved — using {model}` (or
+  the real error). Defensive: only values ≥ 8 chars accepted.
+- **Timeouts + retry**: every Gemini call (discovery, generateContent)
+  has a 20s AbortController timeout and ONE retry on network
+  error/timeout. Nothing can hang indefinitely; timeout maps to the
+  "network" failure class with a timeout-specific message.
+- **Google's real error text**: failures now show the API's own
+  `{error.message}` (trimmed to 140 chars) appended to our mapped
+  messages, in the Settings test result and all AI error states — a
+  failure is diagnosable from a screenshot alone.

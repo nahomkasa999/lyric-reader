@@ -43,6 +43,17 @@ describe("pickModel", () => {
     expect(pickModel(names("gemini-2.5-pro"))).toBe("gemini-2.5-pro");
   });
 
+  it("puts the gemini-flash-latest alias second, behind 3.5-flash", () => {
+    expect(
+      pickModel(
+        names("gemini-2.5-flash", "gemini-flash-latest", "gemini-3-flash"),
+      ),
+    ).toBe("gemini-flash-latest");
+    expect(
+      pickModel(names("gemini-flash-latest", "gemini-3.5-flash")),
+    ).toBe("gemini-3.5-flash");
+  });
+
   it("returns null for an empty list", () => {
     expect(pickModel([])).toBeNull();
   });
@@ -144,5 +155,127 @@ describe("geminiGenerate 404 recovery", () => {
     expect(text).toBe("hello");
     // The working model is remembered for the next call.
     expect(storedModel()).toBe("gemini-3.5-flash");
+  });
+
+  it("falls back to the gemini-flash-latest alias when discovery finds nothing", async () => {
+    // v4.2: stale stored model 404s AND models.list fails — the documented
+    // rolling alias is tried once before any error surfaces.
+    try {
+      localStorage.setItem("lr-gemini-model", "gemini-2.5-flash");
+    } catch {
+      /* ignore */
+    }
+    const f = stubFetch((url) => {
+      if (url.includes("/models?")) return 404; // discovery fails
+      if (url.includes("gemini-2.5-flash:generateContent")) return 404;
+      if (url.includes("gemini-flash-latest:generateContent"))
+        return genAnswer("alias-ok");
+      return 404;
+    });
+    const text = await geminiGenerate({
+      key: "KEY",
+      messages: [{ role: "user", text: "hi" }],
+      fetchFn: f,
+    });
+    expect(text).toBe("alias-ok");
+    // The alias proved working, so it is remembered for the next call.
+    expect(storedModel()).toBe("gemini-flash-latest");
+  });
+
+  it("calls the alias directly when discovery is unavailable from the start", async () => {
+    // No stored model, discovery 404s: the very first call goes to the alias.
+    const seen: string[] = [];
+    const f = stubFetch((url) => {
+      seen.push(url);
+      if (url.includes("/models?")) return 404;
+      if (url.includes("gemini-flash-latest:generateContent"))
+        return genAnswer("first-call");
+      return 404;
+    });
+    const text = await geminiGenerate({
+      key: "KEY",
+      messages: [{ role: "user", text: "hi" }],
+      fetchFn: f,
+    });
+    expect(text).toBe("first-call");
+    expect(
+      seen.some((u) => u.includes("gemini-flash-latest:generateContent")),
+    ).toBe(true);
+  });
+
+  it("only surfaces an error after the alias also fails", async () => {
+    try {
+      localStorage.setItem("lr-gemini-model", "gemini-2.5-flash");
+    } catch {
+      /* ignore */
+    }
+    const f = stubFetch(() => 404); // everything 404s: generate + list
+    await expect(
+      geminiGenerate({
+        key: "KEY",
+        messages: [{ role: "user", text: "hi" }],
+        fetchFn: f,
+      }),
+    ).rejects.toMatchObject({ code: "unknown" });
+  });
+
+  it("retries once on a network failure, then succeeds", async () => {
+    const f = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => genAnswer("retry-ok"),
+      }));
+    const text = await geminiGenerate({
+      key: "KEY",
+      model: "gemini-flash-latest", // skips discovery — isolates the retry
+      messages: [{ role: "user", text: "hi" }],
+      fetchFn: f as unknown as typeof fetch,
+    });
+    expect(text).toBe("retry-ok");
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws a network error after both attempts fail", async () => {
+    const f = vi.fn(async () => {
+      throw new TypeError("offline");
+    });
+    await expect(
+      geminiGenerate({
+        key: "KEY",
+        model: "gemini-flash-latest",
+        messages: [{ role: "user", text: "hi" }],
+        fetchFn: f as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({ code: "network" });
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces Google's own error message next to the mapped message", async () => {
+    const f = vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          code: 400,
+          status: "INVALID_ARGUMENT",
+          message: "API key not valid. Please pass a valid API key.",
+        },
+      }),
+    }));
+    await expect(
+      geminiGenerate({
+        key: "BAD",
+        model: "gemini-flash-latest",
+        messages: [{ role: "user", text: "hi" }],
+        fetchFn: f as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({
+      code: "invalid-key",
+      // Diagnosable from a screenshot: the raw Google text is embedded.
+      message: expect.stringContaining("Google: API key not valid."),
+    });
   });
 });
