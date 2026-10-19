@@ -32,4 +32,13 @@ describe("paste import parts long paragraphs (bug #2)", () => {
   it("short paragraphs stay single-part", () => {
     expect(splitS("A short paragraph stays in one part.")).toHaveLength(1);
   });
+
+  it("splitS parts the river sentence into 2 parts of at most 160 chars", () => {
+    const sentence =
+      "The river bends slowly around the old town, carrying leaves and dust from the highlands, and every evening the fishermen pull their wooden boats onto the muddy bank before the light disappears behind the hills.";
+    const parts = splitS(sentence);
+    expect(parts.length).toBe(2);
+    expect(parts.join("")).toBe(sentence);
+    for (const p of parts) expect(p.length).toBeLessThanOrEqual(160);
+  });
 });
