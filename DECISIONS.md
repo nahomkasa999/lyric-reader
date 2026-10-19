@@ -379,3 +379,24 @@ and how to change it. Nothing here is load-bearing — veto anything.
     → Change: Reader.tsx (chromeVisible/showChrome/showChromeRef unified),
     index.css (.chrome-hidden on .reader-bar/.reader-progress), e2e specs
     (revealChrome helper; new "unified auto-hiding chrome" suite).
+
+## v3.2: tap-outside dismissal for the action popup (Oct 19, 2026, morning)
+
+Bug from his phone: the Bookmark/Highlight/Note/Copy popup opened fine but
+could not be dismissed by tapping elsewhere — the only way back was Esc.
+Root cause: the full-screen `.pop-layer` backdrop had no tap handler at
+all; taps landed on it and died there (the stage's own click handler sits
+below the layer's z-index, so it never saw them either).
+Change (Reader.tsx, one clear mechanism): a capture-phase `onPointerDownCapture`
+on the reader root. While the popup is open, any press outside the card closes
+it and stops propagation; taps inside the card (`menuRef.contains`) are
+untouched so rows, the note editor, Save/Cancel/Delete keep working. A second
+tap on the sentence itself counts as "outside the card" and also just closes —
+no stacked states.
+Swallow rule: the dismissed tap must not also step, select, reveal chrome, or
+fire a chrome button. A capture-phase stopPropagation kills the pointerdown
+leg, and a 450ms `suppressUntil` timestamp ignores the click that follows it
+(stage onClick + every chrome button + page-input focus check it). Row
+behaviour unchanged: Bookmark/Highlight toggle, Copy shows "Copied", Note
+save/cancel/delete and Esc keep closing exactly as before. The fx blur is
+tied to the popup-open state and clears on close as it always did.

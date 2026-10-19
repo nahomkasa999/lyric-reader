@@ -144,6 +144,10 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const cancelEditRef = useRef(false);
   const lastTap = useRef<{ t: number; key: string }>({ t: 0, key: "" });
   const moved = useRef(false);
+  // Timestamp until which stage/chrome clicks are ignored, set when a
+  // tap-outside popup dismissal swallows the pointerdown (the click that
+  // follows it must not trigger anything).
+  const suppressUntil = useRef(0);
   const chromeTimer = useRef<number | null>(null);
   const chromeRef = useRef(false);
 
@@ -409,6 +413,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     };
 
     const onClick = (e: MouseEvent) => {
+      // The click that follows a swallowed tap-outside popup dismissal must
+      // not step, select, or reveal chrome.
+      if (Date.now() < suppressUntil.current) return;
       if (moved.current) {
         moved.current = false;
         return;
@@ -663,6 +670,17 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     <div
       data-testid="reader-root"
       className={`reader-root fixed inset-0 flex flex-col overflow-hidden${pop ? " fx" : ""}`}
+      // Single dismissal mechanism for the action popup: while it is open,
+      // a press ANYWHERE outside the card (capture phase, before any other
+      // handler) closes it and swallows the gesture — the tap can never
+      // also step, select, reveal chrome, or hit a chrome button.
+      onPointerDownCapture={(e) => {
+        if (!popRef.current) return;
+        if (menuRef.current?.contains(e.target as Node)) return;
+        closePop();
+        suppressUntil.current = Date.now() + 450;
+        e.stopPropagation();
+      }}
       onMouseMove={(e) => {
         // Desktop: hovering near the top or bottom edge reveals the chrome.
         const r = stageRef.current?.getBoundingClientRect();
@@ -682,7 +700,13 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         onFocus={() => showChrome()}
         onPointerDown={() => showChrome()}
       >
-        <button onClick={onBack} aria-label="Back to library">
+        <button
+          onClick={() => {
+            if (Date.now() < suppressUntil.current) return;
+            onBack();
+          }}
+          aria-label="Back to library"
+        >
           ← Library
         </button>
         <span className="page-label" data-testid="page-label">
@@ -696,6 +720,11 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
             aria-label="Page number"
             value={editVal}
             onFocus={(e) => {
+              // A tap swallowed as popup dismissal must not start editing.
+              if (Date.now() < suppressUntil.current) {
+                e.target.blur();
+                return;
+              }
               setEditing(true);
               e.target.select();
             }}
@@ -723,23 +752,41 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           / {pages} · {pct}%
         </span>
         <div className="flex items-center">
-          <button aria-label="Smaller text" onClick={() => adjustMainSize(-2)}>
+          <button
+            aria-label="Smaller text"
+            onClick={() => {
+              if (Date.now() < suppressUntil.current) return;
+              adjustMainSize(-2);
+            }}
+          >
             A−
           </button>
-          <button aria-label="Larger text" onClick={() => adjustMainSize(2)}>
+          <button
+            aria-label="Larger text"
+            onClick={() => {
+              if (Date.now() < suppressUntil.current) return;
+              adjustMainSize(2);
+            }}
+          >
             A+
           </button>
           <button
             data-testid="saved-btn"
             aria-label="Saved marks"
-            onClick={onOpenSaved}
+            onClick={() => {
+              if (Date.now() < suppressUntil.current) return;
+              onOpenSaved();
+            }}
           >
             <SavedIcon />
           </button>
           <button
             data-testid="settings-gear"
             aria-label="Settings"
-            onClick={onOpenSettings}
+            onClick={() => {
+              if (Date.now() < suppressUntil.current) return;
+              onOpenSettings();
+            }}
           >
             <GearIcon />
           </button>
@@ -815,28 +862,40 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       >
         <button
           data-testid="nav-prev-section"
-          onClick={() => chap(-1)}
+          onClick={() => {
+            if (Date.now() < suppressUntil.current) return;
+            chap(-1);
+          }}
           aria-label="Previous section"
         >
           «
         </button>
         <button
           data-testid="nav-prev-page"
-          onClick={() => toPage(curPage - 1)}
+          onClick={() => {
+            if (Date.now() < suppressUntil.current) return;
+            toPage(curPage - 1);
+          }}
           aria-label="Previous page"
         >
           ‹
         </button>
         <button
           data-testid="nav-next-page"
-          onClick={() => toPage(curPage + 1)}
+          onClick={() => {
+            if (Date.now() < suppressUntil.current) return;
+            toPage(curPage + 1);
+          }}
           aria-label="Next page"
         >
           ›
         </button>
         <button
           data-testid="nav-next-section"
-          onClick={() => chap(1)}
+          onClick={() => {
+            if (Date.now() < suppressUntil.current) return;
+            chap(1);
+          }}
           aria-label="Next section"
         >
           »

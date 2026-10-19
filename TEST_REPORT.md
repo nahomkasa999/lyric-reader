@@ -292,3 +292,17 @@ the revealed shot shows top bar + progress + bottom nav together.
 - `nav-prev-page` / `nav-next-section` share the tested toPage/chap paths
   but aren't individually clicked.
 - Screenshots eyeballed by the builder, not by Nahom.
+
+## v3.2 — tap-outside popup dismissal (Oct 19, 2026, morning)
+
+User-reported fix: the action popup had no tap-outside dismissal path on
+touch (only Esc worked). Implemented a capture-phase pointerdown handler on
+the reader root: any tap outside the card closes the popup and swallows the
+gesture (450ms click-suppression for stage + chrome controls).
+
+Verification this time: `npx tsc -b` clean + `npm run build` green.
+The Playwright e2e suite was INTENTIONALLY NOT RUN — the user's explicit
+instruction: "after the edit don't do like e2e or any testing, just push
+after linting test". Only typecheck + build ran; interactive verification
+of the dismissal is left to him on his phone. No push made by this agent
+(the parent pushes).
