@@ -5,7 +5,12 @@ import {
   HIGHLIGHT_COLORS,
   useSettings,
 } from "../lib/settings";
-import { getApiKey, setApiKey } from "../lib/apikey";
+import {
+  getApiKey,
+  getEnvApiKey,
+  removeApiKey,
+  setApiKey,
+} from "../lib/apikey";
 import { testApiKey } from "../lib/gemini";
 
 interface Props {
@@ -62,10 +67,22 @@ function AiKeySection() {
   const [show, setShow] = useState(false);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  // v4.3: env key is baked at build time — static for the session.
+  const [hasEnvKey] = useState(() => getEnvApiKey().length > 0);
+  const personal = key.trim().length > 0;
 
   return (
     <>
       <Row label="Gemini API key (AI meanings, Ask)">
+        {/* v4.3 state (b): no personal key, but the app ships one. */}
+        {!personal && hasEnvKey && (
+          <p
+            data-testid="gemini-app-key"
+            className="mb-3 text-sm text-foreground"
+          >
+            ✓ App key active — meanings and Ask are on.
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <input
             data-testid="gemini-key"
@@ -76,7 +93,7 @@ function AiKeySection() {
               setApiKey(e.target.value);
               setResult(null);
             }}
-            placeholder="AIza…"
+            placeholder={hasEnvKey ? "Paste your own key (optional)" : "AIza…"}
             autoComplete="off"
             spellCheck={false}
             className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-sm"
@@ -100,17 +117,20 @@ function AiKeySection() {
             className="underline"
           >
             Google AI Studio
-          </a>{" "}
-          — stays on this phone only, never sent anywhere except Google's AI
-          servers.
+          </a>
+          {personal || !hasEnvKey
+            ? " — stays on this phone only, never sent anywhere except Google's AI servers."
+            : " — paste yours here to use it instead of the app key."}
         </p>
-        <div className="mt-2 flex items-center gap-3">
+        <div className="mt-2 flex items-center gap-3 flex-wrap">
           <button
             data-testid="gemini-test"
             onClick={async () => {
               setTesting(true);
               setResult(null);
-              const r = await testApiKey(key);
+              // v4.3: tests whichever key is active (personal wins over app).
+              const active = key.trim() || getEnvApiKey();
+              const r = await testApiKey(active);
               setTesting(false);
               setResult(
                 r.ok
@@ -123,6 +143,19 @@ function AiKeySection() {
           >
             {testing ? "Testing…" : "Test key"}
           </button>
+          {personal && (
+            <button
+              data-testid="gemini-remove-key"
+              onClick={() => {
+                removeApiKey();
+                setKey("");
+                setResult(null);
+              }}
+              className="set-chip shrink-0"
+            >
+              Remove personal key
+            </button>
+          )}
           {result && (
             <span data-testid="gemini-test-result" className="text-sm">
               {result}

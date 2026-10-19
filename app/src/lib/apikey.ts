@@ -19,8 +19,41 @@ export function setApiKey(k: string): void {
   }
 }
 
+export function removeApiKey(): void {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * v4.3: app-level key via build env. Nahom's decision (Oct 19) — meanings
+ * and Ask work with zero setup. The key itself lives ONLY in the deploy
+ * environment (Vercel env vars); it is NEVER in this repo. It ships inside
+ * the public web bundle, so it is extractable by anyone who downloads it —
+ * revisit this if the app spreads widely or the key's quota gets abused.
+ */
+export function getEnvApiKey(): string {
+  try {
+    const v = (import.meta.env?.VITE_GEMINI_API_KEY ?? "") as string;
+    return v.trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The key actually used for AI calls: the user's personal key wins over the
+ * app-level env key; empty string when neither is set. All call sites must
+ * use this, never getApiKey() directly.
+ */
+export function getEffectiveApiKey(): string {
+  return getApiKey() || getEnvApiKey();
+}
+
 export function hasApiKey(): boolean {
-  return getApiKey().length > 0;
+  return getEffectiveApiKey().length > 0;
 }
 
 /**

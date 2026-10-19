@@ -457,3 +457,21 @@ screenshots regenerated unchanged.
   alias path are verified only by stubs); the `#k=` link flow and the
   20s-timeout behaviour have no e2e coverage — his phone is the first
   real run of both.
+
+## v4.3 — env-key mode (Oct 19, 2026)
+
+- Unit: **93/93** across 10 files (`tests/apikey.test.ts` now 9: hash
+  import parsing + 5 key-resolution precedence tests — personal > env >
+  none, removeApiKey fallback, blank-env ignored; `vi.stubEnv` for
+  `VITE_GEMINI_API_KEY`). Full suite green.
+- `npx tsc -b` clean (`src/vite-env.d.ts` declares the env key);
+  `npm run build` green.
+- Key-leak check: grepped `dist/` for `AIza…` and `AQ.Ab8…` key patterns —
+  **zero matches** (env unset in this build, as intended).
+- Files: `src/lib/apikey.ts` (resolution), `src/components/Settings.tsx`
+  (3-state AI section), `src/components/Reader.tsx` + `AskSheet.tsx`
+  (effective key), `src/lib/meaning.ts` (3.5s dict timeout with a key),
+  `src/vite-env.d.ts`, `README.md` (App key section), `DECISIONS.md`.
+- Honest gaps: the actual env-key wiring on Vercel (env var + redeploy)
+  hasn't happened yet — parent handles it; no e2e for the 3-state
+  Settings UI (small-edit rule), his phone remains the first real run.

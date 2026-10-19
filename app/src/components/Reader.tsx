@@ -27,7 +27,7 @@ import {
   type VocabRecord,
 } from "../lib/db";
 import { useSettings } from "../lib/settings";
-import { getApiKey } from "../lib/apikey";
+import { getEffectiveApiKey } from "../lib/apikey";
 import {
   highlightsSupported,
   wordRangeAt,
@@ -557,7 +557,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     collapseSelection();
     setMeaning({ text, status: "loading", saved: false });
     requestAnimationFrame(() => anchorCard(meaningCardRef, item));
-    const key = getApiKey();
+    const key = getEffectiveApiKey();
     const outcome = await lookupMeaning({ text, sentence, apiKey: key });
     // The card may have been closed while the lookup was in flight.
     if (meaningRef.current?.text !== text) return;

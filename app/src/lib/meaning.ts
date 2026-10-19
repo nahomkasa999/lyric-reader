@@ -301,11 +301,15 @@ export async function lookupMeaning(opts: LookupOpts): Promise<MeaningOutcome> {
   }
 
   const lower = text.toLowerCase();
-  let found = await fetchWord(lower, fetchFn);
+  // v4.3: an effective key means Gemini is waiting as fallback, so give the
+  // dictionary less time on slow networks (3.5s vs 6s) — meanings arrive
+  // sooner instead of hanging on the dead lookup first.
+  const dictTimeout = opts.apiKey ? 3500 : 6000;
+  let found = await fetchWord(lower, fetchFn, dictTimeout);
   if (found === "not-found") {
     const lemma = lemmatize(lower);
     if (lemma && lemma !== lower) {
-      const retry = await fetchWord(lemma, fetchFn);
+      const retry = await fetchWord(lemma, fetchFn, dictTimeout);
       if (retry !== "not-found") found = retry;
     }
   }

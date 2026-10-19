@@ -642,3 +642,30 @@ added three small resilience items in the same pass:
   `{error.message}` (trimmed to 140 chars) appended to our mapped
   messages, in the Settings test result and all AI error states — a
   failure is diagnosable from a screenshot alone.
+
+## v4.3 — app-level Gemini key via env (Oct 19, 2026)
+
+- **Nahom's decision, not ours**: word search "isn't working" for him
+  despite a connection (dictionaryapi.dev unreachable from Ethiopia) and
+  he explicitly asked that the app carry the Gemini key itself — "like you
+  should put it inside the Env". So: build-time `VITE_GEMINI_API_KEY`,
+  resolved as personal key (localStorage) > env key > none in
+  `lib/apikey.ts` (`getEffectiveApiKey()`); every AI call site uses the
+  effective key; model discovery/caching is key-source agnostic; the
+  `#k=` link import still sets the personal key (which then wins).
+- **Risks he accepted** (logged for the record): the key ships inside the
+  public web bundle (extractable), and its quota is shared across all
+  users. The key itself lives ONLY in Vercel env vars — never in this
+  repo (Google auto-revokes keys found in public code). Revisit with a
+  server-side proxy or per-user keys if the app spreads widely.
+- **Settings shows three states**: (a) personal key set — field + test +
+  "Remove personal key"; (b) no personal key, env present — "✓ App key
+  active — meanings and Ask are on" + the field still available to paste
+  your own; (c) neither — the old BYOK copy. The env key value is never
+  rendered anywhere.
+- **Snappier fallback**: with any effective key the dictionary timeout is
+  now 3.5s (was 6s), so meanings fall back to Gemini sooner on slow
+  networks; without a key it stays 6s (nothing else to fall back to).
+- Incident hygiene from the v4.2 scanner block: all test fixtures are
+  fake (`test-personal-key-0001` style) — real key strings in tests got
+  the push rejected; that rule is now explicit in the build playbook.

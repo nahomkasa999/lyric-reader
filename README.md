@@ -26,6 +26,22 @@ npx vite preview --port 4173   # serve the build
 Then open `http://localhost:4173` (or the machine's LAN IP, e.g.
 `http://192.168.x.x:4173`, from your phone on the same Wi-Fi).
 
+### App key (optional, v4.3)
+
+Nahom wanted meanings and Ask to work with zero setup, so the app can
+carry his key itself. Set `VITE_GEMINI_API_KEY` as a **Production**
+environment variable in Vercel (project → Settings → Environment
+Variables) and **redeploy** — the built bundle then includes the key and
+the AI features turn on for everyone with no setup.
+
+- Precedence: a personal key pasted in Settings → AI **always wins** over
+  the app key; removing the personal key falls back to the app key.
+- The key itself lives ONLY in Vercel's env vars — it must never be
+  committed to this repo (Google auto-revokes keys found in public code).
+- Caveat: the key ships inside the public web bundle, so it is extractable
+  by anyone who downloads it and its quota is shared. Fine at this scale;
+  revisit (proxy server, per-user keys) if the app spreads widely.
+
 ## Install it
 
 **Android (Chrome):** open the URL → ⋮ menu → *Add to Home screen* (or

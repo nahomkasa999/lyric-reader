@@ -7,7 +7,7 @@ import type { BookDoc } from "../lib/types";
 import { splitS } from "../lib/parts";
 import { buildAskContext, findQuote, splitQuotes } from "../lib/askContext";
 import { geminiGenerate, GeminiError } from "../lib/gemini";
-import { getApiKey } from "../lib/apikey";
+import { getEffectiveApiKey } from "../lib/apikey";
 import { getAskThread, saveAskThread, type AskMessage } from "../lib/db";
 
 interface Props {
@@ -44,7 +44,7 @@ export default function AskSheet({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedQuery, setFailedQuery] = useState<string | null>(null);
-  const [hasKey, setHasKey] = useState(() => getApiKey().length > 0);
+  const [hasKey, setHasKey] = useState(() => getEffectiveApiKey().length > 0);
   const keyAtSend = useRef<string>("");
   const listRef = useRef<HTMLDivElement | null>(null);
   const touchY = useRef<number | null>(null);
@@ -119,7 +119,7 @@ export default function AskSheet({
   };
 
   const onSubmit = () => {
-    const key = getApiKey();
+    const key = getEffectiveApiKey();
     setHasKey(key.length > 0);
     if (!key) return;
     keyAtSend.current = key;
@@ -128,7 +128,7 @@ export default function AskSheet({
 
   const retry = () => {
     if (!failedQuery) return;
-    const key = getApiKey();
+    const key = getEffectiveApiKey();
     if (!key) return;
     void send(failedQuery, messages, key);
   };
