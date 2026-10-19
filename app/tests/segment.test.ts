@@ -59,4 +59,48 @@ describe("splitSentences", () => {
       "No terminal punctuation here",
     ]);
   });
+
+  // Regression: quote-ending boundaries (Nahom's $100M Offers passage).
+  // `…”` + space + capital must be a sentence end, not a merge.
+  it("splits after a sentence ending in a closing curly quote", () => {
+    const text =
+      "But first we have to define a term I use throughout this book: “dream client.” A dream client is the prospective client for whom you can create breathtaking, jaw-dropping, earth-shattering value and who allows you to keep some of the value that you create (something you know as “profit”).";
+    const out = splitSentences(text);
+    expect(out.length).toBe(2);
+    expect(out[0]).toBe(
+      "But first we have to define a term I use throughout this book: “dream client.”",
+    );
+    expect(out[1].startsWith("A dream client is")).toBe(true);
+  });
+
+  it("splits after ?!” closers in quotes", () => {
+    expect(splitSentences("She asked “really?” He nodded.")).toEqual([
+      "She asked “really?”",
+      "He nodded.",
+    ]);
+    expect(splitSentences('He shouted "stop!" They froze.')).toEqual([
+      'He shouted "stop!"',
+      "They froze.",
+    ]);
+  });
+
+  it("splits after a parenthesised sentence end", () => {
+    expect(splitSentences("(Like this.) Next one.")).toEqual([
+      "(Like this.)",
+      "Next one.",
+    ]);
+  });
+
+  it("does not split abbreviations inside quotes", () => {
+    expect(splitSentences('He met “Dr. Smith.” They talked.')).toEqual([
+      'He met “Dr. Smith.”',
+      "They talked.",
+    ]);
+  });
+
+  it("does not split a quote that is not a sentence end", () => {
+    expect(
+      splitSentences("The word “muster” means to gather. Use it well."),
+    ).toEqual(["The word “muster” means to gather.", "Use it well."]);
+  });
 });

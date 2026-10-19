@@ -10,9 +10,14 @@ const ABBREV = new Set([
   "e.g", "i.e", "a.m", "p.m",
 ]);
 
+/** Trailing closers that may follow terminal punctuation: `client.”` */
+const TRAILING_CLOSERS = /[”’"'»›\])}]+$/;
+
 /** True when a fragment ends with something that is NOT a real sentence end. */
 function isFalseBoundary(frag: string, next: string | undefined): boolean {
-  const t = frag.trimEnd();
+  // Strip trailing closers (quotes, brackets) so `dream client.”` is
+  // judged by its period, not by the quote mark.
+  const t = frag.trimEnd().replace(TRAILING_CLOSERS, "");
   if (!t) return true;
   if (!/[.?!…]$/.test(t)) return true; // segmenter split mid-sentence
 

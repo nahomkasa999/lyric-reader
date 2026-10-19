@@ -173,6 +173,50 @@ export function migrateBook(stored: unknown): BookDoc {
   };
 }
 
+/**
+ * Re-segment stored paragraph items with the CURRENT sentence splitter.
+ * Sentence segmentation runs at import time, so a book imported by an
+ * older app keeps whatever (possibly buggy) splits it had — e.g. the
+ * quote-boundary bug that merged `…"dream client.” A dream client…`
+ * into one 289-char item. On open, any "para" item that the current
+ * splitter breaks into 2+ sentences is replaced by its sentences,
+ * inheriting page/depth; headings and bullets stay whole. Idempotent:
+ * already-split items pass through untouched.
+ *
+ * Marks are keyed `item:part` in a separate store and are NOT remapped —
+ * after a split, a mark may point at the first derived sentence instead
+ * of the one it was saved on. Reader position is clamped on load.
+ */
+export function resegmentItems(
+  items: Item[],
+  split: (text: string) => string[],
+): { items: Item[]; changed: boolean } {
+  let changed = false;
+  const out: Item[] = [];
+  for (const it of items) {
+    if (it.kind !== "para") {
+      out.push(it);
+      continue;
+    }
+    const ss = split(it.text).map((s) => s.trim()).filter(Boolean);
+    if (ss.length <= 1) {
+      out.push(it);
+      continue;
+    }
+    changed = true;
+    ss.forEach((s, i) => {
+      out.push({
+        kind: "para",
+        depth: it.depth,
+        text: s,
+        page: it.page,
+        paraStart: i === 0 ? it.paraStart : false,
+      });
+    });
+  }
+  return { items: out, changed };
+}
+
 /** Convert an old {page, sent} progress record to {item, part}. */
 export function migratePosition(
   items: Item[],

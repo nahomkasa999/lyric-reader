@@ -475,3 +475,51 @@ screenshots regenerated unchanged.
 - Honest gaps: the actual env-key wiring on Vercel (env var + redeploy)
   hasn't happened yet — parent handles it; no e2e for the 3-state
   Settings UI (small-edit rule), his phone remains the first real run.
+
+## v4.5 — quote-boundary split fix + stored-book self-heal (Oct 19, 2026)
+
+- **Unit: 114/114** across 12 files (was 93/93). New/changed:
+  `tests/segment.test.ts` (5 quote-boundary regressions incl. the
+  verbatim $100M Offers fixture → exactly 2 sentences, `?”`/`!”`/straight
+  quotes, parenthesised ends, no over-splitting on `“Dr. Smith.”` or
+  mid-sentence quotes); `tests/resegment.test.ts` (4: merged item splits
+  with page inherited + paraStart correct, untouched kinds, idempotent,
+  empty); `tests/parts.test.ts` (1: the fixture's long sentence parts
+  ≥2, join exactly, no part >160 chars, no mid-word cuts).
+- **e2e: `tests/e2e/heal.spec.ts` — 1/1**: seeded a stored book with one
+  merged 289-char para item via IndexedDB init script; on open the
+  reader shows sentence 1 only, item-1 holds sentence 2 with 2+ parts
+  and only the current part bright. (First run failed on a stale `dist`;
+  rebuilt, then green.)
+- `npx tsc -b` clean; `npm run build` green.
+- Files: `src/lib/segment.ts` (trailing-closer strip in `isFalseBoundary`),
+  `src/lib/types.ts` (`resegmentItems`), `src/lib/db.ts` (`getBook`
+  wiring + persist-once), `DECISIONS.md` (root causes), tests above.
+  components/Reader.tsx untouched (concurrent build in flight).
+- Honest gaps: his original screenshot also shows NO parting at all,
+  which the current build cannot produce — his phone was on a pre-v3
+  build; the update path (service-worker activation) is his side. Marks
+  keyed `item:part` are not remapped after a heal-split (accepted).
+
+## v4.4 — auto-scroll (Oct 19, 2026)
+
+- **Unit: 114/114 passed** (12 files) — new `tests/autoscroll.test.ts`
+  (11: `paceMs` word scaling / speed division / 1200–6500ms clamps /
+  invalid-speed fallback; `nextSpeed` 1→1.25→1.5→0.75→1 cycle; `isAutoSpeed`;
+  `nextAutoStep` part-first advance, end-of-book, one-item book, empty book).
+- **e2e: 73/73 passed** (Chromium, `vite preview` on dist) — new
+  `tests/e2e/autoscroll.spec.ts` (9: plays ≥2 steps with no input and the
+  chrome hides on start; pause freezes the position; rapid toggle spam
+  leaves no stray timers; manual ArrowDown keeps playback going; popup
+  pauses and Esc resumes; page end flows into the next page automatically;
+  space toggles; long-press cycles speed with the transient "1.25×" label
+  and persists across reload; screenshot). Whole existing suite green —
+  incl. the space-key behavior change (no spec used space to step).
+- **Screenshot**: `screenshots/autoscroll-phone.png` — chrome revealed,
+  ▶ beside ? above the « ‹ › » nav (eyeballed).
+- `npx tsc -b` clean; `npm run build` green. (One mid-run failure was a
+  stale `dist` — rebuilt, then green; the rapid-toggle test needed a
+  re-reveal between taps because playing hides the chrome, by design.)
+- Honest gaps: no physical device — the real finger long-press feel and
+  the 500ms threshold on touch are unverified; pace numbers are a calm
+  guess (900ms + 340ms/word), not measured against real reading.

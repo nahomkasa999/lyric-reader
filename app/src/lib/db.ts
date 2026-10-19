@@ -1,6 +1,7 @@
 // Minimal IndexedDB storage (no dependency): books + reading progress + marks.
 import type { BookDoc, Position } from "./types";
-import { migrateBook } from "./types";
+import { migrateBook, resegmentItems } from "./types";
+import { splitSentences } from "./segment";
 
 const DB_NAME = "lyric-reader";
 const DB_VERSION = 3;
@@ -50,13 +51,23 @@ export async function saveBook(book: BookDoc): Promise<void> {
   await tx("books", "readwrite", (s) => s.put(book));
 }
 
-/** Stored books in the old (v1/v2) pages shape migrate transparently. */
+/**
+ * Stored books in the old (v1/v2) pages shape migrate transparently, and
+ * paragraph items are re-segmented with the current sentence splitter —
+ * a book imported by an older app can carry merged sentences (e.g. the
+ * quote-boundary bug), which we heal on open. Pages are inherited from
+ * the source item so reading position and page numbers don't shift.
+ */
 export async function getBook(id: string): Promise<BookDoc | undefined> {
   const raw = await tx<unknown>("books", "readonly", (s) => s.get(id));
   if (!raw) return undefined;
-  const book = migrateBook(raw);
+  let book = migrateBook(raw);
+  const { items, changed } = resegmentItems(book.items, splitSentences);
+  if (changed) {
+    book = { ...book, items, totalSentences: items.length };
+  }
   // Persist the migrated shape once so this is a one-time cost.
-  if (!(raw as Record<string, unknown>).items) {
+  if (!(raw as Record<string, unknown>).items || changed) {
     tx("books", "readwrite", (s) => s.put(book)).catch(() => {});
   }
   return book;

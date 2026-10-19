@@ -54,3 +54,12 @@ selection + meanings + saved words, (2) ask, (3) exams later.
   later optional offline upgrade (1-2GB download, WebGPU lottery, slow).
 - Settings additions: Gemini key row, Exams row (Section end / Every N
   pages / Off).
+
+## 4. Auto-scroll (v4.4, built)
+- ▶/❚❚ ghost button beside the "?" in the auto-hiding chrome cluster;
+  tap (or Space) toggles, long-press cycles speed 1× → 1.25× → 1.5× →
+  0.75× (persisted in settings). Pace per part: 900ms + 340ms/word,
+  clamped 1200–6500ms, ÷ speed. Pages flow automatically; stops at the
+  book end. Manners: starting hides the chrome; popup/selection/Ask
+  pause transiently and resume on close; Settings/leaving/tab-switch
+  stop hard.

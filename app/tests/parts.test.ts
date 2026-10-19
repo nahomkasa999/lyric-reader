@@ -52,4 +52,25 @@ describe("splitS()", () => {
     expect(parts.length).toBeGreaterThan(1);
     expect(parts.join("")).toBe(s);
   });
+
+  it("parts the long sentence from Nahom's $100M Offers passage", () => {
+    const s =
+      "A dream client is the prospective client for whom you can create breathtaking, jaw-dropping, earth-shattering value and who allows you to keep some of the value that you create (something you know as “profit”).";
+    expect(s.length).toBeGreaterThan(130);
+    const parts = splitS(s);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join("")).toBe(s);
+    // No runaway parts (only unsplittable text may exceed this).
+    for (const p of parts) expect(p.length).toBeLessThanOrEqual(160);
+    // Cuts never land mid-word: every cut point in the original text
+    // touches a space (clause cuts sit right after `[,;:—–)]` before
+    // the space; fallback cuts sit on a space itself).
+    let at = 0;
+    for (let i = 0; i < parts.length - 1; i++) {
+      at += parts[i].length;
+      const around = s[at - 1] + s[at];
+      expect(around).toMatch(/\s/);
+    }
+    expect(parts[0]).not.toMatch(/^\s/);
+  });
 });

@@ -90,6 +90,13 @@ offline afterwards.
   sentences in an answer are tappable: tap one and the reader jumps to it.
   Bring your own free Gemini key (Settings → AI) — plain-word definitions
   always work keyless via the free dictionary API.
+- **Auto-scroll:** a ▶/❚❚ ghost button beside the "?", in the same
+  auto-hiding chrome cluster. Tap to play/pause (Space works too); it
+  advances part by part at a reading pace computed per part
+  (900ms + 340ms/word), flows across page ends, and stops at the book's
+  end. Long-press the button to cycle speed 1× → 1.25× → 1.5× → 0.75×
+  (persisted). Opening the popup, a selection, or the Ask sheet pauses it
+  and closing resumes; Settings/leaving/tab-switch stops it.
 - **Settings:** the gear opens a dedicated settings page — font (Geist /
     Serif / Mono / Lexend / System), sentence sizes, text colours and
     opacity, highlight colour, with a live preview. Settings persist

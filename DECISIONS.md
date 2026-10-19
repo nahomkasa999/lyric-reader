@@ -669,3 +669,63 @@ added three small resilience items in the same pass:
 - Incident hygiene from the v4.2 scanner block: all test fixtures are
   fake (`test-personal-key-0001` style) — real key strings in tests got
   the push rejected; that rule is now explicit in the build playbook.
+
+## v4.5 — sentence-splitter quote-boundary bug + stored-book self-heal (Oct 19, 2026)
+
+- **Root cause 1 (reproduced, the real bug)**: `splitSentences` merged
+  `…"dream client.” A dream client…` into ONE 289-char item. The
+  Intl.Segmenter boundary was correctly found, but `isFalseBoundary`
+  judged the fragment by its last char — the closing curly quote `”`,
+  not the period — so it treated a real sentence end as a mid-sentence
+  split and glued the sentences back together. Fix: strip trailing
+  closers (`”’"'»›\])}`) before the terminal-punctuation test in
+  `lib/segment.ts`. This affected every app version at import time.
+- **Root cause 2 (honest read of his screenshot)**: his whole paragraph
+  rendered as ONE uniformly-bright block with no parting at all. In the
+  current build that is impossible — `Reader.tsx` derives parts from
+  `splitS(it.text)` at render, and CSS gives only `.pt.on` full
+  brightness (`.s.cur .pt` is trail colour). A uniformly-bright block
+  means the phone was running a pre-v3 build (no part rendering).
+  Nothing to fix in code; the shipped update delivers it. (He may need
+  to fully close/reopen the installed PWA for the service worker to
+  activate the new build.)
+- **Self-heal**: segmentation runs at import, so old books carry merged
+  items forever. `getBook` now runs pure `resegmentItems` (types.ts):
+  any "para" item the current splitter breaks into 2+ sentences is
+  replaced by its sentences, inheriting page/depth (no re-pagination —
+  PDF pages stay real, EPUB page numbers don't shift); headings and
+  bullets stay whole; idempotent. The healed shape persists once.
+  Reading position is clamped by the existing load path (`migratePosition`
+  + `Math.min` on part). Marks/vocab/ask stores are untouched: marks are
+  keyed `item:part`, so after a split a mark may sit on the first
+  derived sentence instead of its original one — accepted, not remapped.
+- **Not touched**: components/Reader.tsx (concurrent build in flight).
+
+## v4.4 — auto-scroll (auto-advance) (Oct 19, 2026)
+
+- **Pace formula: 900ms + 340ms per word, clamped 1200–6500ms, ÷ speed.**
+  Roughly a calm reading speed — the clamp keeps very short parts from
+  flickering and very long parts from stalling. Pure `paceMs(text, speed)`
+  in `src/lib/autoscroll.ts`, so it's unit-testable without timers.
+  → Change: the constants at the top of `autoscroll.ts`.
+- **Speed cycle 1× → 1.25× → 1.5× → 0.75× → 1×** on long-press (~500ms).
+  Four steps: normal, a little faster, clearly faster, slower for dense
+  passages. Persisted in the existing `lr-s` settings as `autoScrollSpeed`.
+  → Change: `AUTO_SPEEDS` in `autoscroll.ts` (keep `isAutoSpeed` in sync).
+- **Play/pause lives next to the "?"** — same ghost cluster, same
+  auto-hide state (`right: 74px`, `.auto-btn` mirrors `.ask-btn` CSS).
+  ▶/❚❚ are stroke SVGs in the app's icon language, no emoji.
+- **Manners**: starting playback hides the chrome (full focus); the page-
+  change chrome flash is SKIPPED while playing (quieter than the allowed
+  flash-then-hide); popup/selection/meaning/Ask pause transiently and
+  resume on close; Settings/leaving/tab-hide stop hard (no resume);
+  manual steps keep playing and re-time the new part; end of book stops
+  (icon back to ▶).
+- **Space now toggles auto-scroll instead of stepping forward.** It was
+  redundant with ArrowDown/PageDown; the toggle needs a home and his
+  hands are already on the keyboard. Guarded: never inside inputs or
+  while an overlay is open.
+- **One timeout ref, cleared before every re-arm** — rapid toggle spam
+  can't stack timers (covered by an e2e regression test).
+- **Long-press must not also toggle**: a fired flag is consumed by the
+  following click (the long-press hold always ends in a click).

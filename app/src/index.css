@@ -897,6 +897,62 @@
   background: var(--accent);
 }
 
+/* v4.4: auto-scroll button — the same chrome cluster as the "?", beside it. */
+.auto-btn {
+  position: absolute;
+  right: 74px;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  z-index: 25;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: oklch(0 0 0 / 0.55);
+  color: var(--foreground);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 250ms ease, visibility 0s linear 250ms;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.auto-btn.show {
+  opacity: 0.55;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 250ms ease, visibility 0s;
+}
+.auto-btn:active {
+  opacity: 1;
+  background: var(--accent);
+}
+
+/* v4.4: transient speed label after a long-press speed cycle. */
+.auto-speed {
+  position: absolute;
+  right: 66px;
+  bottom: calc(140px + env(safe-area-inset-bottom));
+  z-index: 25;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+  background: oklch(0 0 0 / 0.72);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 250ms ease, visibility 0s linear 250ms;
+}
+.auto-speed.show {
+  opacity: 0.92;
+  visibility: visible;
+  transition: opacity 250ms ease, visibility 0s;
+}
+
 /* v4: the Ask sheet — bottom sheet over the fx-blurred stage. */
 .ask-layer {
   position: absolute;

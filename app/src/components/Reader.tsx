@@ -40,6 +40,11 @@ import {
   type MeaningModel,
 } from "../lib/meaning";
 import { decorateText } from "../lib/vocab";
+import {
+  nextAutoStep,
+  nextSpeed,
+  paceMs,
+} from "../lib/autoscroll";
 import AskSheet from "./AskSheet";
 
 interface Props {
@@ -148,6 +153,41 @@ function SavedIcon() {
   );
 }
 
+// v4.4: auto-scroll play/pause — same stroke language as the app's icons.
+function PlayIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="17"
+      height="17"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M7.5 4.8v14.4L19 12z" />
+    </svg>
+  );
+}
+function PauseIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="17"
+      height="17"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <path d="M8.5 5v14M15.5 5v14" />
+    </svg>
+  );
+}
+
 export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: Props) {
   const [book, setBook] = useState<BookDoc | null>(null);
   const [pos, setPos] = useState<Position>({ item: 0, part: 0 });
@@ -173,6 +213,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const [meaning, setMeaning] = useState<MeaningState | null>(null);
   const [vocab, setVocab] = useState<VocabRecord[]>([]);
   const [askOpen, setAskOpen] = useState(false);
+  // v4.4: auto-scroll (auto-advance) + speed flash label.
+  const [autoPlaying, setAutoPlaying] = useState(false);
+  const [speedFlash, setSpeedFlash] = useState<string | null>(null);
 
   const { settings, update: updateSettings } = useSettings();
 
@@ -200,6 +243,23 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   askOpenRef.current = askOpen;
   const bookRef = useRef<BookDoc | null>(null);
   const itemsRef = useRef<Item[]>([]);
+  // v4.4: auto-scroll refs. autoTimer is the SINGLE playback timeout —
+  // always cleared before re-arming, so rapid toggles can't stack timers.
+  const autoPlayingRef = useRef(autoPlaying);
+  autoPlayingRef.current = autoPlaying;
+  const autoTimer = useRef<number | null>(null);
+  // True when playback was paused for a transient overlay (popup,
+  // selection, meaning card, Ask sheet) and should resume on close.
+  // Leaving the reader / Settings / tab-hide clears it (stay paused).
+  const autoResumeRef = useRef(false);
+  const speedRef = useRef(settings.autoScrollSpeed);
+  speedRef.current = settings.autoScrollSpeed;
+  const speedFlashTimer = useRef<number | null>(null);
+  // Long-press on the auto-scroll button (speed cycle) vs tap (toggle).
+  const autoLpRef = useRef<{ timer: number; x: number; y: number } | null>(
+    null,
+  );
+  const autoLpFiredRef = useRef(false);
   // Set when Escape cancels the edit so the blur it triggers doesn't commit.
   const cancelEditRef = useRef(false);
   const lastTap = useRef<{ t: number; key: string }>({ t: 0, key: "" });
@@ -332,12 +392,15 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     popRef.current = null;
     setPop(null);
     setCopied(false);
+    // v4.4: a popup that paused playback gives it back on close.
+    maybeResumeAutoRef.current();
   }, []);
 
   /** v4.1: collapse the custom selection — clear the painted highlight
       (the native Selection is never created, so Android's toolbar can
-      never appear) and hide the pill. */
-  const collapseSelection = useCallback(() => {
+      never appear) and hide the pill. v4.4: resumes transient-paused
+      playback unless told not to (the meaning opener pauses itself). */
+  const collapseSelection = useCallback((resume = true) => {
     selRef.current = null;
     setSel(null);
     selRangeRef.current = null;
@@ -353,6 +416,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     } catch {
       /* ignore */
     }
+    if (resume) maybeResumeAutoRef.current();
   }, []);
 
   /** Paint a range as our selection and raise the Meaning/Copy pill above
@@ -363,6 +427,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       collapseSelection();
       return;
     }
+    // v4.4: selecting pauses playback transiently — resume on dismiss.
+    pauseAutoTransientRef.current();
     selRangeRef.current = range;
     if (highlightsSupported()) paintSelection(range);
     const rect = range.getBoundingClientRect();
@@ -381,6 +447,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const closeMeaning = useCallback(() => {
     meaningRef.current = null;
     setMeaning(null);
+    // v4.4: the meaning card pauses playback transiently — give it back.
+    maybeResumeAutoRef.current();
   }, []);
 
   /** Anything that moves the reading position closes the reading overlays:
@@ -440,12 +508,157 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     [items, closeReadingOverlays, showChrome],
   );
 
+  // --- v4.4: auto-scroll (auto-advance, part by part) ---
+  const clearAutoTimer = useCallback(() => {
+    if (autoTimer.current !== null) {
+      window.clearTimeout(autoTimer.current);
+      autoTimer.current = null;
+    }
+  }, []);
+
+  const autoTick = useCallback(() => {
+    autoTimer.current = null;
+    if (!autoPlayingRef.current) return;
+    // Safety: an overlay that somehow opened without pausing playback
+    // must never advance underneath it.
+    if (
+      popRef.current ||
+      selRef.current ||
+      meaningRef.current ||
+      askOpenRef.current
+    )
+      return;
+    const step = nextAutoStep(partsRef.current, posRef.current);
+    if ("end" in step) {
+      // End of book: stop, icon back to ▶.
+      setAutoPlaying(false);
+      return;
+    }
+    setPos(step.next); // the pos effect below re-arms for the new part
+  }, []);
+  const autoTickRef = useRef(autoTick);
+  autoTickRef.current = autoTick;
+
+  /** Arm (or re-arm) the single playback timer for the current part. */
+  const armAuto = useCallback(() => {
+    clearAutoTimer();
+    const { item, part } = posRef.current;
+    const text = partsRef.current[item]?.[part] ?? "";
+    autoTimer.current = window.setTimeout(() => {
+      autoTickRef.current();
+    }, paceMs(text, speedRef.current));
+  }, [clearAutoTimer]);
+
+  const startAuto = useCallback(() => {
+    if (autoPlayingRef.current) {
+      armAuto();
+      return;
+    }
+    closeReadingOverlays();
+    autoResumeRef.current = false;
+    setAutoPlaying(true);
+    // Manners: starting playback hides the chrome — full focus. The
+    // standard reveal gestures still reach the pause button.
+    hideChrome();
+    armAuto();
+  }, [armAuto, closeReadingOverlays, hideChrome]);
+
+  const stopAuto = useCallback(() => {
+    clearAutoTimer();
+    setAutoPlaying(false);
+  }, [clearAutoTimer]);
+
+  /** Hard stop: pause with no resume (leaving the reader, Settings, tab). */
+  const stopAutoHard = useCallback(() => {
+    autoResumeRef.current = false;
+    clearAutoTimer();
+    setAutoPlaying(false);
+  }, [clearAutoTimer]);
+
+  const toggleAuto = useCallback(() => {
+    if (autoPlayingRef.current) stopAuto();
+    else startAuto();
+  }, [startAuto, stopAuto]);
+  const toggleAutoRef = useRef(toggleAuto);
+  toggleAutoRef.current = toggleAuto;
+
+  /** Transient pause for popup/selection/meaning/Ask: resume on close. */
+  const pauseAutoTransient = useCallback(() => {
+    if (!autoPlayingRef.current) return;
+    clearAutoTimer();
+    autoResumeRef.current = true;
+    setAutoPlaying(false);
+  }, [clearAutoTimer]);
+
+  const maybeResumeAuto = useCallback(() => {
+    if (!autoResumeRef.current) return;
+    autoResumeRef.current = false;
+    setAutoPlaying(true);
+    armAuto();
+  }, [armAuto]);
+
+  /** Ask sheet close (tap-outside, Esc, ✕, quote jump): resume if transient. */
+  const closeAsk = useCallback(() => {
+    setAskOpen(false);
+    maybeResumeAuto();
+  }, [maybeResumeAuto]);
+  const closeAskRef = useRef(closeAsk);
+  closeAskRef.current = closeAsk;
+  // Ref mirrors for callbacks defined before this block in source order.
+  const pauseAutoTransientRef = useRef(pauseAutoTransient);
+  pauseAutoTransientRef.current = pauseAutoTransient;
+  const maybeResumeAutoRef = useRef(maybeResumeAuto);
+  maybeResumeAutoRef.current = maybeResumeAuto;
+
+  /** Long-press the auto button: cycle the speed, show the label briefly. */
+  const cycleSpeed = useCallback(() => {
+    const ns = nextSpeed(speedRef.current);
+    updateSettings({ autoScrollSpeed: ns });
+    setSpeedFlash(`${ns}×`);
+    if (speedFlashTimer.current) window.clearTimeout(speedFlashTimer.current);
+    speedFlashTimer.current = window.setTimeout(
+      () => setSpeedFlash(null),
+      1400,
+    );
+  }, [updateSettings]);
+
+  // Manual steps while playing re-arm the timer for the new part —
+  // playback continues (the auto tick's own advance re-arms the same way).
+  useEffect(() => {
+    if (autoPlayingRef.current) armAuto();
+  }, [I, P, autoPlaying, armAuto]);
+
+  // Speed changes mid-playback re-time the current part.
+  useEffect(() => {
+    if (autoPlayingRef.current) armAuto();
+  }, [settings.autoScrollSpeed, armAuto]);
+
+  // New book: stay paused. Tab/app switch: pause with no resume.
+  useEffect(() => {
+    stopAutoHard();
+  }, [bookId, stopAutoHard]);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden) stopAutoHard();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [stopAutoHard]);
+  useEffect(
+    () => () => {
+      clearAutoTimer();
+      if (speedFlashTimer.current) window.clearTimeout(speedFlashTimer.current);
+    },
+    [clearAutoTimer],
+  );
+
   // Briefly reveal the bar on every page change.
   const prevPageRef = useRef(curPage);
   useEffect(() => {
     if (prevPageRef.current !== curPage) {
       prevPageRef.current = curPage;
-      showChrome(1200);
+      // v4.4: no chrome flash while auto-scrolling — full focus.
+      if (!autoPlayingRef.current) showChrome(1200);
     }
   }, [curPage, showChrome]);
 
@@ -535,6 +748,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   // --- Action popup, anchored at the item (his openPop positioning) ---
   const openPop = useCallback(
     (i: number, p: number) => {
+      // v4.4: the popup pauses playback transiently — resume on close.
+      pauseAutoTransientRef.current();
       setPop({ i, p });
       setCopied(false);
       setNoteEditing(false);
@@ -554,7 +769,10 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     const sentence =
       partsRef.current[item]?.[posRef.current.part] ?? it?.text ?? "";
     const text = s.text;
-    collapseSelection();
+    // v4.4: the meaning card pauses playback transiently. Pause first,
+    // then collapse without resuming (the resume comes on card close).
+    pauseAutoTransientRef.current();
+    collapseSelection(false);
     setMeaning({ text, status: "loading", saved: false });
     requestAnimationFrame(() => anchorCard(meaningCardRef, item));
     const key = getEffectiveApiKey();
@@ -803,7 +1021,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         return;
       }
       if (askOpenRef.current) {
-        if (e.key === "Escape") setAskOpen(false);
+        if (e.key === "Escape") closeAskRef.current();
         return;
       }
       if (popRef.current) {
@@ -811,10 +1029,18 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         return;
       }
       if (editingRef.current) return; // the page field owns its keys
+      // v4.4: Space toggles auto-scroll (it no longer steps forward).
+      // Only when the reader owns the key — never inside an input.
+      if (e.key === " ") {
+        const ae = document.activeElement as HTMLElement | null;
+        if (ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) return;
+        e.preventDefault();
+        toggleAutoRef.current();
+        return;
+      }
       if (
         e.key === "ArrowDown" ||
         e.key === "ArrowRight" ||
-        e.key === " " ||
         e.key === "PageDown"
       ) {
         e.preventDefault();
@@ -976,6 +1202,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     collapseSelection,
     closeMeaning,
     raiseCustomSelection,
+    toggleAuto,
+    closeAsk,
   ]);
 
   // v4.1: nothing to watch — selection is fully custom (long-press +
@@ -1065,7 +1293,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const jumpToPart = useCallback(
     (item: number, part: number) => {
       closeReadingOverlays();
-      setAskOpen(false);
+      closeAskRef.current();
       const pl = partsRef.current[item];
       setPos({
         item: clamp(item, 0, itemsRef.current.length - 1),
@@ -1200,7 +1428,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           }
         }
         if (askOpenRef.current) {
-          setAskOpen(false);
+          closeAskRef.current();
           closed = true;
         }
         if (closed) {
@@ -1230,6 +1458,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         <button
           onClick={() => {
             if (Date.now() < suppressUntil.current) return;
+            // v4.4: leaving the reader stays paused — no resume later.
+            stopAutoHard();
             onBack();
           }}
           aria-label="Back to library"
@@ -1302,6 +1532,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
             aria-label="Saved marks"
             onClick={() => {
               if (Date.now() < suppressUntil.current) return;
+              // v4.4: leaving the reader stays paused — no resume later.
+              stopAutoHard();
               onOpenSaved();
             }}
           >
@@ -1312,6 +1544,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
             aria-label="Settings"
             onClick={() => {
               if (Date.now() < suppressUntil.current) return;
+              // v4.4: Settings stays paused — no resume later.
+              stopAutoHard();
               onOpenSettings();
             }}
           >
@@ -1446,11 +1680,75 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         onClick={() => {
           if (Date.now() < suppressUntil.current) return;
           showChrome();
+          // v4.4: the Ask sheet pauses playback transiently.
+          pauseAutoTransientRef.current();
           setAskOpen(true);
         }}
       >
         ?
       </button>
+
+      {/* v4.4: auto-scroll play/pause — same chrome cluster as the "?":
+          visible exactly when the chrome is, beside it. Tap toggles;
+          long-press (~500ms) cycles the speed 1× → 1.25× → 1.5× → 0.75×. */}
+      <button
+        data-testid="autoscroll-btn"
+        aria-label={autoPlaying ? "Pause auto-scroll" : "Start auto-scroll"}
+        className={`auto-btn${chromeVisible ? " show" : ""}`}
+        onPointerDown={(e) => {
+          if (Date.now() < suppressUntil.current) return;
+          autoLpFiredRef.current = false;
+          autoLpRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            timer: window.setTimeout(() => {
+              autoLpRef.current = null;
+              autoLpFiredRef.current = true;
+              cycleSpeed();
+            }, 500),
+          };
+        }}
+        onPointerMove={(e) => {
+          const lp = autoLpRef.current;
+          if (
+            lp &&
+            Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10
+          ) {
+            window.clearTimeout(lp.timer);
+            autoLpRef.current = null;
+          }
+        }}
+        onPointerUp={() => {
+          if (autoLpRef.current) {
+            window.clearTimeout(autoLpRef.current.timer);
+            autoLpRef.current = null;
+          }
+        }}
+        onPointerLeave={() => {
+          if (autoLpRef.current) {
+            window.clearTimeout(autoLpRef.current.timer);
+            autoLpRef.current = null;
+          }
+        }}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={() => {
+          if (Date.now() < suppressUntil.current) return;
+          // A long-press must not also toggle.
+          if (autoLpFiredRef.current) {
+            autoLpFiredRef.current = false;
+            return;
+          }
+          toggleAuto();
+        }}
+      >
+        {autoPlaying ? <PauseIcon /> : <PlayIcon />}
+      </button>
+      {/* v4.4: transient speed label after a long-press cycle. */}
+      {speedFlash && (
+        <span data-testid="autoscroll-speed" className="auto-speed show">
+          {speedFlash}
+        </span>
+      )}
 
       {/* v4: the floating selection pill (Meaning / Copy), above the selection. */}
       {sel && !meaning && (
@@ -1564,6 +1862,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
                     className="meaning-save"
                     style={{ flex: 1 }}
                     onClick={() => {
+                      // v4.4: Settings stays paused — no resume later.
+                      stopAutoHard();
                       closeMeaning();
                       onOpenSettings();
                     }}
@@ -1591,6 +1891,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
                     className="meaning-save"
                     style={{ flex: 1 }}
                     onClick={() => {
+                      // v4.4: Settings stays paused — no resume later.
+                      stopAutoHard();
                       closeMeaning();
                       onOpenSettings();
                     }}
@@ -1633,7 +1935,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
             bookId={bookId}
             book={book}
             itemIndex={I}
-            onClose={() => setAskOpen(false)}
+            onClose={closeAsk}
             onJump={jumpToPart}
             onOpenSettings={onOpenSettings}
           />

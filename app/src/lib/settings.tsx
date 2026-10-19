@@ -9,6 +9,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { isAutoSpeed } from "./autoscroll";
 
 export type FontChoice =
   | "Geist"
@@ -33,6 +34,8 @@ export interface ReaderSettings {
   trailColor: string | null;
   /** 10–100 */
   trailOpacity: number;
+  /** auto-scroll speed multiplier (1 | 1.25 | 1.5 | 0.75) */
+  autoScrollSpeed: number;
 }
 
 export const FONT_STACKS: Record<FontChoice, string> = {
@@ -69,6 +72,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   mainOpacity: 100,
   trailColor: null,
   trailOpacity: 30,
+  autoScrollSpeed: 1,
 };
 
 const KEY = "lyric-reader.settings-v1";
@@ -105,6 +109,7 @@ function load(): ReaderSettings {
     if (typeof s.mainOpacity === "number") d.mainOpacity = clamp(Math.round(s.mainOpacity), 20, 100);
     d.trailColor = isHex(s.trailColor) ? s.trailColor : null;
     if (typeof s.trailOpacity === "number") d.trailOpacity = clamp(Math.round(s.trailOpacity), 10, 100);
+    if (isAutoSpeed(s.autoScrollSpeed)) d.autoScrollSpeed = s.autoScrollSpeed;
   } catch {
     /* corrupt prefs -> defaults */
   }
