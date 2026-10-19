@@ -492,3 +492,103 @@ action popup on the first click (his tap-to-popup rule fires before the
 selection forms) — acceptable v1, the second press dismisses it and the
 pill takes over. Not a test flake: long-press on touch devices fires no
 click, so the real gesture path is clean.
+
+## v4.1: custom selection — the native Selection is never created (Oct 19, 2026)
+
+His screenshot: Android Chrome's native selection toolbar (Define / Copy /
+Select all / Web search) appeared over our UI, plus Google's own definition
+sheet popped. That toolbar exists because we created a native Selection
+(`user-select: text` on the current sentence + `selectionchange` listener).
+No amount of styling removes it — it is the OS/browser's, not ours.
+
+Decision: kill native selection entirely. No element in the reader is
+`user-select: text` anymore (everything `user-select: none`, plus
+`-webkit-touch-callout: none` so the long-press callout bubble never shows).
+Selection is rebuilt from scratch:
+
+- Long-press (~450ms, <10px movement) on a part span of the CURRENT item ->
+  `document.caretRangeFromPoint` (fallback `caretPositionFromPoint`) ->
+  expand to word boundaries in that text node (scoped to the current item).
+- Paint via the CSS Custom Highlight API:
+  `CSS.highlights.set("lr-sel", new Highlight(range))`, styled with
+  `::highlight(lr-sel)` in his highlight wash. Native Selection is never
+  touched, so no handles, no magnifier, no Google bar — only our
+  Meaning/Copy pill, positioned from `range.getBoundingClientRect()` exactly
+  as before.
+- Drag (pointermove while the press is still down, anchored at the word
+  start; or a fresh press starting inside the painted selection, anchored at
+  the far end) extends the loose end to the word boundary at the pointer —
+  phrases/idioms in one gesture. Selection persists on pointerup.
+- Tap outside dismisses (existing capture-phase swallow machinery; the
+  capture handler lets presses that START inside the painted selection
+  through so re-drags work). Esc clears. While a selection is active — or a
+  long-press is pending, or a drag is in flight — all stepping input stays
+  suppressed (wheel/touchmove/click guards).
+- Caught in testing: the first version suppressed the synthetic click after
+  EVERY pointerup with a pending long-press timer — which killed normal
+  taps (double-tap-to-popup broke). Now only a selection that actually
+  STARTED (long-press fired / drag in flight) suppresses the following click.
+- Fallback: if `CSS.highlights`/`Highlight` is unavailable (old browsers),
+  the word still selects and the pill still works — just no paint and no
+  drag-extend. Logged here as the known limitation; nothing else degrades.
+
+New pure module `lib/selection.ts` (`caretRangeAt`, `wordRangeAt`,
+`extendSelection`, `paintSelection`) so the geometry is unit-testable and
+Reader.tsx stays a thin wiring layer.
+
+## v4.1: Gemini model discovery on-device + dictionary fallback chain (Oct 19, 2026)
+
+His phone: "The AI call failed (404)". Root cause: we hardcoded
+`gemini-2.5-flash`; his key's API doesn't serve that name (his account sees
+`gemini-3.5-flash`, which this VM can't even reach — the VM's network got
+403/timeout from Google, which is exactly why discovery must happen
+on-device, never from a build step).
+
+Decision: never hardcode the model again. `lib/gemini.ts` gains
+`discoverModel(key)`: GET `/v1beta/models` with `x-goog-api-key`, filter to
+`generateContent`-capable, pick by preference 3.5-flash > 3-flash >
+2.5-flash > 2-flash > any other flash (non-preview > preview, non-lite >
+lite within a tier), else the first generateContent model. Winner is saved
+to localStorage `lr-gemini-model`; `generateContent` uses the saved model,
+and on a 404 it re-discovers ONCE and retries before surfacing an error.
+Settings "Test key" now validates AND discovers, reporting
+"Key works — using {model}". The last-resort hardcoded name remains only
+for the first call before discovery has ever run.
+
+Dictionary side (`lib/meaning.ts`): `fetchWord` gets a 6s AbortController
+timeout (his connection hung on dictionaryapi.dev). ANY dictionary failure
+— network error, timeout, CORS, or 404 even after the lemmatizer retry —
+falls back to Gemini when a key exists, asking for
+`{word, phonetic, defs:[{pos, def, example}], inContext}` and rendering the
+same card (defs + in-context together). No key + dictionary failure shows
+the honest state: "Couldn't reach the dictionary. Check your connection —
+or add a Gemini key in Settings and meanings will come from AI instead."
+with an "Add key in Settings" shortcut. Dictionary success paths are
+byte-identical.
+
+Deliberately NOT the Vercel AI SDK: direct REST keeps the bundle lean; the
+SDK is the same HTTP underneath with extra weight. His call if he insists.
+
+## v4.1: anchored-card clamping — cards can never leave the viewport (Oct 19, 2026)
+
+His screenshot: the note editor hung off the right edge, Save cut off.
+Root cause: `.menu` had no max-width, so the note textarea's `width: 100%`
+made shrink-to-fit balloon the card to full viewport width; the anchor
+clamp then pinned `left: 16` and the right side overflowed by 16px.
+
+Decision, three layers (all of them, not one):
+1. CSS caps: `.menu` gets `max-width: min(340px, calc(100vw - 24px))`,
+   `max-height: calc(100dvh - 32px)` with internal scroll, and
+   `box-sizing: border-box`. Internals (`.note-editor`, `.note-textarea`)
+   are `width: 100%; max-width: 100%; box-sizing: border-box` — a child can
+   never stretch its card again.
+2. `anchorCard` math rewritten as a guarantee: measure, clamp the measured
+   size to the viewport first, then hard-clamp both axes to ≥16px margins —
+   whatever the anchor sentence's size/position. The pill gets a real
+   post-render horizontal re-clamp (measured width, not the old
+   `innerWidth - 190` guess).
+3. A ResizeObserver re-runs the clamp whenever a card's own size changes.
+   This caught a real bug in testing: the bundled webfont arrives AFTER
+   anchoring, reflows the text, and widens the card past the clamped
+   position (measured 214px at anchor, 230px after fonts — 10px off the
+   right edge). Content/async growth is covered the same way.

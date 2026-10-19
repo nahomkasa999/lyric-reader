@@ -112,7 +112,11 @@ function AiKeySection() {
               setResult(null);
               const r = await testApiKey(key);
               setTesting(false);
-              setResult(r.ok ? "✓ Key works" : `✗ ${r.reason}`);
+              setResult(
+                r.ok
+                  ? `✓ Key works — using ${r.model}`
+                  : `✗ ${r.reason}`,
+              );
             }}
             disabled={testing}
             className="set-chip shrink-0"

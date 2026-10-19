@@ -461,6 +461,13 @@
   padding: 8px;
   animation: card-in 200ms ease-out;
   min-width: 190px;
+  /* v4.1 (FIX 3): cards can never outgrow the screen — without this, a
+     width:100% child (the note textarea) ballooned the card past the
+     viewport edge. Tall cards scroll internally instead of overflowing. */
+  max-width: min(340px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 @keyframes card-in {
   from {
@@ -601,10 +608,17 @@
 /* Note editor inside the popup card */
 .note-editor {
   padding: 6px 4px 2px;
-  min-width: 230px;
+  /* v4.1 (FIX 3): the editor can never stretch the card past the screen —
+     it fills at most the card's (already viewport-clamped) width. */
+  width: 100%;
+  max-width: 100%;
+  min-width: min(230px, 100%);
+  box-sizing: border-box;
 }
 .note-textarea {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   min-height: 110px;
   background: var(--background);
   border: 1px solid var(--border);
@@ -698,15 +712,22 @@
   color: var(--muted-foreground);
 }
 
-/* v4: text selection is enabled ONLY on the current sentence's part spans.
-   Everything else stays user-select:none so taps keep working as input. */
-.s.cur .pt {
-  user-select: text;
-  -webkit-user-select: text;
-  cursor: text;
+/* v4.1: selection is fully custom (long-press + CSS Custom Highlight API)
+   — NOTHING is user-select:text anymore, so Android Chrome's native
+   selection toolbar (Define / Copy / Select all / Web search) can never
+   appear over our UI. -webkit-touch-callout:none stops the long-press
+   callout bubble too. */
+.reader-stage {
+  -webkit-touch-callout: none;
 }
-.s.cur {
-  cursor: text;
+.reader-stage .s {
+  -webkit-touch-callout: none;
+}
+/* The paint for our custom selection — same wash as .pt.hl. */
+::highlight(lr-sel) {
+  background: color-mix(in oklch, var(--lr-hl) 45%, transparent);
+  color: inherit;
+  border-radius: 4px;
 }
 
 /* v4: the floating selection pill (Meaning / Copy), above the selection. */

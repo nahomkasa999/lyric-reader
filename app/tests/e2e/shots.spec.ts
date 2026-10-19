@@ -197,6 +197,25 @@ test.describe("screenshots", () => {
     await page.route(
       "https://generativelanguage.googleapis.com/**",
       async (route) => {
+        // v4.1: model discovery (Test key + generateContent resolution).
+        if (route.request().url().includes("/v1beta/models?")) {
+          return route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              models: [
+                {
+                  name: "models/gemini-2.5-flash",
+                  supportedGenerationMethods: ["generateContent"],
+                },
+                {
+                  name: "models/gemini-3.5-flash",
+                  supportedGenerationMethods: ["generateContent"],
+                },
+              ],
+            }),
+          });
+        }
         const body = route.request().postDataJSON() as {
           contents?: Array<{ parts?: Array<{ text?: string }> }>;
           generationConfig?: { responseMimeType?: string };
@@ -227,23 +246,30 @@ test.describe("screenshots", () => {
     await page.waitForTimeout(450);
 
     // Selection pill above a selected word.
-    await page.evaluate(() => {
+    // v4.1: real long-press gesture — custom selection, no native toolbar.
+    const pt = await page.evaluate(() => {
       const el = document.querySelector('[data-testid="current-item"]');
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       let node: Node | null = null;
+      let found: { node: Node; idx: number } | null = null;
       while ((node = walker.nextNode())) {
         const idx = (node.textContent ?? "").toLowerCase().indexOf("lamp");
         if (idx >= 0) {
-          const range = document.createRange();
-          range.setStart(node, idx);
-          range.setEnd(node, idx + 4);
-          const sel = window.getSelection();
-          sel?.removeAllRanges();
-          sel?.addRange(range);
+          found = { node, idx };
           break;
         }
       }
+      if (!found) throw new Error("lamp not found");
+      const range = document.createRange();
+      range.setStart(found.node, found.idx);
+      range.setEnd(found.node, found.idx + 4);
+      const rect = range.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     });
+    await page.mouse.move(pt.x, pt.y);
+    await page.mouse.down();
+    await page.waitForTimeout(650);
+    await page.mouse.up();
     await page.getByTestId("selection-pill").waitFor();
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/selection-pill-phone.png` });
@@ -261,6 +287,28 @@ test.describe("screenshots", () => {
     await page.getByTestId("meaning-save").click();
     await expect(page.getByTestId("meaning-save")).toContainText("Saved");
     await page.getByTestId("meaning-close").click();
+
+    // v4.1: note editor card (FIX 3 regression shot — must sit fully
+    // inside the viewport, Save button visible).
+    const nbox = await page
+      .getByTestId("current-item")
+      .locator('[data-p="0"]')
+      .boundingBox();
+    if (!nbox) throw new Error("part 0 has no box");
+    await page.mouse.click(nbox.x + nbox.width / 2, nbox.y + nbox.height / 2);
+    await page.waitForTimeout(150);
+    if ((await page.getByTestId("popup-card").count()) === 0) {
+      await page.mouse.click(nbox.x + nbox.width / 2, nbox.y + nbox.height / 2);
+    }
+    await page.getByTestId("popup-card").waitFor();
+    await page.getByTestId("popup-note").click();
+    await page.getByTestId("note-editor").waitFor();
+    await page.getByTestId("note-textarea").fill("The lamp is a metaphor.");
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${SHOTS}/note-editor-phone.png` });
+    await page.keyboard.press("Escape");
+
     await revealChrome(page);
     await page.getByTestId("saved-btn").click();
     await page.getByTestId("saved-tab-words").click();

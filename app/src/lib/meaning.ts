@@ -116,27 +116,97 @@ function cleanText(t: string): string {
 async function fetchWord(
   word: string,
   fetchFn: typeof fetch,
+  timeoutMs = 6000,
 ): Promise<MeaningModel | "not-found" | "offline"> {
-  let res: Response;
+  // v4.1: a 6s timeout so a hanging dictionary can't stall the lookup
+  // forever (his connection timed out on it in Ethiopia).
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    res = await fetchFn(DICT_URL + encodeURIComponent(word));
+    const res = await fetchFn(DICT_URL + encodeURIComponent(word), {
+      signal: ctl.signal,
+    });
+    if (res.status === 404) return "not-found";
+    if (!res.ok) return "offline";
+    try {
+      const json = await res.json();
+      const parsed = parseDictionaryEntry(json);
+      return parsed ?? "not-found";
+    } catch {
+      return "offline";
+    }
   } catch {
     return "offline";
-  }
-  if (res.status === 404) return "not-found";
-  if (!res.ok) return "offline";
-  try {
-    const json = await res.json();
-    const parsed = parseDictionaryEntry(json);
-    return parsed ?? "not-found";
-  } catch {
-    return "offline";
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 interface AiMeaning {
   definition: string;
   inContext?: string;
+}
+
+/**
+ * v4.1: full meaning from Gemini as a last resort — when the dictionary is
+ * unreachable, times out, or 404s (even after the lemmatizer retry). Returns
+ * a MeaningModel shaped exactly like a dictionary one, so the card renders
+ * identically.
+ */
+export async function geminiFullMeaning(
+  query: string,
+  sentence: string,
+  apiKey: string,
+  fetchFn?: typeof fetch,
+): Promise<MeaningModel | null> {
+  try {
+    const raw = await geminiGenerate({
+      key: apiKey,
+      json: true,
+      maxTokens: 320,
+      system:
+        "You are a concise dictionary for a reader of English books. Reply with JSON only.",
+      messages: [
+        {
+          role: "user",
+          text:
+            `Define this word or phrase for a learner: "${query}".\n` +
+            `It appears in this sentence: "${sentence}".\n` +
+            `Reply with JSON: {"phonetic": "pronunciation if known", ` +
+            `"partOfSpeech": "noun", "definition": "...", ` +
+            `"example": "...", "inContext": "what it means in that sentence"}. ` +
+            `Keep the definition under 25 words and inContext under 20 words.`,
+        },
+      ],
+      fetchFn,
+    });
+    const p = JSON.parse(raw) as {
+      phonetic?: string;
+      partOfSpeech?: string;
+      definition?: string;
+      example?: string;
+      inContext?: string;
+    };
+    if (!p.definition?.trim()) return null;
+    return {
+      word: query,
+      phonetic: p.phonetic?.trim() || undefined,
+      groups: [
+        {
+          partOfSpeech: p.partOfSpeech?.trim() || "word",
+          defs: [
+            {
+              definition: p.definition.trim(),
+              example: p.example?.trim() || undefined,
+            },
+          ],
+        },
+      ],
+      inContext: p.inContext?.trim() || undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Ask Gemini for a phrase/idiom meaning as JSON. Null on any failure. */
@@ -239,9 +309,24 @@ export async function lookupMeaning(opts: LookupOpts): Promise<MeaningOutcome> {
       if (retry !== "not-found") found = retry;
     }
   }
-  if (found === "not-found")
-    return { status: "not-found", query: text };
-  if (found === "offline") return { status: "offline" };
+  // v4.1: ANY dictionary failure (404 even after the lemmatizer retry,
+  // network error, timeout, CORS) falls back to Gemini when a key exists —
+  // the word still gets defined instead of dying on the lookup.
+  if (typeof found === "string") {
+    if (opts.apiKey) {
+      const ai = await geminiFullMeaning(
+        text,
+        opts.sentence,
+        opts.apiKey,
+        fetchFn,
+      );
+      if (ai) return { status: "ready", model: ai };
+    }
+    return {
+      status: found === "offline" ? "offline" : "not-found",
+      query: text,
+    };
+  }
   if (found.word && !found.word.trim()) found.word = text;
   return { status: "ready", model: found };
 }

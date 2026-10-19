@@ -6,15 +6,23 @@ exams (section 3) intentionally deferred.** Priority order per Nahom: (1)
 selection + meanings + saved words, (2) ask, (3) exams later.
 
 ## 1. Selection + Meaning + Words (first)
-- Long-press wakes text selection on the current sentence (taps keep working
-  as reading input); drag covers a word/phrase/idiom; floating pill at the
-  selection: Meaning / Copy. Tap anywhere else dismisses (same language as
-  the popup).
+- Long-press wakes CUSTOM text selection on the current sentence (v4.1: the
+  native Selection is never created — Android's Define/Copy/Select-all/Web
+  search toolbar can never appear). Word at the touch point is painted with
+  the CSS Custom Highlight API; drag extends to phrases/idioms; floating
+  pill at the selection: Meaning / Copy. Tap anywhere else dismisses (same
+  language as the popup).
 - Meaning card anchored at the sentence: word in reading type, phonetic
   muted, definition lines, optional "In this sentence: ..." AI line, Save
   word action. Saved words get a faint dotted underline in the text.
-- Sources: free dictionary API for plain words (instant, exact); Gemini for
-  phrases/idioms/context. Saved meanings stored on-device -> work offline.
+- Sources: free dictionary API for plain words (instant, exact, 6s timeout);
+  Gemini for phrases/idioms/context — and as automatic fallback for ANY
+  dictionary failure when a key exists (v4.1). No key + dictionary failure
+  shows the honest "add a Gemini key in Settings" state.
+- Gemini model is discovered on-device per key (`GET /v1beta/models`,
+  prefers *-flash newest-first, saved to `lr-gemini-model`); a 404
+  re-discovers once and retries (v4.1 — hardcoding the model name failed
+  on real keys). Direct REST, no AI SDK (bundle stays lean).
 - Words page next to Saved: grouped by day (Today / Yesterday / date) with
   counts; row = word, one-line meaning, book + page source; tap -> jump to
   that exact sentence/part.

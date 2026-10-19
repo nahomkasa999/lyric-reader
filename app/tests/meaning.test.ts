@@ -222,3 +222,85 @@ describe("lookupMeaning", () => {
     expect(out.status).toBe("error");
   });
 });
+
+describe("v4.1 — dictionary failure falls back to Gemini", () => {
+  const AI_JSON = JSON.stringify({
+    phonetic: "/ˈlæmp/",
+    partOfSpeech: "noun",
+    definition: "A device that gives light, often powered by electricity.",
+    example: "She switched on the lamp.",
+    inContext: "Here it is the brass one on the landing.",
+  });
+
+  function aiFetch() {
+    return vi.fn(async (url: string) => {
+      if (url.includes("/models?"))
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            models: [
+              {
+                name: "models/gemini-3.5-flash",
+                supportedGenerationMethods: ["generateContent"],
+              },
+            ],
+          }),
+        } as Response;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: AI_JSON }] } }],
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  it("a dead dictionary + key yields an AI definition in the same card shape", async () => {
+    const f = aiFetch();
+    const out = await lookupMeaning({
+      text: "lamp",
+      sentence: "He lit the brass lamp.",
+      apiKey: "KEY",
+      fetchFn: ((url: string) =>
+        url.includes("dictionaryapi.dev")
+          ? Promise.reject(new TypeError("offline"))
+          : f(url)) as typeof fetch,
+    });
+    expect(out.status).toBe("ready");
+    expect(out.model!.word).toBe("lamp");
+    expect(out.model!.phonetic).toBe("/ˈlæmp/");
+    expect(out.model!.groups[0].defs[0].definition).toContain(
+      "gives light",
+    );
+    expect(out.model!.inContext).toContain("brass one");
+  });
+
+  it("a dictionary 404 after the lemmatizer retry also falls back with a key", async () => {
+    const f = aiFetch();
+    const out = await lookupMeaning({
+      text: "xylophonesque",
+      sentence: "s",
+      apiKey: "KEY",
+      fetchFn: ((url: string) =>
+        url.includes("dictionaryapi.dev")
+          ? Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+          : f(url)) as unknown as typeof fetch,
+    });
+    expect(out.status).toBe("ready");
+    expect(out.model!.groups[0].defs[0].definition).toContain("gives light");
+  });
+
+  it("a dead dictionary with no key stays offline", async () => {
+    const out = await lookupMeaning({
+      text: "lamp",
+      sentence: "s",
+      apiKey: "",
+      fetchFn: (async () => {
+        throw new TypeError("offline");
+      }) as typeof fetch,
+    });
+    expect(out.status).toBe("offline");
+  });
+});

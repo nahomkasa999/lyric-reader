@@ -24,7 +24,106 @@ export class GeminiError extends Error {
   }
 }
 
-export const GEMINI_MODEL = "gemini-2.5-flash";
+/** Last-resort model if on-device discovery can't run yet. */
+const GEMINI_MODEL_FALLBACK = "gemini-2.5-flash";
+const MODEL_STORAGE_KEY = "lr-gemini-model";
+const MODELS_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100";
+
+function lsGet(k: string): string | null {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+function lsSet(k: string, v: string): void {
+  try {
+    localStorage.setItem(k, v);
+  } catch {
+    /* ignore */
+  }
+}
+function lsDel(k: string): void {
+  try {
+    localStorage.removeItem(k);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Pick the best model name from a models.list payload, pure and unit-tested.
+ * Preference: gemini-3.5-flash first, then 3-flash, 2.5-flash, 2-flash, then
+ * any other flash-class model; within a tier, non-preview beats preview and
+ * non-lite beats lite. `names` are already filtered to generateContent-capable.
+ */
+export function pickModel(names: string[]): string | null {
+  const tierOf = (n: string): number => {
+    const l = n.toLowerCase();
+    if (/3\.5-flash/.test(l)) return 0;
+    if (/3-flash/.test(l)) return 1;
+    if (/2\.5-flash/.test(l)) return 2;
+    if (/2(-|\.)0-flash/.test(l)) return 3;
+    if (/flash/.test(l)) return 4;
+    return 5;
+  };
+  const penalty = (n: string): number => {
+    const l = n.toLowerCase();
+    return (l.includes("preview") ? 2 : 0) + (l.includes("lite") ? 1 : 0);
+  };
+  const sorted = [...names].sort(
+    (a, b) => tierOf(a) - tierOf(b) || penalty(a) - penalty(b),
+  );
+  return sorted.length ? sorted[0] : null;
+}
+
+/**
+ * Ask the API itself which models this key can use (v4.1: the hardcoded
+ * model 404'd on real keys, and this VM can't reach Google, so discovery
+ * MUST happen on the user's device). Saves the winner for later calls.
+ */
+export async function discoverModel(
+  key: string,
+  fetchFn?: typeof fetch,
+): Promise<string | null> {
+  const f = fetchFn ?? fetch;
+  try {
+    const res = await f(MODELS_URL, {
+      headers: { "x-goog-api-key": key },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      models?: Array<{ name?: string; supportedGenerationMethods?: string[] }>;
+    };
+    const names = (data.models ?? [])
+      .filter((m) =>
+        (m.supportedGenerationMethods ?? []).includes("generateContent"),
+      )
+      .map((m) => String(m.name ?? "").replace(/^models\//, ""));
+    const pick = pickModel(names);
+    if (pick) lsSet(MODEL_STORAGE_KEY, pick);
+    return pick;
+  } catch {
+    return null;
+  }
+}
+
+/** The model we currently believe works for this key. */
+export function storedModel(): string | null {
+  return lsGet(MODEL_STORAGE_KEY);
+}
+
+async function resolveModel(
+  key: string,
+  fetchFn?: typeof fetch,
+): Promise<string> {
+  return (
+    storedModel() ??
+    (await discoverModel(key, fetchFn)) ??
+    GEMINI_MODEL_FALLBACK
+  );
+}
 
 interface GenOpts {
   key: string;
@@ -34,6 +133,10 @@ interface GenOpts {
   json?: boolean;
   maxTokens?: number;
   fetchFn?: typeof fetch;
+  /** explicit model override (skips discovery) */
+  model?: string;
+  /** internal: already retried after a 404 once */
+  _retried?: boolean;
 }
 
 interface GenResponse {
@@ -47,7 +150,18 @@ interface GenResponse {
 
 export async function geminiGenerate(opts: GenOpts): Promise<string> {
   const fetchFn = opts.fetchFn ?? fetch;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  // Explicit model override: no discovery, no 404 retry.
+  if (opts.model) return generateWithModel(opts.model, opts, fetchFn);
+  const model = storedModel() ?? (await resolveModel(opts.key, fetchFn));
+  return generateWithModel(model, opts, fetchFn);
+}
+
+async function generateWithModel(
+  model: string,
+  opts: GenOpts,
+  fetchFn: typeof fetch,
+): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const contents = opts.messages.map((m) => ({
     role: m.role,
     parts: [{ text: m.text }],
@@ -98,6 +212,19 @@ export async function geminiGenerate(opts: GenOpts): Promise<string> {
         "quota",
         "The AI is rate-limited right now — wait a little and retry.",
       );
+    if (code === 404 && !opts.model && !opts._retried) {
+      // v4.1: the stored/hardcoded model name isn't valid for this key —
+      // re-discover what the key can actually use, then retry once.
+      lsDel(MODEL_STORAGE_KEY);
+      const fresh = await discoverModel(opts.key, fetchFn);
+      if (fresh && fresh !== model) {
+        return generateWithModel(
+          fresh,
+          { ...opts, _retried: true },
+          fetchFn,
+        );
+      }
+    }
     throw new GeminiError(
       "unknown",
       `The AI call failed (${code}). Try again in a moment.`,
@@ -122,20 +249,34 @@ export async function geminiGenerate(opts: GenOpts): Promise<string> {
   return text;
 }
 
-/** One tiny call to verify a key. Never logs or persists the key. */
+/**
+ * Verify a key AND discover the model it should use. Never logs or persists
+ * the key — only the chosen model name is stored.
+ */
 export async function testApiKey(
   key: string,
   fetchFn?: typeof fetch,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (!key.trim()) return { ok: false, reason: "Paste a key first." };
+): Promise<{ ok: true; model: string } | { ok: false; reason: string }> {
+  const k = key.trim();
+  if (!k) return { ok: false, reason: "Paste a key first." };
+  // Fresh discovery for a freshly-typed key (the old choice may be stale).
+  lsDel(MODEL_STORAGE_KEY);
+  const model = await discoverModel(k, fetchFn);
+  if (!model)
+    return {
+      ok: false,
+      reason:
+        "That key didn't unlock any Gemini model — double-check it in Settings, or grab a fresh one from Google AI Studio.",
+    };
   try {
-    const text = await geminiGenerate({
-      key: key.trim(),
+    await geminiGenerate({
+      key: k,
+      model,
       messages: [{ role: "user", text: "Reply with exactly this word: ok" }],
       maxTokens: 10,
       fetchFn,
     });
-    return /\bok\b/i.test(text) ? { ok: true } : { ok: true };
+    return { ok: true, model };
   } catch (e) {
     return {
       ok: false,

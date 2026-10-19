@@ -53,6 +53,25 @@ async function stubApis(page: Page) {
   await page.route(
     "https://generativelanguage.googleapis.com/**",
     async (route) => {
+      // v4.1: model discovery (Test key + generateContent resolution).
+      if (route.request().url().includes("/v1beta/models?")) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            models: [
+              {
+                name: "models/gemini-2.5-flash",
+                supportedGenerationMethods: ["generateContent"],
+              },
+              {
+                name: "models/gemini-3.5-flash",
+                supportedGenerationMethods: ["generateContent"],
+              },
+            ],
+          }),
+        });
+      }
       const body = route.request().postDataJSON() as {
         contents?: Array<{ parts?: Array<{ text?: string }> }>;
         generationConfig?: { responseMimeType?: string };
@@ -87,12 +106,13 @@ async function gotoBrassLamp(page: Page) {
 }
 
 /**
- * Select a word/phrase inside the current item programmatically (the same
- * selectionchange path a long-press or double-click takes, without the
- * click handlers interfering).
+ * v4.1: select via a real long-press gesture — mouse down on the word,
+ * held past the 450ms threshold, then dragged toward the end so phrases
+ * extend. This exercises the custom selection path exactly as a finger
+ * would (no native Selection is ever created).
  */
 async function selectText(page: Page, text: string) {
-  await page.evaluate((t) => {
+  const pt = await page.evaluate((t) => {
     const el = document.querySelector('[data-testid="current-item"]');
     if (!el) throw new Error("no current item");
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -111,11 +131,18 @@ async function selectText(page: Page, text: string) {
     const range = document.createRange();
     range.setStart(found.node, found.idx);
     range.setEnd(found.node, found.idx + t.length);
-    const sel = window.getSelection();
-    if (!sel) throw new Error("no selection");
-    sel.removeAllRanges();
-    sel.addRange(range);
+    const rect = range.getBoundingClientRect();
+    return {
+      sx: rect.left + 6,
+      ex: rect.right - 6,
+      y: rect.top + rect.height / 2,
+    };
   }, text);
+  await page.mouse.move(pt.sx, pt.y);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  await page.mouse.move(pt.ex, pt.y, { steps: 12 });
+  await page.mouse.up();
   await page.getByTestId("selection-pill").waitFor();
 }
 
@@ -231,10 +258,13 @@ test.describe("Lyric Reader v4 — selection and Meaning", () => {
     await page.getByTestId("gemini-key").fill("test-key");
     await page.getByTestId("gemini-test").click();
     await expect(page.getByTestId("gemini-test-result")).toContainText(
-      "Key works",
+      "Key works — using gemini-3.5-flash",
     );
     await page.getByTestId("settings-back").click();
     await page.getByTestId("current-item").waitFor();
+    // The remounted reader's track animates (.35s) to the restored
+    // position — measuring the word rect mid-flight yields a stale point.
+    await page.waitForTimeout(600);
     await selectText(page, "brass lamp");
     await page.getByTestId("sel-meaning").click();
     await expect(card).toContainText("A lamp made of brass.");

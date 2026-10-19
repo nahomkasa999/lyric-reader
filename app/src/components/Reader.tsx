@@ -29,6 +29,12 @@ import {
 import { useSettings } from "../lib/settings";
 import { getApiKey } from "../lib/apikey";
 import {
+  highlightsSupported,
+  wordRangeAt,
+  extendSelection,
+  paintSelection,
+} from "../lib/selection";
+import {
   geminiInContext,
   lookupMeaning,
   type MeaningModel,
@@ -204,6 +210,17 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const suppressUntil = useRef(0);
   const chromeTimer = useRef<number | null>(null);
   const chromeRef = useRef(false);
+  // v4.1: custom selection (no native Selection ever — that is what
+  // summoned Android's Define/Copy/Select all/Web search toolbar).
+  const selRangeRef = useRef<Range | null>(null);
+  const lpRef = useRef<{ x: number; y: number; timer: number } | null>(null);
+  // While the press keeps dragging (after the long-press fired, or a
+  // re-drag started on the painted selection), this anchors the fixed
+  // end of the selection; the loose end follows the pointer.
+  const extendRef = useRef<{ node: Node; offset: number } | null>(null);
+  // Timestamp of the last selection-gesture pointerup: the synthetic click
+  // that can follow it must never step or open the popup.
+  const lastSelEndRef = useRef(0);
 
   const items: Item[] = book?.items ?? [];
   itemsRef.current = items;
@@ -317,18 +334,49 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     setCopied(false);
   }, []);
 
-  /** Collapse any active text selection (v4): clear the native selection
-      and hide the pill. */
+  /** v4.1: collapse the custom selection — clear the painted highlight
+      (the native Selection is never created, so Android's toolbar can
+      never appear) and hide the pill. */
   const collapseSelection = useCallback(() => {
     selRef.current = null;
     setSel(null);
+    selRangeRef.current = null;
+    extendRef.current = null;
+    if (lpRef.current) {
+      window.clearTimeout(lpRef.current.timer);
+      lpRef.current = null;
+    }
     try {
-      const s = window.getSelection();
-      if (s && !s.isCollapsed) s.collapseToStart();
+      (
+        CSS as unknown as { highlights?: Map<string, unknown> }
+      ).highlights?.delete("lr-sel");
     } catch {
       /* ignore */
     }
   }, []);
+
+  /** Paint a range as our selection and raise the Meaning/Copy pill above
+      its bounding rect. Works even without paint support (pill still comes
+      up; only the visual highlight is skipped). */
+  const raiseCustomSelection = useCallback((range: Range | null) => {
+    if (!range) {
+      collapseSelection();
+      return;
+    }
+    selRangeRef.current = range;
+    if (highlightsSupported()) paintSelection(range);
+    const rect = range.getBoundingClientRect();
+    const text = range.toString().trim();
+    if (!text) {
+      collapseSelection();
+      return;
+    }
+    setSel({
+      text,
+      top: Math.max(8, rect.top - 60),
+      left: clamp(rect.left, 16, window.innerWidth - 190),
+    });
+  }, [collapseSelection]);
 
   const closeMeaning = useCallback(() => {
     meaningRef.current = null;
@@ -440,7 +488,11 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
 
   // --- Anchored cards (action popup + meaning card): his openPop math ---
   // Below the item (+16), flipping above near the bottom, right-aligned
-  // to the item and clamped to the viewport.
+  // to the item. v4.1: the math GUARANTEES the card is fully inside the
+  // viewport with ≥16px margins on every side, whatever the anchor's
+  // size/position — the measured size is clamped first (CSS also caps
+  // .menu with max-width/max-height, so offsetWidth/offsetHeight can't
+  // exceed the viewport), then both axes are hard-clamped.
   const anchorCard = useCallback(
     (cardRef: React.RefObject<HTMLElement | null>, i: number) => {
       const m = cardRef.current;
@@ -449,19 +501,36 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       const el = track.querySelector<HTMLElement>(`[data-item="${i}"]`);
       if (!el) return;
       const r = el.getBoundingClientRect();
-      const mh = m.offsetHeight;
-      const mw = m.offsetWidth;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const mw = Math.min(m.offsetWidth || 0, vw - 32);
+      const mh = Math.min(m.offsetHeight || 0, vh - 32);
       let top = r.bottom + 16;
-      if (top + mh > window.innerHeight - 16)
-        top = Math.max(16, r.top - mh - 16);
+      if (top + mh > vh - 16) top = Math.max(16, r.top - mh - 16);
+      top = Math.max(16, Math.min(top, vh - mh - 16));
+      const left = Math.max(16, Math.min(vw - mw - 16, r.right - mw));
       m.style.top = `${top}px`;
-      m.style.left = `${Math.max(
-        16,
-        Math.min(window.innerWidth - mw - 24, r.right - mw),
-      )}px`;
+      m.style.left = `${left}px`;
     },
     [],
   );
+
+  // FIX 3: re-clamp the selection pill horizontally after it renders, so
+  // the real (not guessed) width is what stays inside the viewport.
+  useEffect(() => {
+    if (!sel) return;
+    const raf = requestAnimationFrame(() => {
+      const pill = pillRef.current;
+      if (!pill) return;
+      const w = pill.offsetWidth;
+      setSel((prev) =>
+        prev
+          ? { ...prev, left: Math.max(16, Math.min(prev.left, window.innerWidth - w - 12)) }
+          : prev,
+      );
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [sel]);
 
   // --- Action popup, anchored at the item (his openPop positioning) ---
   const openPop = useCallback(
@@ -552,6 +621,30 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     return () => cancelAnimationFrame(raf);
   }, [meaningStatus, anchorCard]);
 
+  // FIX 3: cards can also grow AFTER anchoring — webfonts arriving late
+  // reflow the text and widen the card past the clamped position (this is
+  // exactly what pushed the note editor off the right edge). A
+  // ResizeObserver re-runs the clamp whenever a card's own size changes,
+  // so it can never end up hanging off the screen.
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    if (!pop && !meaning) return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (pop) anchorCard(menuRef, pop.i);
+        else if (meaning) anchorCard(meaningCardRef, posRef.current.item);
+      });
+    });
+    if (menuRef.current) ro.observe(menuRef.current);
+    if (meaningCardRef.current) ro.observe(meaningCardRef.current);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [pop, meaning, anchorCard]);
+
   const saveWord = useCallback(async () => {
     const m = meaningRef.current;
     const b = bookRef.current;
@@ -593,8 +686,16 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       // v4: while a selection is active, a meaning card open, or the Ask
-      // sheet open, every stepping input is suppressed.
-      if (selRef.current || meaningRef.current || askOpenRef.current) return;
+      // sheet open, every stepping input is suppressed. v4.1: also while a
+      // long-press is pending or a selection drag is in progress.
+      if (
+        selRef.current ||
+        meaningRef.current ||
+        askOpenRef.current ||
+        lpRef.current ||
+        extendRef.current
+      )
+        return;
       window.clearTimeout(wt);
       wt = window.setTimeout(() => {
         wlock = false;
@@ -611,7 +712,16 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     const onTouchMove = (e: TouchEvent) => {
       if (moved.current) return;
       // v4: a touch-drag that is actually selecting text must not step.
-      if (selRef.current || meaningRef.current || askOpenRef.current) return;
+      // v4.1: the long-press pending state and the selection drag both
+      // suppress stepping too.
+      if (
+        selRef.current ||
+        meaningRef.current ||
+        askOpenRef.current ||
+        lpRef.current ||
+        extendRef.current
+      )
+        return;
       const dy = ty - e.touches[0].clientY;
       if (Math.abs(dy) > 30) {
         goRef.current(dy > 0 ? 1 : -1);
@@ -623,17 +733,12 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       // The click that follows a swallowed tap-outside popup dismissal must
       // not step, select, or reveal chrome.
       if (Date.now() < suppressUntil.current) return;
+      // v4.1: the synthetic click that can follow a long-press/drag
+      // selection gesture must never step or open the action popup.
+      if (Date.now() - lastSelEndRef.current < 600) return;
       if (moved.current) {
         moved.current = false;
         return;
-      }
-      // v4: the click that finishes a drag-select must not step or open the
-      // popup — the selectionchange listener raises the pill instead.
-      try {
-        const s = window.getSelection();
-        if (s && !s.isCollapsed) return;
-      } catch {
-        /* ignore */
       }
       const t = e.target as HTMLElement;
       // Hot zones: taps at the top ~12% or bottom 15% of the stage reveal
@@ -726,82 +831,156 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       }
     };
 
+    // v4.1: custom long-press selection. No native selection is ever
+    // created, so Android's Define/Copy/Select all/Web search toolbar can
+    // never appear. The range is painted with the CSS Custom Highlight
+    // API; the pill consumes range.toString() like the old native path.
+    const curItemEl = () => {
+      const track = trackRef.current;
+      if (!track) return null;
+      return track.querySelector<HTMLElement>(
+        `[data-item="${posRef.current.item}"]`,
+      );
+    };
+    const fireLongPress = (x: number, y: number) => {
+      lpRef.current = null;
+      const scope = curItemEl();
+      if (!scope) return;
+      raiseCustomSelection(wordRangeAt(x, y, scope));
+      // The press is still held: further movement extends the selection
+      // (anchored at the word start) — phrases/idioms, one gesture.
+      const raised = selRangeRef.current;
+      if (raised)
+        extendRef.current = {
+          node: raised.startContainer,
+          offset: raised.startOffset,
+        };
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (popRef.current || meaningRef.current || askOpenRef.current) return;
+      if (selRef.current) {
+        // Re-drag: a press starting inside the painted selection extends
+        // it (the capture dismissal let it through). Anchor the far end.
+        const r = selRangeRef.current;
+        if (r) {
+          const rect = r.getBoundingClientRect();
+          if (
+            e.clientX >= rect.left - 8 &&
+            e.clientX <= rect.right + 8 &&
+            e.clientY >= rect.top - 8 &&
+            e.clientY <= rect.bottom + 8
+          ) {
+            const midX = (rect.left + rect.right) / 2;
+            extendRef.current =
+              e.clientX < midX
+                ? { node: r.endContainer, offset: r.endOffset }
+                : { node: r.startContainer, offset: r.startOffset };
+          }
+        }
+        return;
+      }
+      const t = e.target as HTMLElement;
+      const partEl = t.closest?.("[data-p]");
+      const itemEl = t.closest?.("[data-item]");
+      if (
+        !partEl ||
+        !itemEl ||
+        Number(itemEl.getAttribute("data-item")) !== posRef.current.item
+      )
+        return;
+      lpRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        timer: window.setTimeout(
+          () => fireLongPress(e.clientX, e.clientY),
+          450,
+        ),
+      };
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      const lp = lpRef.current;
+      if (lp) {
+        // Finger moved before the hold completed: this was a scroll/step
+        // gesture, not a selection. Cancel and let the touch logic run.
+        if (Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10) {
+          window.clearTimeout(lp.timer);
+          lpRef.current = null;
+        }
+        return;
+      }
+      if (extendRef.current && e.buttons & 1) {
+        const scope = curItemEl();
+        if (!scope) return;
+        const r = extendSelection(
+          extendRef.current,
+          e.clientX,
+          e.clientY,
+          scope,
+        );
+        if (r) raiseCustomSelection(r);
+      }
+    };
+    const onPointerUp = () => {
+      // Only a selection that actually STARTED (long-press fired and/or a
+      // drag is in flight) suppresses the click that follows. A plain tap
+      // — long-press timer still pending — must keep its normal click
+      // behavior (double-tap opens the popup, taps step).
+      const hadGesture =
+        extendRef.current !== null || selRef.current !== null;
+      if (lpRef.current) {
+        window.clearTimeout(lpRef.current.timer);
+        lpRef.current = null;
+      }
+      if (extendRef.current) extendRef.current = null;
+      // The synthetic click that can follow a selection gesture must
+      // never step or open the action popup.
+      if (hadGesture) lastSelEndRef.current = Date.now();
+    };
+    const onPointerCancel = () => {
+      if (lpRef.current) {
+        window.clearTimeout(lpRef.current.timer);
+        lpRef.current = null;
+      }
+      extendRef.current = null;
+    };
+
     stage.addEventListener("wheel", onWheel, { passive: false });
     stage.addEventListener("touchstart", onTouchStart, { passive: true });
     stage.addEventListener("touchmove", onTouchMove, { passive: true });
     stage.addEventListener("click", onClick);
+    stage.addEventListener("pointerdown", onPointerDown);
+    stage.addEventListener("pointermove", onPointerMove);
+    stage.addEventListener("pointerup", onPointerUp);
+    stage.addEventListener("pointercancel", onPointerCancel);
     window.addEventListener("keydown", onKey);
     return () => {
       stage.removeEventListener("wheel", onWheel);
       stage.removeEventListener("touchstart", onTouchStart);
       stage.removeEventListener("touchmove", onTouchMove);
       stage.removeEventListener("click", onClick);
+      stage.removeEventListener("pointerdown", onPointerDown);
+      stage.removeEventListener("pointermove", onPointerMove);
+      stage.removeEventListener("pointerup", onPointerUp);
+      stage.removeEventListener("pointercancel", onPointerCancel);
       window.removeEventListener("keydown", onKey);
     };
     // `book` in deps: the effect must (re-)attach once the stage exists
     // after the book loads — on first render we bail out at `!stage`.
-  }, [book, closePop, openPop, showChrome, hideChrome, collapseSelection, closeMeaning]);
+  }, [
+    book,
+    closePop,
+    openPop,
+    showChrome,
+    hideChrome,
+    collapseSelection,
+    closeMeaning,
+    raiseCustomSelection,
+  ]);
 
-  // --- v4: native text selection on the current sentence ---
-  // Only .s.cur .pt spans are selectable (CSS); the native selection is
-  // watched here. A non-collapsed selection fully inside the current item
-  // raises the floating pill; everything else collapses it.
-  useEffect(() => {
-    if (!book) return;
-    const onSelChange = () => {
-      // While the action popup is open, taps collapse the selection first
-      // (the popup's capture handler swallows them) — nothing to raise.
-      if (
-        popRef.current ||
-        meaningRef.current ||
-        askOpenRef.current ||
-        editingRef.current
-      ) {
-        if (selRef.current) collapseSelection();
-        return;
-      }
-      let s: Selection | null = null;
-      try {
-        s = window.getSelection();
-      } catch {
-        /* ignore */
-      }
-      if (!s || s.isCollapsed || s.rangeCount === 0) {
-        if (selRef.current) setSel(null);
-        return;
-      }
-      const anchorEl =
-        s.anchorNode instanceof Element
-          ? s.anchorNode
-          : s.anchorNode?.parentElement;
-      const focusEl =
-        s.focusNode instanceof Element
-          ? s.focusNode
-          : s.focusNode?.parentElement;
-      const anchorItem = anchorEl?.closest?.("[data-item]");
-      const focusItem = focusEl?.closest?.("[data-item]");
-      const cur = posRef.current.item;
-      const text = s.toString().trim();
-      if (
-        !text ||
-        !anchorItem ||
-        !focusItem ||
-        Number(anchorItem.getAttribute("data-item")) !== cur ||
-        Number(focusItem.getAttribute("data-item")) !== cur
-      ) {
-        if (selRef.current) setSel(null);
-        return;
-      }
-      const rect = s.getRangeAt(0).getBoundingClientRect();
-      setSel({
-        text,
-        top: Math.max(8, rect.top - 60),
-        left: clamp(rect.left, 16, window.innerWidth - 190),
-      });
-    };
-    document.addEventListener("selectionchange", onSelChange);
-    return () => document.removeEventListener("selectionchange", onSelChange);
-  }, [book, collapseSelection]);
+  // v4.1: nothing to watch — selection is fully custom (long-press +
+  // CSS Highlight API). The native `selectionchange` listener is gone
+  // because the native Selection is never created.
 
   // A− / A+ adjust the same main-size setting the slider edits.
   const adjustMainSize = useCallback(
@@ -1004,8 +1183,21 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           closed = true;
         }
         if (selRef.current) {
-          collapseSelection();
-          closed = true;
+          // v4.1: a press starting inside the painted selection begins a
+          // re-drag (handled by the stage pointer handlers) — it must not
+          // collapse the selection first.
+          const r = selRangeRef.current;
+          const rect = r?.getBoundingClientRect();
+          const inside =
+            !!rect &&
+            e.clientX >= rect.left - 8 &&
+            e.clientX <= rect.right + 8 &&
+            e.clientY >= rect.top - 8 &&
+            e.clientY <= rect.bottom + 8;
+          if (!inside) {
+            collapseSelection();
+            closed = true;
+          }
         }
         if (askOpenRef.current) {
           setAskOpen(false);
@@ -1388,11 +1580,36 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
                 </div>
               </div>
             )}
-            {(meaning.status === "offline" || meaning.status === "error") && (
+            {meaning.status === "offline" && (
               <div className="meaning-status">
-                {meaning.status === "offline"
-                  ? "You're offline — couldn't look that up. Try again with a connection."
-                  : "Something went wrong looking that up — try again."}
+                Couldn't reach the dictionary. Check your connection — or add
+                a Gemini key in Settings and meanings will come from AI
+                instead.
+                <div className="meaning-actions">
+                  <button
+                    data-testid="meaning-to-settings"
+                    className="meaning-save"
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      closeMeaning();
+                      onOpenSettings();
+                    }}
+                  >
+                    Add key in Settings
+                  </button>
+                  <button
+                    data-testid="meaning-close"
+                    className="meaning-close"
+                    onClick={closeMeaning}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+            {meaning.status === "error" && (
+              <div className="meaning-status">
+                Something went wrong looking that up — try again.
                 <div className="meaning-actions">
                   <button
                     data-testid="meaning-close"

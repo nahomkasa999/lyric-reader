@@ -374,3 +374,70 @@ regenerated unchanged in the same run.
   key test ping, and Ask answers all ran against canned stubs. Real-API
   behaviour (dictionary edge words, Gemini latency/wording) is untested.
 - Screenshots eyeballed by the builder, not by Nahom.
+
+## v4.1 — custom selection, model discovery, card clamping (Oct 19, 2026, evening)
+
+His three phone-reported bugs, fixed and test-passed. `npx tsc -b` clean +
+`npm run build` green + the ENTIRE suite (old + new).
+
+## Unit tests — `npx vitest run`
+
+**77/77 passed** (9 files; was 65/65 in v4, +12 new):
+
+| File | Tests | New in v4.1 |
+|---|---|---|
+| `tests/gemini.test.ts` | 9 | NEW FILE: `pickModel` — 3.5-flash beats 2.5-flash, preview/lite deprioritised within a tier, tier fallback, empty→null; `discoverModel` picks gemini-3.5-flash from a canned models payload and stores it in `lr-gemini-model`; key rejection → null; `testApiKey` reports "Key works — using gemini-3.5-flash" / reason; `geminiGenerate` re-discovers once and retries after a stale stored model 404s |
+| `tests/meaning.test.ts` | 15 (was 12) | +3: dictionary network-death + key → Gemini full-meaning JSON renders in the same card shape (word/phonetic/defs/in-context); dictionary 404-after-lemmatizer + key → same fallback; dictionary death with no key → stays `offline` |
+
+Real bugs caught during this run: two, both fixed before green —
+(1) the 404-retry guard compared the *resolved* model against
+`opts.model`, so a stale *stored* model never triggered re-discovery
+(restructured: explicit override vs resolved model are now distinct paths);
+(2) n/a at unit level (the e2e catches are below).
+
+## Interaction tests — `npx playwright test`
+
+**63/63 passed** (Chromium headless, `vite preview` serving `dist`;
+was 56/56 in v4, +7 new):
+
+| File | Tests | New/changed in v4.1 |
+|---|---|---|
+| `tests/e2e/v41.spec.ts` | 7 | NEW FILE, all APIs stubbed incl. `/v1beta/models`: (a) long-press via real pointer events → `CSS.highlights` has `lr-sel` with text "lamp", `window.getSelection()` stays collapsed (no native toolbar possible), pill visible, Meaning opens the card; (b) drag after long-press extends the painted range to "brass lamp"; (c) tap outside dismisses (pill gone, highlight cleared); (d) Test key discovers `gemini-3.5-flash` from the stubbed list and stores it; (e) dictionary route aborted + key set → meaning card still fills via the Gemini stub; (f) note editor opened on a bottom sentence → popup card bounding box fully inside the 390×844 viewport with ≥12px margins, note-save fully visible + clickable (typed + saved); (g) meaning card → same in-viewport assertion |
+| `tests/e2e/vocab-ask.spec.ts` | 13 | `selectText` rewritten from programmatic native ranges to the real long-press gesture (mouse down 650ms + drag); stub adds the `/v1beta/models` route; Test-key assertion now expects "Key works — using gemini-3.5-flash" |
+| `tests/e2e/reader.spec.ts` | 40 | unchanged — all still pass (click/tap semantics untouched) |
+| `tests/e2e/shots.spec.ts` | 3 | selection screenshot now via real long-press; `/v1beta/models` stub added |
+
+Real bugs caught during this run: three, all fixed before green —
+(1) the e2e suite serves `vite preview` from `dist`, so the first v4.1 run
+tested the STALE pre-change bundle (now: always `npm run build` before
+`npx playwright test`); (2) the first pointerup implementation suppressed
+the click after EVERY press with a pending long-press timer, which broke
+normal taps (double-tap-to-popup regressed — caught by the existing
+reader.spec.ts test); now only a selection that actually started
+suppresses the following click; (3) late-arriving webfonts reflow card
+text AFTER anchoring (measured 214px at anchor, 230px after fonts),
+pushing the meaning card 10px off the right edge — fixed with a
+ResizeObserver that re-runs the clamp on card size changes. One test-only
+fix: after `settings-back` the remounted reader's track is mid-transition
+(.35s), so the word-rect measurement went stale — the test now waits
+600ms for it to settle.
+
+## Screenshots — `npx playwright test tests/e2e/shots.spec.ts`
+
+**3/3 suites passed**; regenerated from the real build with stubbed APIs
+and eyeballed by the builder: `selection-pill-phone.png` REPLACED (custom
+highlight wash on "lamp", Meaning/Copy pill, no native toolbar),
+`meaning-card-phone.png` REPLACED, `note-editor-phone.png` ADDED (card
+fully inside the viewport, textarea + Cancel/Save all visible). All other
+screenshots regenerated unchanged.
+
+### Honest gaps (v4.1)
+- The custom long-press ran in headless Chromium with real pointer events;
+  a real finger on his Android is still the first true touch test (timing,
+  `caretRangeFromPoint` on his Chrome build, `-webkit-touch-callout`).
+- No real network in tests: model discovery, the 404-retry, the dictionary
+  timeout, and the Gemini fallback all ran against canned stubs. His phone
+  is the first live run of discovery against his key.
+- `CSS.highlights` fallback (word-only, no paint/drag) is coded but not
+  exercised — no test browser lacks the API.
+- Screenshots eyeballed by the builder, not by Nahom.
