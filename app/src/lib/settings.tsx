@@ -49,6 +49,12 @@ export interface ReaderSettings {
   bgMotion: boolean;
   /** ambient background intensity 0-100 */
   bgIntensity: number;
+  /** read aloud: every sentence you move to is spoken out loud */
+  readAloud: boolean;
+  /** the chosen voice (voiceURI); "" = the browser default */
+  readAloudVoice: string;
+  /** speaking speed, 0.5 – 2 */
+  readAloudRate: number;
 }
 
 export const FONT_STACKS: Record<FontChoice, string> = {
@@ -91,6 +97,9 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   bgColor: "#A6E22E",
   bgMotion: true,
   bgIntensity: 60,
+  readAloud: false,
+  readAloudVoice: "",
+  readAloudRate: 1,
 };
 
 const KEY = "lyric-reader.settings-v1";
@@ -147,6 +156,11 @@ export function load(): ReaderSettings {
       /* fall back */
     } else {
       /* not a number -> keep default */
+    }
+    if (typeof s.readAloud === "boolean") d.readAloud = s.readAloud;
+    if (typeof s.readAloudVoice === "string") d.readAloudVoice = s.readAloudVoice;
+    if (typeof s.readAloudRate === "number" && Number.isFinite(s.readAloudRate)) {
+      d.readAloudRate = Math.min(2, Math.max(0.5, s.readAloudRate));
     }
   } catch {
     /* corrupt prefs -> defaults */

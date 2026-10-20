@@ -1,21 +1,21 @@
-// The ambient background — one soft glow behind the reader and Home.
+// The ambient background — one soft haze behind the reader and Home.
 //
-// The model (DESIGN.md, Oct 20 2026 + the review):
-// · gradient — a wide rectangle anchored to the bottom of the screen, a
-//   vertical linear gradient fading out by ~55-60% of the height, its top
-//   edge a slow wave; alternate slowly cycles the hue (green → teal →
-//   blue → indigo → purple → pink → amber → back) over 4 minutes, one
-//   colour holds the user's pick
+// The model (DESIGN.md, Oct 20 2026 + the reviews):
+// · gradient — one oversized, heavily blurred colour field whose centre
+//   sits below the viewport: on screen it is a smooth falloff, brightest
+//   at the bottom edge and black by ~55% of the height, with no shape
+//   edge anywhere; alternate slowly cycles the hue (green → teal → blue
+//   → indigo → purple → pink → amber → back) over 4 minutes, one colour
+//   holds the user's pick
 // · solid — the picked colour fills the screen, flat
 // · off — pure black
-// · motion off — the colour cycle and the wave freeze where they are
+// · motion off — the colour cycle and the drift freeze where they are
 //
 // Every hook sits above every return: the style can change at any time and
 // the component must never change its hook order.
 import { useEffect, useMemo, useState } from "react";
 import { useSettings } from "../lib/settings";
 import { glow } from "../lib/ambient";
-import AmbientWave from "./AmbientWave";
 import "../ambient.css";
 
 export default function AmbientBackground() {
@@ -57,7 +57,7 @@ export default function AmbientBackground() {
           className={`${paint.className}${frozen ? " ambient-frozen" : ""}`}
           style={paint.style as React.CSSProperties}
         >
-          <AmbientWave mode={bgColourMode} />
+          <div data-testid="ambient-haze" className="ambient-haze" />
         </div>
       )}
     </div>

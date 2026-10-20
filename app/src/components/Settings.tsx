@@ -10,7 +10,7 @@
 //   same fill + border (max 3 blurred surfaces per screen)
 // · motion: under 300ms, ease-out only, scale(0.97) on press
 // · every data-testid from the old page still works
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   FONT_CHOICES,
   FONT_STACKS,
@@ -34,7 +34,7 @@ import {
   testOpenRouterKey,
 } from "../lib/openrouter";
 import { glow } from "../lib/ambient";
-import AmbientWave from "./AmbientWave";
+import { loadVoices, speak, speechSupported, type VoiceInfo } from "../lib/speech";
 import "../settings.css";
 import "../ambient.css";
 
@@ -232,12 +232,13 @@ function PreviewStage({
     intensity: bgIntensity,
   });
 
+  // The same haze as the real background, in miniature.
   return (
     <div
       className={`${paint.className}${live ? "" : " ambient-frozen"}`}
       style={paint.style as React.CSSProperties}
     >
-      <AmbientWave mode={bgColourMode} mini />
+      <div className="ambient-haze ambient-haze-mini" />
     </div>
   );
 }
@@ -442,6 +443,30 @@ export default function Settings({ onBack }: Props) {
   // The preview only drifts when the glow itself moves.
   const live = settings.bgMotion && !reduced && settings.bgStyle === "gradient";
   const colourOff = settings.bgStyle === "off";
+
+  // Read aloud: the voices this phone has, and a way to hear them.
+  const [canSpeak, setCanSpeak] = useState(() => speechSupported());
+  const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  useEffect(() => {
+    let alive = true;
+    setCanSpeak(speechSupported());
+    void loadVoices().then((v) => {
+      if (alive) setVoices(v);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const testVoice = useCallback(async () => {
+    try {
+      await speak("This is how the page will sound.", {
+        rate: settings.readAloudRate,
+        voiceURI: settings.readAloudVoice,
+      });
+    } catch {
+      /* no speech engine — the switch is disabled anyway */
+    }
+  }, [settings.readAloudRate, settings.readAloudVoice]);
 
   return (
     <div
@@ -764,13 +789,64 @@ export default function Settings({ onBack }: Props) {
               <span className="set-switch-copy">Speak the sentences</span>
               <Switch
                 testid="read-aloud-toggle"
-                checked={false}
-                onChange={() => {}}
-                disabled
+                checked={settings.readAloud}
+                onChange={(v) => update({ readAloud: v })}
+                disabled={!canSpeak}
                 label="Speak the sentences"
               />
             </div>
-            <p className="set-note">Coming soon — not built yet.</p>
+            <p className="set-note">
+              {!canSpeak
+                ? "This device has no speech engine — nothing can be spoken."
+                : settings.readAloud
+                  ? "On — every sentence you move to is spoken out loud."
+                  : "Off — tap the speaker in the reader to hear a sentence."}
+            </p>
+          </Row>
+
+          <Row label="Voice">
+            <div className="flex items-center gap-2">
+              <select
+                data-testid="read-aloud-voice"
+                value={settings.readAloudVoice}
+                disabled={!canSpeak || !voices.length}
+                onChange={(e) => update({ readAloudVoice: e.target.value })}
+                className="set-field min-w-0 flex-1"
+                aria-label="Read aloud voice"
+              >
+                <option value="">System default</option>
+                {voices.map((v) => (
+                  <option key={v.uri} value={v.uri}>
+                    {v.name} — {v.lang}
+                  </option>
+                ))}
+              </select>
+              <button
+                data-testid="read-aloud-test"
+                disabled={!canSpeak}
+                onClick={() => void testVoice()}
+                className="set-chip shrink-0"
+              >
+                Test
+              </button>
+            </div>
+            <p className="set-note">
+              {voices.length
+                ? "The voices this phone has installed."
+                : "No voices found on this device."}
+            </p>
+          </Row>
+
+          <Row label="Speed">
+            <SliderRow
+              testid="read-aloud-rate"
+              min={50}
+              max={200}
+              value={Math.round(settings.readAloudRate * 100)}
+              onChange={(v) => update({ readAloudRate: v / 100 })}
+              suffix="%"
+              disabled={!canSpeak}
+            />
           </Row>
         </Group>
 

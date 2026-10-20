@@ -1,14 +1,16 @@
-/* The ambient background — one soft glow behind the reader and Home.
+/* The ambient background — one soft haze behind the reader and Home.
  *
- * The recipe (DESIGN.md + the Oct 20 review):
- * · a wide RECTANGLE anchored to the bottom of the screen, full width
- * · filled with a vertical LINEAR gradient — strongest at the bottom edge,
- *   fading evenly to nothing by ~55-60% of the screen height
- * · the top edge of that rectangle is a slow WAVE, and the wave moves
- * · no radial gradient, no bright hotspot: the colour is the same across
- *   the whole width at any height
+ * The recipe (DESIGN.md + the Oct 20 reviews):
+ * · ONE oversized colour field, heavily blurred, whose centre sits BELOW
+ *   the viewport — so on screen there is nothing but a smooth falloff:
+ *   brightest at the bottom edge, easing to pure black by ~55% of the
+ *   height, and no edge, line or shape anywhere
+ * · the falloff is eased with several stops (a plateau off-screen, then an
+ *   exponential-style tail)
+ * · the alpha is capped (see lib/ambient.ts) so the bottom reads as a
+ *   haze, not a neon strip
  * · alternate cycles the hue over 4 minutes; one colour holds the pick
- * · motion off freezes the colour cycle AND the wave
+ * · motion off freezes the colour cycle AND the drift
  * · prefers-reduced-motion freezes both as well
  */
 
@@ -24,75 +26,94 @@
 .ambient-glow {
   position: absolute;
   inset: 0;
-  /* The colour cycle: only while cycling (alternate mode). */
-  animation: ambient-hue-cycle 240s linear infinite;
+  /* The colour cycle. It steps rather than glides: the hue moves 5° every
+     four seconds, which nobody can see, and the haze is not repainted
+     sixty times a second. */
+  animation: ambient-hue-cycle 240s steps(72) infinite;
 }
-/* One colour: the glow holds the colour the user picked — no cycling. */
+/* One colour: the haze holds the colour the user picked — no cycling. */
 .ambient-glow.ambient-single {
   animation: none;
 }
 
-/* The wave: the top edge of the glow. Two shapes, half a phase apart. */
-.ambient-wave {
+/* The haze itself. */
+.ambient-haze {
+  /* The field bleeds past the screen on every side, so the slow drift
+     never pulls an edge into view. */
+  --ambient-bleed: 90px;
+  --ambient-size-x: 150vw;
+  --ambient-size-y: 80vh;
+  --ambient-at-x: calc(50vw + var(--ambient-bleed));
+  --ambient-at-y: calc(135vh + var(--ambient-bleed));
+
   position: absolute;
-  /* A little wider and lower than the screen, so the blur never leaves a
-     dark band along the edges and the bottom stays the strongest. */
-  left: -60px;
-  right: -60px;
-  bottom: -60px;
-  height: calc(60dvh + 60px);
-  /* The soft edge of the glow. It is rasterised once — only the opacity
-     of the top layer changes, so the phone never redraws the blur. */
-  filter: blur(26px);
+  inset: calc(-1 * var(--ambient-bleed));
+  /* The tint: the cycling hue, or the colour the user picked. */
+  --ambient-tint: hsl(var(--ambient-hue, 120) 70% 46%);
+  /* The field: one ellipse whose centre sits below the screen. On screen
+     there is nothing but the tail of it — a smooth falloff, no edge. */
+  background: radial-gradient(
+    ellipse var(--ambient-size-x) var(--ambient-size-y) at var(--ambient-at-x)
+      var(--ambient-at-y),
+    color-mix(
+        in srgb,
+        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 100%),
+        transparent
+      )
+      0%,
+    color-mix(
+        in srgb,
+        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 92%),
+        transparent
+      )
+      30%,
+    color-mix(
+        in srgb,
+        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 62%),
+        transparent
+      )
+      47%,
+    color-mix(
+        in srgb,
+        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 34%),
+        transparent
+      )
+      63%,
+    color-mix(
+        in srgb,
+        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 15%),
+        transparent
+      )
+      79%,
+    color-mix(
+        in srgb,
+        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 4%),
+        transparent
+      )
+      91%,
+    transparent 100%
+  );
+  /* The blur erases every trace of a stop: what is left is a haze. */
+  filter: blur(70px);
+  /* The slow drift — the only movement of the glow. */
+  animation: ambient-drift 40s ease-in-out infinite alternate;
+  will-change: transform;
+  transform-origin: var(--ambient-at-x) var(--ambient-at-y);
+}
+
+/* One colour: the haze holds the colour the user picked. */
+.ambient-single .ambient-haze {
+  --ambient-tint: var(--ambient-color, #a6e22e);
 }
 
 /* The miniature version, used by the live preview in Settings. */
-.ambient-wave-mini {
-  left: -14px;
-  right: -14px;
-  bottom: -14px;
-  height: calc(60% + 14px);
-  filter: blur(9px);
-}
-
-/* The lower wave — always there. */
-.ambient-wave-a {
-  opacity: 1;
-}
-
-/* The upper wave — fades in and out, so the edge undulates slowly. */
-.ambient-wave-b {
-  animation: ambient-wave-breathe 48s linear infinite alternate;
-  will-change: opacity;
-}
-@keyframes ambient-wave-breathe {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 0.85;
-  }
-}
-
-/* The gradient stops: the colour at the bottom edge, fading upwards.
-   The bottom stop is the strongest, the top one is gone. */
-.ambient-fade-strong {
-  stop-color: hsl(var(--ambient-hue, 120) 68% 45%);
-  stop-opacity: var(--ambient-a1, 0.6);
-}
-.ambient-fade-mid {
-  stop-color: hsl(var(--ambient-hue, 120) 68% 45%);
-  stop-opacity: var(--ambient-a2, 0.27);
-}
-.ambient-fade-soft {
-  stop-color: hsl(var(--ambient-hue, 120) 68% 45%);
-  stop-opacity: 0;
-}
-/* One colour: the glow holds the colour the user picked. */
-.ambient-wave-single .ambient-fade-strong,
-.ambient-wave-single .ambient-fade-mid,
-.ambient-wave-single .ambient-fade-soft {
-  stop-color: var(--ambient-color, #a6e22e);
+.ambient-haze-mini {
+  --ambient-bleed: 20px;
+  --ambient-size-x: 150%;
+  --ambient-size-y: 80%;
+  --ambient-at-x: calc(50% + var(--ambient-bleed));
+  --ambient-at-y: calc(135% + var(--ambient-bleed));
+  filter: blur(16px);
 }
 
 /* The registered custom property lets the hue be animated as a number,
@@ -130,16 +151,27 @@
   }
 }
 
-/* Motion off: the colour cycle and the wave both freeze where they are. */
+/* The drift: the whole haze wanders a little. Slow, and with no edges to
+   show where it moved to. */
+@keyframes ambient-drift {
+  from {
+    transform: translate3d(-3%, -1.5%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(3%, 1.5%, 0) scale(1.04);
+  }
+}
+
+/* Motion off: the colour cycle and the drift both freeze where they are. */
 .ambient-frozen,
 .ambient-frozen .ambient-glow,
-.ambient-frozen .ambient-wave {
+.ambient-frozen .ambient-haze {
   animation-play-state: paused;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ambient-glow,
-  .ambient-wave {
+  .ambient-haze {
     animation-play-state: paused !important;
   }
 }

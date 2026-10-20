@@ -1,5 +1,6 @@
-// The ambient background component: it renders behind the reader and Home
-// and it must survive every style change without breaking its hook order.
+// The ambient background component: a soft haze behind the reader and Home.
+// It must survive every style change without breaking its hook order, and
+// it must not draw a shape — no edges anywhere.
 import { describe, it, expect, beforeEach } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
@@ -53,37 +54,47 @@ describe("the ambient background", () => {
     update = null;
   });
 
-  it("shows the glow by default", async () => {
+  it("shows the haze by default", async () => {
     const { container, root } = await mount();
     const glow = q(container, "ambient-glow");
     expect(glow.className).toContain("ambient-glow");
     // The green the cycle starts at.
     expect(styleOf(glow)).toContain("--ambient-hue: 120");
-    // The wave that makes the top edge a curve.
-    expect(q(container, "ambient-wave-a")).toBeTruthy();
-    expect(q(container, "ambient-wave-b")).toBeTruthy();
-    expect(q(container, "ambient-wave-path-a")).toBeTruthy();
+    expect(q(container, "ambient-haze")).toBeTruthy();
+    await act(async () => root.unmount());
+  });
+
+  it("draws no shape — no edges, no svg, nothing to show a line", async () => {
+    const { container, root } = await mount();
+    // The haze is one blurred field: there is no path, no clip and no svg
+    // that could draw a boundary.
+    expect(container.querySelector("svg")).toBeNull();
+    expect(container.querySelector("path")).toBeNull();
+    expect(container.querySelector("clip-path")).toBeNull();
+    const haze = q(container, "ambient-haze");
+    expect(haze.className).toBe("ambient-haze");
+    expect(haze.getAttribute("style")).toBeNull();
     await act(async () => root.unmount());
   });
 
   it("survives every style change without breaking its hooks", async () => {
     const { container, root } = await mount();
 
-    // Solid: a flat fill, no glow.
+    // Solid: a flat fill, no haze.
     await act(async () => update!({ bgStyle: "solid" }));
-    expect(container.querySelector('[data-testid="ambient-glow"]')).toBeNull();
+    expect(container.querySelector('[data-testid="ambient-haze"]')).toBeNull();
     expect(styleOf(q(container, "ambient-background"))).toMatch(
       /#a6e22e|rgb\(166, 226, 46\)/,
     );
 
     // Off: pure black.
     await act(async () => update!({ bgStyle: "off" }));
-    expect(container.querySelector('[data-testid="ambient-glow"]')).toBeNull();
+    expect(container.querySelector('[data-testid="ambient-haze"]')).toBeNull();
     expect(styleOf(q(container, "ambient-background"))).toContain("#000000");
 
-    // Back to the gradient: the glow is there again.
+    // Back to the gradient: the haze is there again.
     await act(async () => update!({ bgStyle: "gradient" }));
-    expect(q(container, "ambient-glow")).toBeTruthy();
+    expect(q(container, "ambient-haze")).toBeTruthy();
 
     await act(async () => root.unmount());
   });
@@ -92,18 +103,12 @@ describe("the ambient background", () => {
     const { container, root } = await mount();
     const glow = q(container, "ambient-glow");
 
-    // Alternate: the cycle runs and the wave reads the animated hue.
+    // Alternate: the cycle runs.
     expect(glow.className).not.toContain("ambient-single");
-    expect(q(container, "ambient-wave-a").className).not.toContain(
-      "ambient-wave-single",
-    );
 
     await act(async () => update!({ bgColourMode: "single" }));
     expect(glow.className).toContain("ambient-single");
-    // The glow holds the picked colour.
-    expect(q(container, "ambient-wave-a").className).toContain(
-      "ambient-wave-single",
-    );
+    // The haze holds the picked colour.
     expect(styleOf(glow)).toContain("--ambient-color: #a6e22e");
 
     await act(async () => root.unmount());
@@ -115,7 +120,7 @@ describe("the ambient background", () => {
     expect(glow.className).not.toContain("ambient-frozen");
 
     await act(async () => update!({ bgMotion: false }));
-    // Frozen: the colour cycle and the wave both stop.
+    // Frozen: the colour cycle and the drift both stop.
     expect(glow.className).toContain("ambient-frozen");
 
     await act(async () => root.unmount());

@@ -45,6 +45,12 @@ import {
   nextSpeed,
   paceMs,
 } from "../lib/autoscroll";
+import {
+  speak,
+  speechSupported,
+  stopSpeech,
+  type VoiceInfo,
+} from "../lib/speech";
 import AskSheet from "./AskSheet";
 
 interface Props {
@@ -181,12 +187,82 @@ function PauseIcon() {
       stroke="currentColor"
       strokeWidth="1.8"
       strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden
     >
       <path d="M8.5 5v14M15.5 5v14" />
     </svg>
   );
 }
+
+// v4.7: the header is one icon per side — back on the left, the overflow
+// menu on the right. Same stroke language as the rest of the app.
+function ArrowIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M15 5l-7 7 7 7" />
+    </svg>
+  );
+}
+function MoreIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="currentColor"
+      aria-hidden
+    >
+      <circle cx="5" cy="12" r="1.7" />
+      <circle cx="12" cy="12" r="1.7" />
+      <circle cx="19" cy="12" r="1.7" />
+    </svg>
+  );
+}
+// v4.7: read aloud — a speaker, and a square while it is talking.
+function SpeakerIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="19"
+      height="19"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4 9v6h4l5 4V5L8 9z" />
+      <path d="M16.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M19 6a8.5 8.5 0 0 1 0 12" />
+    </svg>
+  );
+}
+function StopIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="17"
+      height="17"
+      fill="currentColor"
+      aria-hidden
+    >
+      <rect x="6" y="6" width="12" height="12" rx="2.5" />
+    </svg>
+  );
+}
+
 
 export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: Props) {
   const [book, setBook] = useState<BookDoc | null>(null);
@@ -216,14 +292,18 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   // v4.4: auto-scroll (auto-advance) + speed flash label.
   const [autoPlaying, setAutoPlaying] = useState(false);
   const [speedFlash, setSpeedFlash] = useState<string | null>(null);
+  // v4.7: the header overflow menu (text size, saved, settings).
+  const [menuOpen, setMenuOpen] = useState(false);
+  // v4.7: read aloud — is the voice talking right now?
+  const [speaking, setSpeaking] = useState(false);
+  const canSpeak = useMemo(() => speechSupported(), []);
 
   const { settings, update: updateSettings } = useSettings();
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const pillRef = useRef<HTMLDivElement | null>(null);
-  const meaningCardRef = useRef<HTMLDivElement | null>(null);
+  const pillRef = useRef<HTMLDivElement | null>(null);  const meaningCardRef = useRef<HTMLDivElement | null>(null);
   const askLayerRef = useRef<HTMLDivElement | null>(null);
 
   // Refs mirroring state so native handlers always see fresh values.
@@ -241,6 +321,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   vocabRef.current = vocab;
   const askOpenRef = useRef(askOpen);
   askOpenRef.current = askOpen;
+  // v4.7: the overflow menu — the chrome must not auto-hide under it.
+  const menuOpenRef = useRef(menuOpen);
+  menuOpenRef.current = menuOpen;
   const bookRef = useRef<BookDoc | null>(null);
   const itemsRef = useRef<Item[]>([]);
   // v4.4: auto-scroll refs. autoTimer is the SINGLE playback timeout —
@@ -369,8 +452,14 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         showChrome(2500);
         return;
       }
+      // v4.7: the overflow menu is open — the bar must stay put.
+      if (menuOpenRef.current) {
+        showChrome(2500);
+        return;
+      }
       chromeRef.current = false;
       setChromeVisible(false);
+      setMenuOpen(false);
     }, ms);
   }, []);
   const hideChrome = useCallback(() => {
@@ -621,6 +710,94 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       1400,
     );
   }, [updateSettings]);
+
+  // --- v4.7: read aloud ---
+  // The voice is the browser's own (lib/speech.ts). The reader only decides
+  // WHAT is said: the part that is on screen right now.
+  const speechToken = useRef(0);
+  const spokenRef = useRef("");
+  const speakingRef = useRef(speaking);
+  speakingRef.current = speaking;
+
+  /** The text of the part that is on screen right now. */
+  const currentText = useCallback(() => {
+    const { item, part } = posRef.current;
+    return partsRef.current[item]?.[part] ?? "";
+  }, []);
+
+  /** Stop the voice, right now, with no resume. */
+  const stopSpeak = useCallback(() => {
+    speechToken.current += 1;
+    spokenRef.current = "";
+    stopSpeech();
+    setSpeaking(false);
+  }, []);
+
+  /** Say a text with the voice + speed the user picked. */
+  const say = useCallback(
+    async (text: string) => {
+      if (!canSpeak || !text.trim()) return;
+      // Already saying exactly this — don't restart it.
+      if (speakingRef.current && spokenRef.current === text) return;
+      stopSpeech();
+      const token = ++speechToken.current;
+      spokenRef.current = text;
+      setSpeaking(true);
+      try {
+        await speak(text, {
+          rate: settings.readAloudRate,
+          voiceURI: settings.readAloudVoice,
+        });
+      } catch {
+        /* this device has no speech engine */
+      }
+      if (speechToken.current === token) {
+        spokenRef.current = "";
+        setSpeaking(false);
+      }
+    },
+    [canSpeak, settings.readAloudRate, settings.readAloudVoice],
+  );
+
+  /** The speaker button: talk, or stop talking. */
+  const speakCurrent = useCallback(() => {
+    if (speakingRef.current) {
+      stopSpeak();
+      return;
+    }
+    void say(currentText());
+  }, [say, stopSpeak, currentText]);
+
+  /** Follow along: the sentence you are on is the sentence being read. */
+  const resumeSpeech = useCallback(() => {
+    if (!settings.readAloud) return;
+    if (
+      popRef.current ||
+      selRef.current ||
+      meaningRef.current ||
+      askOpenRef.current
+    )
+      return;
+    void say(currentText());
+  }, [settings.readAloud, say, currentText]);
+
+  // Read aloud follows the reading position: move to a new sentence and it
+  // is spoken. Overlays hold the voice until they close.
+  useEffect(() => {
+    if (!settings.readAloud) {
+      stopSpeak();
+      return;
+    }
+    resumeSpeech();
+  }, [I, P, settings.readAloud, resumeSpeech, stopSpeak]);
+
+  // Leaving the reader (or the tab) stops the voice — no talking to nobody.
+  useEffect(
+    () => () => {
+      stopSpeech();
+    },
+    [],
+  );
 
   // Manual steps while playing re-arm the timer for the new part —
   // playback continues (the auto tick's own advance re-arms the same way).

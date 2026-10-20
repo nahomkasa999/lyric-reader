@@ -1,17 +1,15 @@
-// The ambient background recipe: a wide rectangle at the bottom of the
-// screen, a vertical linear gradient fading out by ~55-60% of the height,
-// and a slow wave for its top edge.
+// The ambient background recipe: one oversized, heavily blurred colour
+// field whose centre sits below the viewport — on screen, a smooth falloff
+// with no edge anywhere.
 import { describe, it, expect } from "vitest";
 import {
+  AMBIENT_ALPHA_CAP,
   AMBIENT_CYCLE_SECONDS,
   AMBIENT_HUES,
   AMBIENT_START_HUE,
-  AMBIENT_WAVE_A,
-  AMBIENT_WAVE_B,
   glow,
   hexToHue,
   hexToRgb,
-  rgba,
 } from "../src/lib/ambient";
 
 describe("colour helpers", () => {
@@ -27,14 +25,9 @@ describe("colour helpers", () => {
     // A broken colour falls back to the start of the cycle: green.
     expect(hexToHue("nope")).toBe(AMBIENT_START_HUE);
   });
-
-  it("mixes a colour with an alpha", () => {
-    expect(rgba("#FF0000", 1)).toBe("rgba(255, 0, 0, 1)");
-    expect(rgba("#FF0000", 0.5)).toBe("rgba(255, 0, 0, 0.5)");
-  });
 });
 
-describe("the glow", () => {
+describe("the haze", () => {
   it("holds the picked colour in one-colour mode", () => {
     const g = glow({ mode: "single", color: "#F472B6", intensity: 80 });
     expect(g.className).toContain("ambient-single");
@@ -51,25 +44,15 @@ describe("the glow", () => {
   it("scales with the intensity", () => {
     const dim = glow({ mode: "single", color: "#A6E22E", intensity: 0 });
     const bright = glow({ mode: "single", color: "#A6E22E", intensity: 100 });
-    // The bottom edge is the strongest stop, the middle one is weaker.
     expect(dim.style["--ambient-a1"]).toBe("0");
-    expect(bright.style["--ambient-a1"]).toBe("1");
-    expect(dim.style["--ambient-a2"]).toBe("0");
-    expect(bright.style["--ambient-a2"]).toBe("0.45");
-  });
-});
-
-describe("the wave", () => {
-  it("is a curve, not a straight line", () => {
-    // The top edge is drawn with curves and closes at the bottom.
-    expect(AMBIENT_WAVE_A).toMatch(/^M /);
-    expect(AMBIENT_WAVE_A).toContain(" C ");
-    expect(AMBIENT_WAVE_A).toMatch(/L 1140 620 L -140 620 Z$/);
-    expect(AMBIENT_WAVE_B).toMatch(/L 1140 620 L -140 620 Z$/);
+    expect(bright.style["--ambient-a1"]).toBe(String(AMBIENT_ALPHA_CAP));
   });
 
-  it("has two shapes, half a phase apart", () => {
-    expect(AMBIENT_WAVE_A).not.toBe(AMBIENT_WAVE_B);
+  it("caps the alpha so the bottom is a haze, not a neon strip", () => {
+    // The default intensity of 60 must not reach full colour.
+    const def = glow({ mode: "alternate", color: "#A6E22E", intensity: 60 });
+    expect(Number(def.style["--ambient-a1"])).toBeLessThan(0.35);
+    expect(AMBIENT_ALPHA_CAP).toBeLessThan(1);
   });
 });
 
