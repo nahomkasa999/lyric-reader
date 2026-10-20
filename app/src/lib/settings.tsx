@@ -179,6 +179,12 @@ export function applySettings(s: ReaderSettings): void {
   r.setProperty("--lr-mo", String(s.mainOpacity));
   r.setProperty("--lr-ct", s.trailColor ?? "#ffffff");
   r.setProperty("--lr-to", String(s.trailOpacity));
+  // Muted parts of the current sentence: trail opacity with a 45 floor
+  // so they stay readable. The floor is computed HERE, in JS — doing it
+  // with CSS max() inside the .pt color-mix made some Android Chrome
+  // builds drop that declaration, and every part rendered bright white
+  // (the Oct 20 "split is not working" phone screenshot).
+  r.setProperty("--lr-mto", String(Math.max(s.trailOpacity, 45)));
 }
 
 interface SettingsCtx {

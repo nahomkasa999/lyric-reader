@@ -245,6 +245,10 @@
   --lr-mo: 100;
   --lr-ct: #ffffff;
   --lr-to: 30;
+  /* Muted-part opacity: trail opacity floored at 45, computed in JS
+     (lib/settings.tsx applySettings) — never with CSS max() in the
+     reader, see .s.cur .pt below. */
+  --lr-mto: 45;
 }
 
 .reader-root {
@@ -476,10 +480,20 @@
   /* The muted part of a long sentence has to stay readable — the
      reference keeps it a solid grey, not a 30% wash, otherwise it reads
      as missing text. The floor only lifts it; a higher trail opacity
-     still wins. */
+     still wins.
+     REGRESSION (Oct 20, phone screenshot): this used to be written as
+     calc(max(var(--lr-to, 30), 45) * 1%) inside the color-mix. Some
+     Android Chrome / WebView builds accept color-mix in @supports but
+     drop this one declaration over the nested max(), so the build's
+     plain fallback (color: var(--lr-ct), solid white) won and EVERY
+     part of the current sentence rendered bright — the split looked
+     gone even though splitS and the .on classes were correct. The
+     floor is now computed in JS and arrives as --lr-mto, a plain
+     number like every other reader opacity. Do not put max()/min()
+     back inside a reader color-mix. */
   color: color-mix(
     in oklch,
-    var(--lr-ct) calc(max(var(--lr-to, 30), 45) * 1%),
+    var(--lr-ct) calc(var(--lr-mto, 45) * 1%),
     transparent
   );
 }
