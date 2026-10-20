@@ -18,7 +18,6 @@ import {
   useSettings,
   type BgColourMode,
   type BgStyle,
-  type ReaderSettings,
 } from "../lib/settings";
 import {
   getApiKey,
@@ -33,8 +32,8 @@ import {
   setOpenRouterKey,
   testOpenRouterKey,
 } from "../lib/openrouter";
-import { glow } from "../lib/ambient";
 import { loadVoices, speak, speechSupported, type VoiceInfo } from "../lib/speech";
+import BackgroundPreview from "./BackgroundPreview";
 import "../settings.css";
 import "../ambient.css";
 
@@ -202,43 +201,6 @@ function SliderRow({
         {value}
         {suffix}
       </span>
-    </div>
-  );
-}
-
-/**
- * The miniature background: the same recipe as the real ambient glow, so
- * the preview answers "what will the page look like?" at a glance.
- */
-function PreviewStage({
-  settings,
-  live,
-}: {
-  settings: ReaderSettings;
-  live: boolean;
-}) {
-  const { bgStyle, bgColourMode, bgColor, bgIntensity } = settings;
-
-  if (bgStyle === "off") return null;
-
-  if (bgStyle === "solid") {
-    // Solid is flat: the picked colour fills the screen.
-    return <div className="absolute inset-0" style={{ background: bgColor }} />;
-  }
-
-  const paint = glow({
-    mode: bgColourMode,
-    color: bgColor,
-    intensity: bgIntensity,
-  });
-
-  // The same haze as the real background, in miniature.
-  return (
-    <div
-      className={`${paint.className}${live ? "" : " ambient-frozen"}`}
-      style={paint.style as React.CSSProperties}
-    >
-      <div className="ambient-haze ambient-haze-mini" />
     </div>
   );
 }
@@ -504,7 +466,7 @@ export default function Settings({ onBack }: Props) {
             className={`glass set-preview${live ? " live" : ""}`}
           >
             <div className="set-preview-stage">
-              <PreviewStage settings={settings} live={live} />
+              <BackgroundPreview settings={settings} live={live} />
             </div>
             <div className="set-preview-scrim" aria-hidden="true" />
             <div className="set-preview-copy">

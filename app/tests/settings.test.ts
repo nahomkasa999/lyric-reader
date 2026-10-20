@@ -129,22 +129,26 @@ describe("settings page", () => {
 
     const stage = () =>
       container.querySelector(".set-preview-stage") as HTMLElement;
-    // Default: the haze — the same soft field as the real background.
-    expect(stage().querySelector(".ambient-haze")).toBeTruthy();
+    // The preview draws the same glow as the real background: the shader
+    // on a canvas, or the CSS haze on a device without WebGL.
+    const glow = () =>
+      stage().querySelector(".ambient-canvas") ??
+      stage().querySelector(".ambient-haze");
+    expect(glow()).toBeTruthy();
     expect(stage().querySelector(".ambient-glow")).toBeTruthy();
 
     await act(async () => {
       q<HTMLButtonElement>(container, "bg-style-solid").click();
     });
     // Solid: a flat fill instead of the glow.
-    expect(stage().querySelector(".ambient-haze")).toBeNull();
+    expect(glow()).toBeNull();
     const fill = stage().querySelector("div[style]") as HTMLElement;
     expect(fill.style.background).toContain("#A6E22E");
 
     await act(async () => {
       q<HTMLButtonElement>(container, "bg-style-off").click();
     });
-    expect(stage().querySelector(".ambient-haze")).toBeNull();
+    expect(glow()).toBeNull();
     expect(stage().querySelector("div[style]")).toBeNull();
 
     await act(async () => root.unmount());

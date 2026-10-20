@@ -52,9 +52,12 @@ Skills this file follows:
 - Background #000000 — the canvas, everywhere.
 - Primary indigo #5B4FE9 — buttons, progress, active states. It acts.
 - Glow — the ambient background glow (Nahom's screenshot: soft green rising
-  from the bottom, fading to black by half the screen). Alternate mode slowly
-  cycles rainbow hues (green is the starting colour); One-colour mode holds a
-  single user-picked hue. It never acts.
+  from the bottom, fading to black by half the screen). It is a WebGL shader:
+  a soft light that reaches up about half the height, brighter on the right,
+  teal at its top edge and yellow-green at the bottom, with soft shapes
+  drifting inside it. Alternate mode slowly cycles 19 hues (green is the
+  starting colour); One-colour mode holds a single user-picked hue. It never
+  acts.
 - Glass — white 6% fill, white 12% 1px border, blur 18px. See Elevation.
 - Foreground #F2F2F2, muted #B8B8B8 (metadata only).
 
@@ -94,12 +97,18 @@ box-shadow: 0 8px 32px rgba(0,0,0,0.36);
 Max 3 blurred surfaces on screen at once (Android performance).
 Book rows: same fill + border, no blur.
 
-Ambient background: one blurred glow div behind everything, `pointer-events: none`.
-Gradient glow = hue slowly cycles green → teal → blue → indigo → purple → pink → amber → back
-(full cycle 3–5 minutes, blending between neighbours, so slow it's barely noticed changing),
-plus gentle position drift; transform/opacity only.
-One colour = the glow holds the user's picked hue; only its position drifts gently.
-Motion switch off = the glow freezes completely (Alternate pauses on its current colour).
+Ambient background: one WebGL canvas behind everything, `pointer-events: none`.
+The shader draws a soft light that rises from the bottom, reaches up about half
+the height, leans to the right and carries slow drifting shapes. It is drawn
+into a small buffer (max 420×760) that the browser stretches, so the cost is
+the same on every device. A device without WebGL gets a CSS haze instead.
+Gradient glow = the hue cycles green → spring → teal → cyan → blue → indigo →
+violet → purple → orchid → pink → rose → red → coral → amber → gold → yellow
+→ lime → back (19 stops, full cycle 5 minutes, blended between neighbours, so
+slow it's barely noticed changing).
+One colour = the glow holds the user's picked hue; only the shapes move.
+Motion switch off = the glow freezes completely (Alternate pauses on its
+current colour).
 Solid = the picked colour fills the whole screen, flat. Off = pure black.
 
 ## Shapes

@@ -1,21 +1,20 @@
-// The ambient background — one soft haze behind the reader and Home.
+// The ambient background — the glow behind the reader and Home.
 //
 // The model (DESIGN.md, Oct 20 2026 + the reviews):
-// · gradient — one oversized, heavily blurred colour field whose centre
-//   sits below the viewport: on screen it is a smooth falloff, brightest
-//   at the bottom edge and black by ~55% of the height, with no shape
-//   edge anywhere; alternate slowly cycles the hue (green → teal → blue
-//   → indigo → purple → pink → amber → back) over 4 minutes, one colour
-//   holds the user's pick
+// · gradient — a WebGL shader draws a soft light that rises from the
+//   bottom, reaches up about half the screen and drifts; alternate
+//   slowly cycles the hue (19 stops over 5 minutes), one colour holds
+//   the user's pick
 // · solid — the picked colour fills the screen, flat
 // · off — pure black
-// · motion off — the colour cycle and the drift freeze where they are
+// · motion off — the light freezes where it is
 //
-// Every hook sits above every return: the style can change at any time and
-// the component must never change its hook order.
+// Every hook sits above every return: the style can change at any time
+// and the component must never change its hook order.
 import { useEffect, useMemo, useState } from "react";
 import { useSettings } from "../lib/settings";
-import { glow } from "../lib/ambient";
+import { glow, installCycleStyles } from "../lib/ambient";
+import AmbientCanvas from "./AmbientCanvas";
 import "../ambient.css";
 
 export default function AmbientBackground() {
@@ -32,6 +31,11 @@ export default function AmbientBackground() {
     const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
     mq.addEventListener?.("change", onChange);
     return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+
+  // The CSS fallback walks the same colour cycle as the shader.
+  useEffect(() => {
+    installCycleStyles();
   }, []);
 
   const frozen = !bgMotion || reduced;
@@ -57,7 +61,12 @@ export default function AmbientBackground() {
           className={`${paint.className}${frozen ? " ambient-frozen" : ""}`}
           style={paint.style as React.CSSProperties}
         >
-          <div data-testid="ambient-haze" className="ambient-haze" />
+          <AmbientCanvas
+            mode={bgColourMode}
+            color={bgColor}
+            intensity={bgIntensity}
+            motion={!frozen}
+          />
         </div>
       )}
     </div>

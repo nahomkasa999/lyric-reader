@@ -1,17 +1,14 @@
-/* The ambient background — one soft haze behind the reader and Home.
+/* The ambient background — the glow behind the reader and Home.
  *
- * The recipe (DESIGN.md + the Oct 20 reviews):
- * · ONE oversized colour field, heavily blurred, whose centre sits BELOW
- *   the viewport — so on screen there is nothing but a smooth falloff:
- *   brightest at the bottom edge, easing to pure black by ~55% of the
- *   height, and no edge, line or shape anywhere
- * · the falloff is eased with several stops (a plateau off-screen, then an
- *   exponential-style tail)
- * · the alpha is capped (see lib/ambient.ts) so the bottom reads as a
- *   haze, not a neon strip
- * · alternate cycles the hue over 4 minutes; one colour holds the pick
- * · motion off freezes the colour cycle AND the drift
- * · prefers-reduced-motion freezes both as well
+ * The glow itself is a WebGL shader (lib/ambientShader.ts) drawn on a
+ * canvas (components/AmbientCanvas.tsx): a soft light that rises from
+ * the bottom of the screen, reaches up about half the height, and has
+ * soft shapes drifting inside it.
+ *
+ * This file holds the canvas box and the CSS fallback — the same glow,
+ * flat, for the rare device without WebGL. The fallback reads the same
+ * colour cycle (the keyframes are injected from lib/ambient.ts, so the
+ * two paths never drift apart).
  */
 
 .ambient {
@@ -22,83 +19,110 @@
   overflow: hidden;
 }
 
-/* The layer that carries the values and the colour cycle. */
+/* The layer that carries the values of the glow. */
 .ambient-glow {
   position: absolute;
   inset: 0;
-  /* The colour cycle. It steps rather than glides: the hue moves 5° every
-     four seconds, which nobody can see, and the haze is not repainted
-     sixty times a second. */
-  animation: ambient-hue-cycle 240s steps(72) infinite;
-}
-/* One colour: the haze holds the colour the user picked — no cycling. */
-.ambient-glow.ambient-single {
-  animation: none;
 }
 
-/* The haze itself. */
+/* The shader's canvas: it fills the screen. The shader is drawn into a
+   small buffer and the browser stretches it, so it stays cheap. */
+.ambient-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The fallback: one soft field, heavily blurred, its centre below the
+   screen so there is no edge — plus a dimmer lobe on the left, the way
+   the light leans right. */
 .ambient-haze {
-  /* The field bleeds past the screen on every side, so the slow drift
-     never pulls an edge into view. */
+  /* The field bleeds past the screen on every side, so nothing pulls an
+     edge into view. */
   --ambient-bleed: 90px;
-  --ambient-size-x: 150vw;
-  --ambient-size-y: 80vh;
-  --ambient-at-x: calc(50vw + var(--ambient-bleed));
-  --ambient-at-y: calc(135vh + var(--ambient-bleed));
+  --ambient-size-x: 130vw;
+  --ambient-size-y: 68vh;
+  --ambient-lobe-x: 90vw;
+  --ambient-lobe-y: 46vh;
+  --ambient-at-x: 74%;
+  --ambient-at-y: 118%;
 
   position: absolute;
   inset: calc(-1 * var(--ambient-bleed));
   /* The tint: the cycling hue, or the colour the user picked. */
-  --ambient-tint: hsl(var(--ambient-hue, 120) 70% 46%);
-  /* The field: one ellipse whose centre sits below the screen. On screen
-     there is nothing but the tail of it — a smooth falloff, no edge. */
-  background: radial-gradient(
-    ellipse var(--ambient-size-x) var(--ambient-size-y) at var(--ambient-at-x)
-      var(--ambient-at-y),
-    color-mix(
-        in srgb,
-        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 100%),
-        transparent
-      )
-      0%,
-    color-mix(
-        in srgb,
-        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 92%),
-        transparent
-      )
-      30%,
-    color-mix(
-        in srgb,
-        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 62%),
-        transparent
-      )
-      47%,
-    color-mix(
-        in srgb,
-        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 34%),
-        transparent
-      )
-      63%,
-    color-mix(
-        in srgb,
-        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 15%),
-        transparent
-      )
-      79%,
-    color-mix(
-        in srgb,
-        var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 4%),
-        transparent
-      )
-      91%,
-    transparent 100%
-  );
+  --ambient-tint: hsl(var(--ambient-hue, 120) 66% 44%);
+
+  background:
+    radial-gradient(
+      ellipse var(--ambient-size-x) var(--ambient-size-y) at var(--ambient-at-x)
+        var(--ambient-at-y),
+      color-mix(
+          in srgb,
+          var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 100%),
+          transparent
+        )
+        0%,
+      color-mix(
+          in srgb,
+          var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 88%),
+          transparent
+        )
+        28%,
+      color-mix(
+          in srgb,
+          var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 58%),
+          transparent
+        )
+        46%,
+      color-mix(
+          in srgb,
+          var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 30%),
+          transparent
+        )
+        64%,
+      color-mix(
+          in srgb,
+          var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 12%),
+          transparent
+        )
+        80%,
+      color-mix(
+          in srgb,
+          var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 3%),
+          transparent
+        )
+        92%,
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse var(--ambient-lobe-x) var(--ambient-lobe-y) at 14% 112%,
+      color-mix(
+          in srgb,
+          var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 70%),
+          transparent
+        )
+        0%,
+      color-mix(
+          in srgb,
+          var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 44%),
+          transparent
+        )
+        34%,
+      color-mix(
+          in srgb,
+          var(--ambient-tint) calc(var(--ambient-a1, 0.33) * 14%),
+          transparent
+        )
+        66%,
+      transparent 100%
+    );
+
   /* The blur erases every trace of a stop: what is left is a haze. */
   filter: blur(70px);
-  /* The slow drift — the only movement of the glow. */
-  animation: ambient-drift 40s ease-in-out infinite alternate;
-  will-change: transform;
-  transform-origin: var(--ambient-at-x) var(--ambient-at-y);
+  /* The colour cycle. The keyframes come from lib/ambient.ts. */
+  animation: ambient-hue-cycle var(--ambient-cycle, 300s) linear infinite;
 }
 
 /* One colour: the haze holds the colour the user picked. */
@@ -106,13 +130,14 @@
   --ambient-tint: var(--ambient-color, #a6e22e);
 }
 
-/* The miniature version, used by the live preview in Settings. */
+/* The miniature version, used by the live preview in Settings: the same
+   haze, sized to the preview card. */
 .ambient-haze-mini {
   --ambient-bleed: 20px;
-  --ambient-size-x: 150%;
-  --ambient-size-y: 80%;
-  --ambient-at-x: calc(50% + var(--ambient-bleed));
-  --ambient-at-y: calc(135% + var(--ambient-bleed));
+  --ambient-size-x: 130%;
+  --ambient-size-y: 68%;
+  --ambient-lobe-x: 90%;
+  --ambient-lobe-y: 46%;
   filter: blur(16px);
 }
 
@@ -124,45 +149,7 @@
   initial-value: 120;
 }
 
-@keyframes ambient-hue-cycle {
-  0% {
-    --ambient-hue: 120;
-  }
-  14.3% {
-    --ambient-hue: 180;
-  }
-  28.6% {
-    --ambient-hue: 220;
-  }
-  42.9% {
-    --ambient-hue: 250;
-  }
-  57.1% {
-    --ambient-hue: 290;
-  }
-  71.4% {
-    --ambient-hue: 330;
-  }
-  85.7% {
-    --ambient-hue: 40;
-  }
-  100% {
-    --ambient-hue: 120;
-  }
-}
-
-/* The drift: the whole haze wanders a little. Slow, and with no edges to
-   show where it moved to. */
-@keyframes ambient-drift {
-  from {
-    transform: translate3d(-3%, -1.5%, 0) scale(1);
-  }
-  to {
-    transform: translate3d(3%, 1.5%, 0) scale(1.04);
-  }
-}
-
-/* Motion off: the colour cycle and the drift both freeze where they are. */
+/* Motion off: the colour cycle freezes where it is. */
 .ambient-frozen,
 .ambient-frozen .ambient-glow,
 .ambient-frozen .ambient-haze {

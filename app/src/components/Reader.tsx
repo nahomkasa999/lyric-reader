@@ -45,12 +45,7 @@ import {
   nextSpeed,
   paceMs,
 } from "../lib/autoscroll";
-import {
-  speak,
-  speechSupported,
-  stopSpeech,
-  type VoiceInfo,
-} from "../lib/speech";
+import { speak, speechSupported, stopSpeech } from "../lib/speech";
 import AskSheet from "./AskSheet";
 
 interface Props {
@@ -194,75 +189,6 @@ function PauseIcon() {
     </svg>
   );
 }
-
-// v4.7: the header is one icon per side — back on the left, the overflow
-// menu on the right. Same stroke language as the rest of the app.
-function ArrowIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="20"
-      height="20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M15 5l-7 7 7 7" />
-    </svg>
-  );
-}
-function MoreIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="20"
-      height="20"
-      fill="currentColor"
-      aria-hidden
-    >
-      <circle cx="5" cy="12" r="1.7" />
-      <circle cx="12" cy="12" r="1.7" />
-      <circle cx="19" cy="12" r="1.7" />
-    </svg>
-  );
-}
-// v4.7: read aloud — a speaker, and a square while it is talking.
-function SpeakerIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="19"
-      height="19"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M4 9v6h4l5 4V5L8 9z" />
-      <path d="M16.5 8.5a5 5 0 0 1 0 7" />
-      <path d="M19 6a8.5 8.5 0 0 1 0 12" />
-    </svg>
-  );
-}
-function StopIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="17"
-      height="17"
-      fill="currentColor"
-      aria-hidden
-    >
-      <rect x="6" y="6" width="12" height="12" rx="2.5" />
-    </svg>
-  );
-}
-
 
 export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: Props) {
   const [book, setBook] = useState<BookDoc | null>(null);
@@ -758,15 +684,6 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     },
     [canSpeak, settings.readAloudRate, settings.readAloudVoice],
   );
-
-  /** The speaker button: talk, or stop talking. */
-  const speakCurrent = useCallback(() => {
-    if (speakingRef.current) {
-      stopSpeak();
-      return;
-    }
-    void say(currentText());
-  }, [say, stopSpeak, currentText]);
 
   /** Follow along: the sentence you are on is the sentence being read. */
   const resumeSpeech = useCallback(() => {

@@ -1,14 +1,15 @@
 // The ambient glow, drawn by a small WebGL shader.
 //
-// The look (the reference screenshot + DESIGN.md): a soft, wide light that
-// rises from the bottom of the screen and fades out by about half the
-// height. Its top edge is a slow wave that moves like water — it rises and
-// falls, it never pulses in and out.
+// The look (the reference screenshot + DESIGN.md): a soft, wide light
+// that rises from the bottom of the screen and fades out by about half
+// the height. Its top edge is a slow wave that moves like water, and
+// inside the light there are soft overlapping lobes that drift and
+// change shape — it is a living field, not a gradient.
 //
-// The shader is a single full-screen triangle: no textures, no geometry, no
-// dependencies. Everything the look needs is a uniform, so the colour (the
-// cycling hue, or the one colour the user picked), the strength and the
-// speed can all change while it runs.
+// The shader is a single full-screen triangle: no textures, no geometry,
+// no dependencies. Everything the look needs is a uniform, so the colour
+// (the cycling hue, or the one colour the user picked), the strength and
+// the speed can all change while it runs.
 
 /** The vertex shader: one full-screen triangle. */
 export const AMBIENT_VERTEX = `
@@ -21,25 +22,31 @@ void main() {
 /**
  * The fragment shader.
  *
- * · a slow swell (two sine waves) + drifting noise gives the water surface
- * · the surface rises and falls on its own slow cycle
- * · the light fades out just above the surface and grows towards the bottom
- * · the colour is a three-stop ramp: the deep tone near the surface, the
- *   main colour in the body, the bright accent at the bottom
+ * · a noise field, warped by more noise, gives the organic lobes
+ * · a slow swell rolls along the top edge of the light, so the edge is
+ *   never a straight line
+ * · the light falls off towards the top and grows towards the bottom
+ * · it leans to the right, the way the reference does
+ * · the colour is a three-stop ramp: near-black teal at the top of the
+ *   light, the body colour, and the bright accent down at the bottom
  */
 export const AMBIENT_FRAGMENT = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 
-uniform vec2  uRes;       // the canvas size in pixels
+uniform vec2  uRes;       // the drawing buffer size in pixels
 uniform float uTime;      // seconds since the start (frozen when motion is off)
 uniform float uDepth;     // how far the light reaches up the screen (0..1)
-uniform float uAmp;       // how tall the wave is
-uniform float uFreq;      // how many waves fit across the width
-uniform float uSpeed;     // how fast the water moves
-uniform float uDensity;   // how much noise the surface carries
-uniform float uIntensity; // the strength of the light (0..1)
+uniform float uAmp;       // how tall the wave on the top edge is
+uniform float uFreq;      // how many swells fit across the width
+uniform float uSpeed;     // how fast the field moves
+uniform float uWarp;      // how much the noise is warped by other noise
+uniform float uGain;      // the strength of the light
 uniform float uBias;      // 1 = even across the width, < 1 = brighter right
-uniform vec3  uDeep;      // the colour at the surface
+uniform vec3  uDeep;      // the colour at the top of the light
 uniform vec3  uMain;      // the body of the light
 uniform vec3  uBright;    // the accent at the bottom
 
@@ -64,50 +71,51 @@ float fbm(vec2 p) {
   float a = 0.5;
   for (int i = 0; i < 3; i++) {
     v += a * noise(p);
-    p *= 2.03;
+    p = p * 2.03 + 1.7;
     a *= 0.5;
   }
   return v;
 }
 
 void main() {
-  // 0 at the bottom of the canvas, 1 at the top.
+  // 0,0 is the bottom-left of the canvas.
   vec2 uv = gl_FragCoord.xy / uRes;
+  float aspect = uRes.x / max(uRes.y, 1.0);
   float t = uTime * uSpeed;
 
-  // --- the surface of the water -----------------------------------------
-  // Two slow swells, a third of a phase apart, and a drift of noise.
-  float swellA = sin((uv.x * uFreq + t * 0.55) * 6.28318) * 0.5 + 0.5;
-  float swellB = sin((uv.x * uFreq * 0.47 - t * 0.32 + 1.7) * 6.28318) * 0.5 + 0.5;
-  float drift = fbm(vec2(uv.x * uFreq * 0.30 + t * 0.22, t * 0.12));
-  float surface = mix(swellA, drift, uDensity);
-  surface = mix(surface, swellB, 0.35);
+  // The field: noise warped by more noise, so the shapes inside the light
+  // are organic — clouds, not circles.
+  vec2 p = vec2(uv.x * aspect, uv.y) * 2.0;
+  vec2 q = vec2(
+    fbm(p + vec2(0.0, t * 0.10)),
+    fbm(p + vec2(5.2, 1.3) - t * 0.08)
+  );
+  float f = fbm(p + uWarp * 1.6 * q + vec2(t * 0.05, -t * 0.06));
+  float g = fbm(p * 0.5 - vec2(t * 0.03, t * 0.02));
 
-  // The whole surface rises and falls, slowly: this is the water.
-  float swell = sin(t * 0.42) * 0.5 + 0.5;
-  float height = uDepth + (surface - 0.5) * uAmp + (swell - 0.5) * uAmp * 0.6;
+  // The top edge of the light: a slow swell, never a straight line.
+  float swell = sin((uv.x * uFreq + t * 0.30) * 6.28318) * 0.5 + 0.5;
+  float edge = uDepth - uAmp * (0.4 * (swell - 0.5) + 0.6 * (g - 0.5));
 
-  // --- the light ---------------------------------------------------------
-  // d is the distance below the surface: 0 at the surface, uDepth at the
-  // bottom of the screen.
-  float d = height - uv.y;
-  float body = clamp(d / max(uDepth, 0.001), 0.0, 1.0);
-  float glow = pow(body, 1.1);
-  // A soft shoulder right at the surface, so the edge never cuts.
-  glow *= smoothstep(0.0, 0.035, d);
+  // The light: 1 at the bottom, 0 above the edge. The falloff is
+  // straight, so the glow reads as an even wash of light.
+  float raw = clamp((edge - uv.y) / max(edge, 0.001), 0.0, 1.0);
 
-  // --- the colour --------------------------------------------------------
-  // The light leans to one side, the way the reference does.
-  float bias = mix(uBias, 1.0, smoothstep(0.05, 1.0, uv.x));
-  glow *= bias;
+  // It leans to the right, the way the reference does.
+  float bias = mix(uBias, 1.0, smoothstep(0.0, 1.0, uv.x));
 
-  vec3 col = mix(uDeep, uMain, smoothstep(0.0, 0.55, body));
-  col = mix(col, uBright, smoothstep(0.55, 1.0, body));
+  // The lobes: the field shapes the light, so the shapes overlap, drift
+  // and change. This is what makes it a shader and not a gradient.
+  float lobes = 0.35 + 1.35 * f;
+  float light = raw * bias * lobes * uGain;
 
-  col *= glow * uIntensity;
+  // The colour: near-black teal at the top, the body, the accent below.
+  vec3 col = mix(uDeep, uMain, smoothstep(0.0, 0.42, raw));
+  col = mix(col, uBright, smoothstep(0.35, 0.95, raw) * (0.35 + 0.65 * f));
+  col *= light;
 
   // A touch of dither: a smooth gradient on a cheap panel bands otherwise.
-  col += (hash(gl_FragCoord.xy + uTime) - 0.5) * 0.004;
+  col += (hash(gl_FragCoord.xy + fract(uTime)) - 0.5) * 0.004;
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -121,26 +129,34 @@ export const AMBIENT_UNIFORMS = [
   "uAmp",
   "uFreq",
   "uSpeed",
-  "uDensity",
-  "uIntensity",
+  "uWarp",
+  "uGain",
   "uBias",
   "uDeep",
   "uMain",
   "uBright",
 ] as const;
 
-/** How the water is tuned — the look, in one place. */
+/** How the light is tuned — the look, in one place. */
 export const AMBIENT_LOOK = {
-  /** how far up the screen the light reaches (0.43 = a bit under half) */
-  depth: 0.43,
-  /** how tall the wave is */
-  amp: 0.1,
+  /** how far up the screen the light reaches (0.46 = almost half) */
+  depth: 0.46,
+  /** how tall the wave on the top edge is */
+  amp: 0.22,
   /** how many swells fit across the width */
-  freq: 1.15,
-  /** how fast the water moves (slow) */
+  freq: 1.1,
+  /** how fast the field moves (slow) */
   speed: 0.16,
-  /** how much noise rides on the surface */
-  density: 0.45,
+  /** how much the noise is warped by other noise */
+  warp: 1.4,
   /** how much the light leans to the right (1 = even) */
-  bias: 0.62,
+  bias: 0.34,
 } as const;
+
+/**
+ * The shader is drawn into a small buffer and stretched by the browser.
+ * The look is a soft gradient, so nobody can see the upscale — and the
+ * cost stays the same on a cheap phone and on a laptop.
+ */
+export const AMBIENT_MAX_W = 420;
+export const AMBIENT_MAX_H = 760;
