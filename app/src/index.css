@@ -248,7 +248,10 @@
 }
 
 .reader-root {
-  background: #000;
+  /* The ambient background sits behind the text (DESIGN.md): the reader
+     keeps its own layout, but the canvas is the app's background. */
+  background: transparent;
+  z-index: 1;
   color: #fff;
   font-family: var(--lr-font);
   overscroll-behavior: none;

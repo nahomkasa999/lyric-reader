@@ -11,6 +11,10 @@ interface Props {
   bookId: string;
   onBack: () => void;
   onJump: (bookId: string, item: number, part: number) => void;
+  /** Which tab opens first — the bottom nav picks "words" or "saved". */
+  initialTab?: "saved" | "words";
+  /** Reports a tab the user picked, so the nav can follow along. */
+  onTabChange?: (tab: "saved" | "words") => void;
 }
 
 interface Entry {
@@ -49,10 +53,26 @@ function TypeIcon({ e }: { e: Entry }) {
   );
 }
 
-export default function Saved({ bookId, onBack, onJump }: Props) {
+export default function Saved({
+  bookId,
+  onBack,
+  onJump,
+  initialTab = "saved",
+  onTabChange,
+}: Props) {
   const [book, setBook] = useState<BookDoc | null>(null);
   const [marks, setMarks] = useState<Record<string, { highlight: boolean; bookmark: boolean; note: string | null }>>({});
-  const [tab, setTab] = useState<"saved" | "words">("saved");
+  const [tab, setTab] = useState<"saved" | "words">(initialTab);
+
+  // The bottom nav can ask for a specific tab — follow it.
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
+
+  const pickTab = (t: "saved" | "words") => {
+    setTab(t);
+    onTabChange?.(t);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -97,14 +117,14 @@ export default function Saved({ bookId, onBack, onJump }: Props) {
   }, [book, marks]);
 
   return (
-    <div data-testid="saved-page" className="min-h-dvh bg-background text-foreground">
-      <div className="mx-auto max-w-xl px-6 pt-14 pb-24">
+    <div data-testid="saved-page" className="relative z-[1] min-h-dvh text-foreground">
+      <div className="mx-auto max-w-xl px-6 pt-14 pb-32">
         <div className="flex items-center gap-3">
           <button
             data-testid="saved-back"
             onClick={onBack}
             aria-label="Back"
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+            className="glass-btn press"
           >
             ← Back
           </button>
@@ -118,7 +138,7 @@ export default function Saved({ bookId, onBack, onJump }: Props) {
 
         <div
           data-testid="saved-tabs"
-          className="mt-6 inline-flex rounded-full border border-border bg-card p-1"
+          className="sheet-tabs mt-6"
           role="tablist"
           aria-label="Saved and words"
         >
@@ -128,12 +148,7 @@ export default function Saved({ bookId, onBack, onJump }: Props) {
               data-testid={`saved-tab-${t}`}
               role="tab"
               aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={`rounded-full px-5 py-1.5 text-sm font-medium ${
-                tab === t
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground"
-              }`}
+              onClick={() => pickTab(t)}
             >
               {t === "saved" ? "Saved" : "Words"}
             </button>

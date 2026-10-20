@@ -1,0 +1,370 @@
+/* Settings — grouped glass sections (DESIGN.md, Oct 20 2026).
+ *
+ * Rules this file keeps:
+ * · one glass recipe (see glass.css): the sticky preview blurs, the groups
+ *   keep the same fill + border without a blur, so the screen never holds
+ *   more than 3 blurred surfaces (preview + the shared bottom nav)
+ * · on/off settings are switches, choices are chips or swatches
+ * · motion: under 300ms, ease-out only, scale(0.97) on press
+ * · prefers-reduced-motion: no entrances, the preview glow freezes
+ */
+
+/* ---------------- groups ---------------- */
+
+.set-group {
+  border-radius: 20px;
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-line);
+  padding: 14px 16px 16px;
+  margin-top: 16px;
+}
+.set-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* Section label: 11px uppercase (DESIGN.md, typography). */
+.set-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.set-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+.set-row {
+  margin-top: 14px;
+}
+.set-row-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+/* ---------------- chips (choices) ---------------- */
+
+/* Glass pill; the active one gets a brighter fill + a white outline.
+   Scoped to the page so it always beats the plain .set-chip in index.css. */
+.settings-page .set-chip {
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--glass-fill);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.2;
+  transition: transform 120ms var(--lr-ease), background-color 160ms var(--lr-ease),
+    color 160ms var(--lr-ease), border-color 160ms var(--lr-ease);
+}
+.settings-page .set-chip:active {
+  transform: scale(0.97);
+}
+.settings-page .set-chip.on {
+  outline: none;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.55);
+  color: var(--foreground);
+}
+.settings-page .set-chip:disabled {
+  opacity: 0.4;
+}
+
+/* Reading highlight swatches: round, like the background swatches. */
+.settings-page .hl-chip {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-line);
+  padding: 0;
+  transition: transform 120ms var(--lr-ease), box-shadow 160ms var(--lr-ease);
+}
+.settings-page .hl-chip:active {
+  transform: scale(0.97);
+}
+.settings-page .hl-chip.on {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
+/* ---------------- segmented control (single choice) ---------------- */
+
+.set-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-line);
+}
+.set-seg button {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  transition: transform 120ms var(--lr-ease), background-color 160ms var(--lr-ease),
+    color 160ms var(--lr-ease);
+}
+.set-seg button:active {
+  transform: scale(0.97);
+}
+.set-seg button[aria-pressed="true"] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.set-seg button:disabled {
+  opacity: 0.4;
+}
+
+/* ---------------- swatches ---------------- */
+
+.set-swatch {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--glass-line);
+  transition: transform 120ms var(--lr-ease), box-shadow 160ms var(--lr-ease);
+}
+.set-swatch:active {
+  transform: scale(0.97);
+}
+.set-swatch.on {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+.set-swatch:disabled {
+  opacity: 0.4;
+}
+
+/* The native colour input, dressed as a round swatch. */
+.set-color-input {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: transparent;
+  overflow: hidden;
+  cursor: pointer;
+}
+.set-color-input::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+.set-color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 999px;
+}
+.set-color-input::-moz-color-swatch {
+  border: none;
+  border-radius: 999px;
+}
+.set-color-input:disabled {
+  opacity: 0.4;
+}
+/* The custom picker wears a rainbow ring, so it does not read as another
+   preset swatch. */
+.set-color-custom {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(#000000, #000000) padding-box,
+    conic-gradient(
+      #f43f5e,
+      #f59e0b,
+      #a3e635,
+      #22d3ee,
+      #6366f1,
+      #d946ef,
+      #f43f5e
+    )
+      border-box;
+}
+.set-hex {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* ---------------- switch (on / off) ---------------- */
+
+.set-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.set-switch-copy {
+  font-size: 14px;
+  color: var(--foreground);
+}
+.set-switch {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--glass-line);
+  transition: transform 120ms var(--lr-ease), background-color 160ms var(--lr-ease),
+    border-color 160ms var(--lr-ease);
+}
+.set-switch:active {
+  transform: scale(0.97);
+}
+.set-switch[aria-checked="true"] {
+  background: var(--primary);
+  border-color: transparent;
+}
+.set-switch > span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #ffffff;
+  transition: transform 160ms var(--lr-ease);
+}
+.set-switch[aria-checked="true"] > span {
+  transform: translateX(20px);
+}
+.set-switch:disabled {
+  opacity: 0.4;
+}
+
+/* ---------------- sticky live preview ---------------- */
+
+/* The sticky strip: a soft scrim so the page scrolling underneath does
+   not peek out around the preview card. */
+.set-preview-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin: 12px -20px 0;
+  padding: 10px 20px 12px;
+}
+
+.set-preview {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  padding: 14px 16px 16px;
+  max-height: 40dvh;
+}
+/* The miniature background: the same recipe as the real ambient glow. */
+.set-preview-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #000000;
+}
+.set-preview-glow {
+  position: absolute;
+  /* A little larger than the frame, exactly like the real glow, so the
+     preview shows the same picture in miniature. */
+  inset: -20px;
+  filter: blur(14px);
+  will-change: transform;
+}
+/* Keeps the sentence readable over the glow (DESIGN.md: 4.5:1). */
+.set-preview-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.5),
+    rgba(0, 0, 0, 0.38)
+  );
+}
+.set-preview-copy {
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+}
+.set-preview-trail {
+  font-size: var(--lr-trail-size);
+  color: color-mix(in oklch, var(--lr-ct) calc(var(--lr-to) * 1%), transparent);
+}
+.set-preview-current {
+  margin: 8px 0;
+  font-weight: 600;
+  font-size: var(--lr-main-size);
+  line-height: 1.22;
+  color: color-mix(in oklch, var(--lr-cm) calc(var(--lr-mo) * 1%), transparent);
+}
+/* Motion on: the preview drifts, like the real glow. */
+.set-preview.live .set-preview-glow {
+  animation: set-preview-drift 20s var(--lr-ease) infinite alternate;
+}
+@keyframes set-preview-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1.02);
+  }
+  to {
+    transform: translate3d(2%, -1.5%, 0) scale(1.06);
+  }
+}
+
+/* ---------------- text fields & the reset action ---------------- */
+
+.set-field {
+  width: 100%;
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--foreground);
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+.set-field:focus {
+  border-color: var(--ring);
+}
+.set-field::placeholder {
+  color: var(--muted-foreground);
+}
+.set-field.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.set-danger {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(229, 72, 77, 0.45);
+  background: rgba(229, 72, 77, 0.1);
+  color: #e5484d;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: transform 120ms var(--lr-ease), background-color 160ms var(--lr-ease);
+}
+.set-danger:active {
+  transform: scale(0.97);
+}
+
+/* Reduced motion: no entrances, the preview glow freezes. */
+@media (prefers-reduced-motion: reduce) {
+  .set-preview.live .set-preview-glow {
+    animation: none !important;
+  }
+  .set-chip,
+  .set-seg button,
+  .set-swatch,
+  .set-switch,
+  .set-switch > span,
+  .set-danger {
+    transition: none !important;
+  }
+}

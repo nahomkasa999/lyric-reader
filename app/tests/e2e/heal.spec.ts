@@ -48,7 +48,7 @@ async function seedMergedBook(page: import("@playwright/test").Page) {
     MERGED,
   );
   await page.goto("/");
-  await page.getByTestId("upload-btn").waitFor();
+  await page.getByTestId("add-book-btn").waitFor();
   await page.getByTestId("open-book-heal-book").click();
   await page.getByTestId("current-item").waitFor();
 }

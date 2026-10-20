@@ -1,9 +1,24 @@
-import { useState } from "react";
+// Settings — grouped glass sections (DESIGN.md, Oct 20 2026).
+//
+// Order: Background → Reading → Ambience → Read Aloud → Quiz → AI → Reset.
+// A sticky glass preview at the top shows the chosen background with a
+// sentence stack, live.
+//
+// Rules kept here:
+// · on/off settings are switches, choices are chips or swatches
+// · one glass recipe: only the sticky preview blurs, the groups keep the
+//   same fill + border (max 3 blurred surfaces per screen)
+// · motion: under 300ms, ease-out only, scale(0.97) on press
+// · every data-testid from the old page still works
+import { useEffect, useState } from "react";
 import {
   FONT_CHOICES,
   FONT_STACKS,
   HIGHLIGHT_COLORS,
   useSettings,
+  type BgColourMode,
+  type BgStyle,
+  type ReaderSettings,
 } from "../lib/settings";
 import {
   getApiKey,
@@ -18,18 +33,137 @@ import {
   setOpenRouterKey,
   testOpenRouterKey,
 } from "../lib/openrouter";
+import { glow } from "../lib/ambient";
+import "../settings.css";
+import "../ambient.css";
 
 interface Props {
   onBack: () => void;
 }
 
+/** Background presets — one hue each (DESIGN.md, colors). */
+const BG_PRESETS = [
+  { id: "green", label: "Green", hex: "#A6E22E" },
+  { id: "indigo", label: "Indigo", hex: "#5B4FE9" },
+  { id: "teal", label: "Teal", hex: "#2DD4BF" },
+  { id: "amber", label: "Amber", hex: "#F5A524" },
+  { id: "pink", label: "Pink", hex: "#F472B6" },
+  { id: "purple", label: "Purple", hex: "#A855F7" },
+];
+
+const BG_STYLES: { id: BgStyle; label: string }[] = [
+  { id: "gradient", label: "Gradient glow" },
+  { id: "solid", label: "Solid" },
+  { id: "off", label: "Off" },
+];
+
+const BG_MODES: { id: BgColourMode; label: string }[] = [
+  { id: "alternate", label: "Alternate" },
+  { id: "single", label: "One colour" },
+];
+
+/** True when the user asked the system for less motion. */
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduced(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+  return reduced;
+}
+
+function Group({
+  id,
+  title,
+  hint,
+  children,
+}: {
+  id: string;
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section data-testid={`settings-group-${id}`} className="set-group">
+      <div className="set-group-head">
+        <h2 className="set-group-label">{title}</h2>
+      </div>
+      {hint && <p className="set-note">{hint}</p>}
+      {children}
+    </section>
+  );
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="mt-5">
-      <label className="mb-2 block text-[13px] text-muted-foreground">
-        {label}
-      </label>
+    <div className="set-row">
+      <span className="set-row-label">{label}</span>
       {children}
+    </div>
+  );
+}
+
+/** On/off control — a switch, never a chip (DESIGN.md, components). */
+function Switch({
+  testid,
+  checked,
+  onChange,
+  disabled,
+  label,
+}: {
+  testid: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      data-testid={testid}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className="set-switch"
+    >
+      <span aria-hidden="true" />
+    </button>
+  );
+}
+
+/** Single choice — a segmented control. */
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  testid,
+}: {
+  options: { id: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  label: string;
+  testid: string;
+}) {
+  return (
+    <div className="set-seg" role="group" aria-label={label} data-testid={testid}>
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          data-testid={`${testid}-${o.id}`}
+          aria-pressed={value === o.id}
+          onClick={() => onChange(o.id)}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -41,6 +175,7 @@ function SliderRow({
   value,
   onChange,
   suffix,
+  disabled,
 }: {
   testid: string;
   min: number;
@@ -48,6 +183,7 @@ function SliderRow({
   value: number;
   onChange: (v: number) => void;
   suffix?: string;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex items-center gap-3">
@@ -57,6 +193,7 @@ function SliderRow({
         min={min}
         max={max}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(parseInt(e.target.value, 10))}
         className="w-full accent-primary"
       />
@@ -65,6 +202,34 @@ function SliderRow({
         {suffix}
       </span>
     </div>
+  );
+}
+
+/**
+ * The miniature background: the same recipe as the real ambient glow, so
+ * the preview answers "what will the page look like?" at a glance.
+ */
+function PreviewStage({ settings }: { settings: ReaderSettings }) {
+  const { bgStyle, bgColourMode, bgColor, bgIntensity } = settings;
+
+  if (bgStyle === "off") return null;
+
+  if (bgStyle === "solid") {
+    // Solid is flat: the picked colour fills the screen.
+    return <div className="absolute inset-0" style={{ background: bgColor }} />;
+  }
+
+  const paint = glow({
+    mode: bgColourMode,
+    color: bgColor,
+    intensity: bgIntensity,
+  });
+
+  return (
+    <div
+      className={`set-preview-glow ${paint.className}`}
+      style={paint.style as React.CSSProperties}
+    />
   );
 }
 
@@ -102,7 +267,7 @@ function AiKeySection() {
             placeholder={hasEnvKey ? "Paste your own key (optional)" : "AIza…"}
             autoComplete="off"
             spellCheck={false}
-            className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-sm"
+            className="set-field mono min-w-0 flex-1"
             aria-label="Gemini API key"
           />
           <button
@@ -195,7 +360,7 @@ function OpenRouterKeySection() {
           placeholder="sk-or-…"
           autoComplete="off"
           spellCheck={false}
-          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-sm"
+          className="set-field mono min-w-0 flex-1"
           aria-label="OpenRouter API key"
         />
         <button
@@ -264,198 +429,393 @@ function OpenRouterKeySection() {
 
 export default function Settings({ onBack }: Props) {
   const { settings, update, reset } = useSettings();
+  const reduced = usePrefersReducedMotion();
+  // The preview only drifts when the glow itself moves.
+  const live = settings.bgMotion && !reduced && settings.bgStyle === "gradient";
+  const colourOff = settings.bgStyle === "off";
 
   return (
     <div
       data-testid="settings-page"
-      className="min-h-dvh bg-background text-foreground"
+      className="settings-page relative z-[1] min-h-dvh text-foreground"
+      style={{ fontFamily: "var(--lr-font)" }}
     >
-      <div className="mx-auto max-w-xl px-6 pt-14 pb-24">
+      <div className="mx-auto max-w-xl px-5 pt-[calc(14px+env(safe-area-inset-top))] pb-36">
         <div className="flex items-center gap-3">
           <button
             data-testid="settings-back"
             onClick={onBack}
             aria-label="Back"
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+            className="glass-btn"
           >
             ← Back
           </button>
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+          <h1 className="text-[28px] font-semibold tracking-[-0.02em]">Settings</h1>
         </div>
 
-        <Row label="Font">
-          <div className="flex flex-wrap gap-2">
-            {FONT_CHOICES.map((f) => (
-              <button
-                key={f}
-                data-testid={`font-chip-${f}`}
-                onClick={() => update({ font: f })}
-                className={`set-chip${settings.font === f ? " on" : ""}`}
-                style={{ fontFamily: FONT_STACKS[f] }}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-        </Row>
-
-        <Row label="Main sentence size">
-          <SliderRow
-            testid="setting-main-size"
-            min={18}
-            max={48}
-            value={settings.mainSize}
-            onChange={(v) => update({ mainSize: v })}
-            suffix="px"
-          />
-        </Row>
-
-        <Row label="Top and bottom size">
-          <SliderRow
-            testid="setting-trail-size"
-            min={9}
-            max={24}
-            value={settings.trailSize}
-            onChange={(v) => update({ trailSize: v })}
-            suffix="px"
-          />
-        </Row>
-
-        <Row label="Highlight colour">
-          <div className="flex flex-wrap gap-2">
-            {HIGHLIGHT_COLORS.map((c, i) => (
-              <button
-                key={c}
-                data-testid={`hl-chip-${i}`}
-                onClick={() => update({ highlight: c })}
-                aria-label={`Highlight colour ${i + 1}`}
-                className={`hl-chip${settings.highlight === c ? " on" : ""}`}
-                style={{ background: c }}
-              />
-            ))}
-          </div>
-        </Row>
-
-        <Row label="Main text colour and opacity">
-          <div className="flex items-center gap-3">
-            <input
-              data-testid="main-color"
-              type="color"
-              value={settings.mainColor ?? "#ffffff"}
-              onChange={(e) => update({ mainColor: e.target.value })}
-              className="h-9 w-11 shrink-0 cursor-pointer border-0 bg-transparent p-0"
-            />
-            <button
-              data-testid="main-color-default"
-              onClick={() => update({ mainColor: null })}
-              className="set-chip shrink-0"
-            >
-              Default
-            </button>
-            <input
-              data-testid="main-opacity"
-              type="range"
-              min={20}
-              max={100}
-              value={settings.mainOpacity}
-              onChange={(e) =>
-                update({ mainOpacity: parseInt(e.target.value, 10) })
-              }
-              className="w-full accent-primary"
-            />
-            <span className="w-12 shrink-0 text-right text-sm tabular-nums">
-              {settings.mainOpacity}%
-            </span>
-          </div>
-        </Row>
-
-        <Row label="Top and bottom text colour and opacity">
-          <div className="flex items-center gap-3">
-            <input
-              data-testid="trail-color"
-              type="color"
-              value={settings.trailColor ?? "#ffffff"}
-              onChange={(e) => update({ trailColor: e.target.value })}
-              className="h-9 w-11 shrink-0 cursor-pointer border-0 bg-transparent p-0"
-            />
-            <button
-              data-testid="trail-color-default"
-              onClick={() => update({ trailColor: null })}
-              className="set-chip shrink-0"
-            >
-              Default
-            </button>
-            <input
-              data-testid="trail-opacity"
-              type="range"
-              min={10}
-              max={100}
-              value={settings.trailOpacity}
-              onChange={(e) =>
-                update({ trailOpacity: parseInt(e.target.value, 10) })
-              }
-              className="w-full accent-primary"
-            />
-            <span className="w-12 shrink-0 text-right text-sm tabular-nums">
-              {settings.trailOpacity}%
-            </span>
-          </div>
-        </Row>
-
-        <AiKeySection />
-        <OpenRouterKeySection />
-
-        <button
-          data-testid="settings-reset"
-          onClick={reset}
-          className="mt-8 w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium"
-        >
-          Reset settings
-        </button>
-
-        {/* Live preview: muted line / current line / muted line, in settings */}
+        {/* Sticky glass preview — the background and a sentence, live. */}
         <div
-          data-testid="settings-preview"
-          className="mt-6 rounded-xl border border-border bg-black p-4"
-          style={{ fontFamily: "var(--lr-font)" }}
+          className="set-preview-bar"
+          style={{
+            // The scrim follows the background: black for the glow, the
+            // picked colour when the screen is filled flat.
+            background:
+              settings.bgStyle === "solid"
+                ? `linear-gradient(to bottom, ${settings.bgColor}f0, ${settings.bgColor}b0)`
+                : "linear-gradient(to bottom, #000000 0%, rgba(0,0,0,0.88) 62%, rgba(0,0,0,0.7) 100%)",
+          }}
         >
-          <p
-            style={{
-              fontSize: "var(--lr-trail-size)",
-              color:
-                "color-mix(in oklch, var(--lr-ct) calc(var(--lr-to) * 1%), transparent)",
-            }}
+          <div
+            data-testid="settings-preview"
+            className={`glass set-preview${live ? " live" : ""}`}
           >
-            The previous sentence fades above.
-          </p>
-          <p
-            data-testid="settings-preview-current"
-            className="my-3 font-semibold"
-            style={{
-              fontSize: "var(--lr-main-size)",
-              lineHeight: 1.22,
-              color:
-                "color-mix(in oklch, var(--lr-cm) calc(var(--lr-mo) * 1%), transparent)",
-            }}
-          >
-            This is the sentence you are reading.
-          </p>
-          <p
-            style={{
-              fontSize: "var(--lr-trail-size)",
-              color:
-                "color-mix(in oklch, var(--lr-ct) calc(var(--lr-to) * 0.55 * 1%), transparent)",
-            }}
-          >
-            The next one waits below.
-          </p>
+            <div className="set-preview-stage">
+              <PreviewStage settings={settings} />
+            </div>
+            <div className="set-preview-scrim" aria-hidden="true" />
+            <div className="set-preview-copy">
+              <p className="set-preview-trail">The previous sentence fades above.</p>
+              <p data-testid="settings-preview-current" className="set-preview-current">
+                This is the sentence you are reading.
+              </p>
+              <p className="set-preview-trail">The next one waits below.</p>
+            </div>
+          </div>
         </div>
+
+        {/* ---------------- Background ---------------- */}
+        <Group
+          id="background"
+          title="Background"
+          hint="The glow behind every page. It never acts — it only sits there."
+        >
+          <Row label="Style">
+            <Segmented
+              options={BG_STYLES}
+              value={settings.bgStyle}
+              onChange={(v) => update({ bgStyle: v })}
+              label="Background style"
+              testid="bg-style"
+            />
+          </Row>
+
+          <Row label="Colour mode">
+            <div className="flex flex-wrap gap-2">
+              {BG_MODES.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  data-testid={`bg-mode-${m.id}`}
+                  aria-pressed={settings.bgColourMode === m.id}
+                  disabled={colourOff}
+                  onClick={() => update({ bgColourMode: m.id })}
+                  className={`set-chip${
+                    settings.bgColourMode === m.id ? " on" : ""
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <p className="set-note">
+              {settings.bgColourMode === "alternate"
+                ? "Alternate — the glow slowly cycles through the hues."
+                : "One colour — the glow holds the colour you pick."}
+            </p>
+          </Row>
+
+          <Row label="Colour">
+            <div className="flex flex-wrap items-center gap-2">
+              {BG_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  data-testid={`bg-swatch-${p.id}`}
+                  aria-label={`Background colour ${p.label}`}
+                  aria-pressed={settings.bgColor.toLowerCase() === p.hex.toLowerCase()}
+                  disabled={colourOff}
+                  onClick={() => update({ bgColor: p.hex })}
+                  className={`set-swatch${
+                    settings.bgColor.toLowerCase() === p.hex.toLowerCase() ? " on" : ""
+                  }`}
+                  style={{ background: p.hex }}
+                />
+              ))}
+              <input
+                data-testid="bg-color-custom"
+                type="color"
+                value={settings.bgColor}
+                disabled={colourOff}
+                onChange={(e) => update({ bgColor: e.target.value })}
+                className="set-color-input set-color-custom"
+                aria-label="Custom background colour"
+              />
+              <span className="set-hex">{settings.bgColor.toUpperCase()}</span>
+            </div>
+            <p className="set-note">
+              {settings.bgColourMode === "alternate"
+                ? "The cycle passes through every one of these."
+                : "Your pick, or use the colour wheel for your own."}
+            </p>
+          </Row>
+
+          <Row label="Motion">
+            <div className="set-switch-row">
+              <span className="set-switch-copy">Let the glow drift</span>
+              <Switch
+                testid="bg-motion"
+                checked={settings.bgMotion}
+                onChange={(v) => update({ bgMotion: v })}
+                disabled={settings.bgStyle !== "gradient"}
+                label="Background motion"
+              />
+            </div>
+            <p className="set-note">
+              {settings.bgStyle === "gradient"
+                ? "Off freezes the glow where it is."
+                : "Only the gradient glow moves."}
+            </p>
+          </Row>
+
+          <Row label="Intensity">
+            <SliderRow
+              testid="bg-intensity"
+              min={0}
+              max={100}
+              value={settings.bgIntensity}
+              onChange={(v) => update({ bgIntensity: v })}
+              suffix="%"
+              disabled={settings.bgStyle !== "gradient"}
+            />
+            <p className="set-note">
+              {settings.bgStyle === "gradient"
+                ? "How bright the glow is."
+                : "Only the gradient glow has an intensity."}
+            </p>
+          </Row>
+        </Group>
+
+        {/* ---------------- Reading ---------------- */}
+        <Group id="reading" title="Reading">
+          <Row label="Font">
+            <div className="flex flex-wrap gap-2">
+              {FONT_CHOICES.map((f) => (
+                <button
+                  key={f}
+                  data-testid={`font-chip-${f}`}
+                  onClick={() => update({ font: f })}
+                  className={`set-chip${settings.font === f ? " on" : ""}`}
+                  style={{ fontFamily: FONT_STACKS[f] }}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </Row>
+
+          <Row label="Main sentence size">
+            <SliderRow
+              testid="setting-main-size"
+              min={18}
+              max={48}
+              value={settings.mainSize}
+              onChange={(v) => update({ mainSize: v })}
+              suffix="px"
+            />
+          </Row>
+
+          <Row label="Top and bottom size">
+            <SliderRow
+              testid="setting-trail-size"
+              min={9}
+              max={24}
+              value={settings.trailSize}
+              onChange={(v) => update({ trailSize: v })}
+              suffix="px"
+            />
+          </Row>
+
+          <Row label="Highlight colour">
+            <div className="flex flex-wrap gap-2">
+              {HIGHLIGHT_COLORS.map((c, i) => (
+                <button
+                  key={c}
+                  data-testid={`hl-chip-${i}`}
+                  onClick={() => update({ highlight: c })}
+                  aria-label={`Highlight colour ${i + 1}`}
+                  className={`hl-chip${settings.highlight === c ? " on" : ""}`}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+          </Row>
+
+          <Row label="Main text colour and opacity">
+            <div className="flex items-center gap-3">
+              <input
+                data-testid="main-color"
+                type="color"
+                value={settings.mainColor ?? "#ffffff"}
+                onChange={(e) => update({ mainColor: e.target.value })}
+                className="set-color-input"
+                aria-label="Main text colour"
+              />
+              <button
+                data-testid="main-color-default"
+                onClick={() => update({ mainColor: null })}
+                className="set-chip shrink-0"
+              >
+                Default
+              </button>
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                data-testid="main-opacity"
+                type="range"
+                min={20}
+                max={100}
+                value={settings.mainOpacity}
+                onChange={(e) =>
+                  update({ mainOpacity: parseInt(e.target.value, 10) })
+                }
+                className="w-full accent-primary"
+              />
+              <span className="w-12 shrink-0 text-right text-sm tabular-nums">
+                {settings.mainOpacity}%
+              </span>
+            </div>
+          </Row>
+
+          <Row label="Top and bottom text colour and opacity">
+            <div className="flex items-center gap-3">
+              <input
+                data-testid="trail-color"
+                type="color"
+                value={settings.trailColor ?? "#ffffff"}
+                onChange={(e) => update({ trailColor: e.target.value })}
+                className="set-color-input"
+                aria-label="Top and bottom text colour"
+              />
+              <button
+                data-testid="trail-color-default"
+                onClick={() => update({ trailColor: null })}
+                className="set-chip shrink-0"
+              >
+                Default
+              </button>
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                data-testid="trail-opacity"
+                type="range"
+                min={10}
+                max={100}
+                value={settings.trailOpacity}
+                onChange={(e) =>
+                  update({ trailOpacity: parseInt(e.target.value, 10) })
+                }
+                className="w-full accent-primary"
+              />
+              <span className="w-12 shrink-0 text-right text-sm tabular-nums">
+                {settings.trailOpacity}%
+              </span>
+            </div>
+          </Row>
+        </Group>
+
+        {/* ---------------- Ambience ---------------- */}
+        <Group
+          id="ambience"
+          title="Ambience"
+          hint="Music behind the page — paste a link and it plays quietly."
+        >
+          <Row label="Play ambience">
+            <div className="set-switch-row">
+              <span className="set-switch-copy">Background music</span>
+              <Switch
+                testid="ambience-toggle"
+                checked={false}
+                onChange={() => {}}
+                disabled
+                label="Background music"
+              />
+            </div>
+            <p className="set-note">Coming soon — not built yet.</p>
+          </Row>
+        </Group>
+
+        {/* ---------------- Read aloud ---------------- */}
+        <Group
+          id="read-aloud"
+          title="Read aloud"
+          hint="Hear the page spoken out loud while you follow along."
+        >
+          <Row label="Read aloud">
+            <div className="set-switch-row">
+              <span className="set-switch-copy">Speak the sentences</span>
+              <Switch
+                testid="read-aloud-toggle"
+                checked={false}
+                onChange={() => {}}
+                disabled
+                label="Speak the sentences"
+              />
+            </div>
+            <p className="set-note">Coming soon — not built yet.</p>
+          </Row>
+        </Group>
+
+        {/* ---------------- Quiz ---------------- */}
+        <Group
+          id="quiz"
+          title="Quiz"
+          hint="Check yourself on what you just read."
+        >
+          <Row label="Quiz">
+            <div className="set-switch-row">
+              <span className="set-switch-copy">Ask me questions</span>
+              <Switch
+                testid="quiz-toggle"
+                checked={false}
+                onChange={() => {}}
+                disabled
+                label="Ask me questions"
+              />
+            </div>
+            <p className="set-note">Coming soon — not built yet.</p>
+          </Row>
+        </Group>
+
+        {/* ---------------- AI keys ---------------- */}
+        <Group
+          id="ai"
+          title="AI keys"
+          hint="Bring your own key. It stays on this phone and is never logged."
+        >
+          <AiKeySection />
+          <div className="mt-4">
+            <OpenRouterKeySection />
+          </div>
+        </Group>
+
+        {/* ---------------- Reset ---------------- */}
+        <Group id="reset" title="Reset">
+          <p className="set-note">
+            Puts every setting back to the default. Your API keys stay where
+            they are.
+          </p>
+          <button
+            data-testid="settings-reset"
+            onClick={reset}
+            className="set-danger mt-3"
+          >
+            Reset settings
+          </button>
+        </Group>
+
         {/* v4.6: build stamp — a screenshot of this page always tells
             which build is actually running on the device. */}
-        <p
-          data-testid="build-id"
-          className="mt-8 text-center text-xs opacity-40"
-        >
+        <p data-testid="build-id" className="mt-8 text-center text-xs opacity-40">
           Lyric Reader · build {__BUILD_ID__}
         </p>
       </div>

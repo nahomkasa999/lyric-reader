@@ -1,0 +1,119 @@
+/* The ambient background — one glow behind the reader and Home.
+ *
+ * The recipe (DESIGN.md):
+ * · the glow rises from the bottom and is black by ~55% of the height
+ * · alternate cycles the hue over 4 minutes — slow enough to be barely
+ *   noticed; one colour holds the user's pick
+ * · motion off freezes the glow completely
+ * · transform and opacity only — nothing else animates
+ * · prefers-reduced-motion stops the background dead
+ *
+ * The same .glow-layer recipe paints the miniature preview in Settings.
+ */
+
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ambient-glow {
+  position: absolute;
+  /* A little larger than the screen, so the blur never leaves a dark
+     band along the edges. */
+  inset: -48px;
+  /* The soft edge of the glow. It is composited once, then only the
+     transform changes — cheap on a phone. */
+  filter: blur(30px);
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* The glow itself. The values arrive as custom properties, so the hue can
+   be animated as a number and the colour blends between neighbours.
+   The vertical radius is the full height of the box, so the 45% stop is
+   half a screen up: black by 55% of the height. */
+.glow-layer {
+  background: radial-gradient(
+    150% 100% at 50% 100%,
+    hsl(var(--ambient-hue, 120) 68% 45% / var(--ambient-a1, 0.6)) 0%,
+    hsl(var(--ambient-hue, 120) 58% 30% / var(--ambient-a2, 0.36)) 18%,
+    hsl(var(--ambient-hue, 120) 42% 14% / var(--ambient-a3, 0.168)) 32%,
+    rgba(0, 0, 0, 0.85) 45%,
+    #000000 60%
+  );
+}
+
+/* One colour: the glow holds the colour the user picked. */
+.glow-layer.glow-single {
+  background: radial-gradient(
+    150% 100% at 50% 100%,
+    var(--ambient-c1, rgba(166, 226, 46, 0.6)) 0%,
+    var(--ambient-c2, rgba(166, 226, 46, 0.36)) 18%,
+    var(--ambient-c3, rgba(166, 226, 46, 0.168)) 32%,
+    rgba(0, 0, 0, 0.85) 45%,
+    #000000 60%
+  );
+}
+
+/* The registered custom property lets the hue be animated as a number,
+   so the colour blends between neighbours instead of jumping. */
+@property --ambient-hue {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 120;
+}
+
+@keyframes ambient-hue-cycle {
+  0% {
+    --ambient-hue: 120;
+  }
+  14.3% {
+    --ambient-hue: 180;
+  }
+  28.6% {
+    --ambient-hue: 220;
+  }
+  42.9% {
+    --ambient-hue: 250;
+  }
+  57.1% {
+    --ambient-hue: 290;
+  }
+  71.4% {
+    --ambient-hue: 330;
+  }
+  85.7% {
+    --ambient-hue: 40;
+  }
+  100% {
+    --ambient-hue: 120;
+  }
+}
+
+/* The gentle position drift. */
+@keyframes ambient-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.02);
+  }
+  25% {
+    transform: translate3d(1.2%, -1.4%, 0) scale(1.06);
+  }
+  50% {
+    transform: translate3d(-0.9%, 0.8%, 0) scale(1.04);
+  }
+  75% {
+    transform: translate3d(1.4%, 0.3%, 0) scale(1.07);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.02);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-glow {
+    animation: none !important;
+  }
+}

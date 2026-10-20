@@ -8,7 +8,7 @@ const SHOTS = path.resolve(
 
 async function openSample(page: Page) {
   await page.goto("/");
-  await page.getByTestId("upload-btn").waitFor();
+  await page.getByTestId("add-book-btn").waitFor();
   await page.locator('[data-testid^="open-book-"]').first().click();
   await page.getByTestId("current-item").waitFor();
   await page.evaluate(() => document.fonts.ready);
@@ -48,7 +48,7 @@ test.describe("screenshots", () => {
 
     // Library
     await page.goto("/");
-    await page.getByTestId("upload-btn").waitFor();
+    await page.getByTestId("add-book-btn").waitFor();
     await page.evaluate(() => document.fonts.ready);
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/library-phone.png` });

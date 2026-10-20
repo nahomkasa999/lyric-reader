@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+// Home: the landing view.
+// Order (DESIGN.md): glass header → Continue Reading hero → Add Book →
+// Your Library → (the glass bottom nav lives in App, it is shared by every
+// non-reader view).
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { extractFile, extractTxt } from "../lib/extract";
 import {
   deleteBook,
@@ -10,21 +14,41 @@ import {
 import type { BookMeta } from "../lib/db";
 import { migratePosition, progressOf } from "../lib/types";
 import type { Position } from "../lib/types";
+import AddBookSheet from "./AddBookSheet";
+
+/** The book the user read last — the hero resumes it. */
+const LAST_BOOK_KEY = "lyric-reader.last-book";
+
+function readLastBook(): string | null {
+  try {
+    return localStorage.getItem(LAST_BOOK_KEY);
+  } catch {
+    return null;
+  }
+}
 
 interface Props {
   onOpen: (bookId: string) => void;
   onOpenSettings: () => void;
   onOpenSaved: (bookId: string) => void;
+  /**
+   * Reports which book the Continue Reading card points at (null when the
+   * library is empty) so the bottom nav can open Saved/Words for it.
+   */
+  onActiveBook?: (bookId: string | null) => void;
 }
 
-export default function Library({ onOpen, onOpenSettings, onOpenSaved }: Props) {
+export default function Library({
+  onOpen,
+  onOpenSettings,
+  onOpenSaved,
+  onActiveBook,
+}: Props) {
   const [books, setBooks] = useState<BookMeta[]>([]);
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pasteTitle, setPasteTitle] = useState("");
-  const [pasteText, setPasteText] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const list = await listBooks();
@@ -69,81 +93,98 @@ export default function Library({ onOpen, onOpenSettings, onOpenSaved }: Props) 
       const f = files?.[0];
       if (!f) return;
       await addBook(f.name, () => extractFile(f));
-      if (fileRef.current) fileRef.current.value = "";
     },
     [addBook],
   );
 
-  const onPasteGo = useCallback(async () => {
-    if (!pasteText.trim()) return;
-    const text = pasteText;
-    const title = pasteTitle.trim() || "Pasted text";
-    setPasteText("");
-    setPasteTitle("");
-    await addBook(title, () => extractTxt(text, title, "paste"));
-  }, [pasteText, pasteTitle, addBook]);
+  const onPaste = useCallback(
+    async (raw: string, rawTitle: string) => {
+      if (!raw.trim()) return;
+      const text = raw;
+      const title = rawTitle.trim() || "Pasted text";
+      await addBook(title, () => extractTxt(text, title, "paste"));
+    },
+    [addBook],
+  );
 
   const onDelete = useCallback(
     async (id: string) => {
       await deleteBook(id);
+      // The hero must not point at a book that is gone.
+      if (readLastBook() === id) {
+        try {
+          localStorage.removeItem(LAST_BOOK_KEY);
+        } catch {
+          /* ignore */
+        }
+      }
       await refresh();
     },
     [refresh],
   );
 
+  // The book the hero points at: the one read last, else the newest one.
+  const active = useMemo(() => {
+    const last = readLastBook();
+    return books.find((b) => b.id === last) ?? books[0] ?? null;
+  }, [books]);
+
+  useEffect(() => {
+    onActiveBook?.(active?.id ?? null);
+  }, [active?.id, onActiveBook]);
+
+  const activePct = active ? Math.round((progress[active.id] ?? 0) * 100) : 0;
+
   return (
     <div
       data-testid="library-root"
-      className="min-h-dvh bg-background text-foreground"
+      className={`relative min-h-dvh text-foreground ${
+        // While the sheet is open it is modal: it sits above the bottom nav.
+        sheetOpen ? "z-50 sheet-open" : "z-[1]"
+      }`}
       style={{ fontFamily: "var(--lr-font)" }}
     >
-      <div className="mx-auto max-w-xl px-5 pt-10 pb-24">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-[28px] font-semibold tracking-[-0.02em]">
+      {/* Glass header: title left, glass pills right. */}
+      <header
+        data-testid="library-header"
+        className="glass home-header sticky top-0 z-30"
+      >
+        <div className="mx-auto flex max-w-xl items-center gap-3 px-5 pb-3 pt-[calc(14px+env(safe-area-inset-top))]">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.02em]">
               Lyric Reader
             </h1>
-            <p className="sub mt-1 text-muted-foreground">
-              Read one sentence at a time. Everything stays on your phone.
+            <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
+              Read one sentence at a time.
             </p>
           </div>
-          {(() => {
-            let target: string | null = null;
-            try {
-              target = localStorage.getItem("lyric-reader.last-book");
-            } catch {
-              /* ignore */
-            }
-            const id = target ?? books[0]?.id ?? null;
-            if (!id) return null;
-            return (
-              <button
-                data-testid="library-saved-btn"
-                onClick={() => onOpenSaved(id)}
-                aria-label="Saved marks"
-                className="mt-1 shrink-0 rounded-lg border border-border bg-card p-2.5 text-muted-foreground"
+          {active && (
+            <button
+              data-testid="library-saved-btn"
+              onClick={() => onOpenSaved(active.id)}
+              aria-label="Saved marks"
+              className="glass-pill press"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="18"
-                  height="18"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d="M6 3h12v18l-6-4-6 4z" />
-                </svg>
-              </button>
-            );
-          })()}
+                <path d="M6 3h12v18l-6-4-6 4z" />
+              </svg>
+            </button>
+          )}
           <button
             data-testid="settings-gear"
             onClick={onOpenSettings}
             aria-label="Settings"
-            className="mt-1 shrink-0 rounded-lg border border-border bg-card p-2.5 text-muted-foreground"
+            className="glass-pill press"
           >
             <svg
               viewBox="0 0 24 24"
@@ -161,99 +202,101 @@ export default function Library({ onOpen, onOpenSettings, onOpenSaved }: Props) 
             </svg>
           </button>
         </div>
+      </header>
 
-        <label
-          data-testid="upload-btn"
-          className={`mt-6 block cursor-pointer rounded-xl bg-primary px-[18px] py-[14px] text-center text-sm font-semibold text-primary-foreground ${
-            busy ? "pointer-events-none opacity-50" : ""
-          }`}
-        >
-          {busy ? "Working…" : "Start reading a book"}
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf,.epub,.txt,.md"
-            className="hidden"
-            onChange={(e) => onFiles(e.target.files)}
-            data-testid="file-input"
-          />
-        </label>
-
-        <input
-          data-testid="paste-title"
-          value={pasteTitle}
-          onChange={(e) => setPasteTitle(e.target.value)}
-          placeholder="Title (optional)"
-          className="mt-4 w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm outline-none focus:border-ring"
-        />
-        <textarea
-          data-testid="paste-text"
-          value={pasteText}
-          onChange={(e) => setPasteText(e.target.value)}
-          placeholder="Or paste text here"
-          rows={4}
-          className="mt-3 w-full rounded-xl border border-border bg-card px-3 py-3 text-sm outline-none focus:border-ring"
-        />
-        <button
-          data-testid="paste-save"
-          onClick={onPasteGo}
-          disabled={!pasteText.trim() || busy !== null}
-          className="mt-3 w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium disabled:opacity-50"
-        >
-          Read pasted text
-        </button>
-        <p className="mt-3 text-xs text-muted-foreground">
-          PDF, EPUB or TXT. Everything stays on this device.
-        </p>
-
-        {error && (
-          <div
-            data-testid="import-error"
-            className="mt-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
+      <main className="mx-auto max-w-xl px-5 pb-36 pt-6">
+        {/* Continue Reading — one glass card, tap = resume. */}
+        {active && (
+          <button
+            data-testid="continue-reading"
+            onClick={() => onOpen(active.id)}
+            className="home-hero glass press"
           >
-            {error}
-          </div>
+            <span className="home-label block">Continue reading</span>
+            <span className="mt-2 block truncate text-[20px] font-semibold leading-snug">
+              {active.title}
+            </span>
+            <span className="mt-1 block text-[13px] text-muted-foreground">
+              {activePct}% read · {active.totalSentences} sentences
+            </span>
+            <span className="home-bar mt-3">
+              <i style={{ width: `${activePct}%` }} />
+            </span>
+          </button>
         )}
 
-        <div data-testid="book-list" className="mt-8 space-y-3">
-          {books.map((b) => {
-            const pct = Math.round((progress[b.id] ?? 0) * 100);
-            return (
-              <div
-                key={b.id}
-                data-testid={`book-card-${b.id}`}
-                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3.5 text-left"
+        <button
+          data-testid="add-book-btn"
+          onClick={() => {
+            setError(null);
+            setSheetOpen(true);
+          }}
+          className="home-cta press mt-5"
+        >
+          Add Book
+        </button>
+
+        <section className="mt-8">
+          <h2 className="home-label">Your Library</h2>
+          <div data-testid="book-list" className="mt-3 space-y-3">
+            {books.map((b) => {
+              const pct = Math.round((progress[b.id] ?? 0) * 100);
+              return (
+                <div
+                  key={b.id}
+                  data-testid={`book-card-${b.id}`}
+                  className="home-row glass-lite"
+                >
+                  <button
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => onOpen(b.id)}
+                    data-testid={`open-book-${b.id}`}
+                  >
+                    <p className="truncate text-[15px] font-medium leading-snug">
+                      {b.title}
+                    </p>
+                    <p className="mt-0.5 text-[13px] text-muted-foreground">
+                      {b.totalSentences} sentences · {pct}% read
+                    </p>
+                    <span className="home-bar mt-2">
+                      <i style={{ width: `${pct}%` }} />
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => onDelete(b.id)}
+                    aria-label={`Delete ${b.title}`}
+                    data-testid={`delete-book-${b.id}`}
+                    className="press shrink-0 rounded-md px-2 py-1 text-lg leading-none text-muted-foreground hover:text-destructive"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+            {books.length === 0 && (
+              <p
+                data-testid="library-empty"
+                className="text-sm text-muted-foreground"
               >
-                <button
-                  className="min-w-0 flex-1 text-left"
-                  onClick={() => onOpen(b.id)}
-                  data-testid={`open-book-${b.id}`}
-                >
-                  <p className="truncate text-[15px] font-medium leading-snug">
-                    {b.title}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {b.totalSentences} sentences · {pct}% read
-                  </p>
-                </button>
-                <button
-                  onClick={() => onDelete(b.id)}
-                  aria-label={`Delete ${b.title}`}
-                  data-testid={`delete-book-${b.id}`}
-                  className="shrink-0 rounded-md px-2 py-1 text-lg leading-none text-muted-foreground hover:text-destructive"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
-          {books.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No books yet — upload one above to start reading.
-            </p>
-          )}
-        </div>
-      </div>
+                No books yet — add one above to start reading.
+              </p>
+            )}
+          </div>
+        </section>
+      </main>
+
+      {sheetOpen && (
+        <AddBookSheet
+          busy={busy !== null}
+          error={error}
+          onClose={() => {
+            setSheetOpen(false);
+            setError(null);
+          }}
+          onFiles={onFiles}
+          onPaste={onPaste}
+        />
+      )}
     </div>
   );
 }

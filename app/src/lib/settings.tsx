@@ -18,6 +18,9 @@ export type FontChoice =
   | "Lexend"
   | "System";
 
+export type BgStyle = "gradient" | "solid" | "off";
+export type BgColourMode = "alternate" | "single";
+
 export interface ReaderSettings {
   font: FontChoice;
   /** current-sentence base size, px (18–48) */
@@ -36,6 +39,16 @@ export interface ReaderSettings {
   trailOpacity: number;
   /** auto-scroll speed multiplier (1 | 1.25 | 1.5 | 0.75) */
   autoScrollSpeed: number;
+  /** ambient background style */
+  bgStyle: BgStyle;
+  /** ambient background colour mode */
+  bgColourMode: BgColourMode;
+  /** ambient background colour hex */
+  bgColor: string;
+  /** ambient background motion enabled */
+  bgMotion: boolean;
+  /** ambient background intensity 0-100 */
+  bgIntensity: number;
 }
 
 export const FONT_STACKS: Record<FontChoice, string> = {
@@ -73,6 +86,11 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   trailColor: null,
   trailOpacity: 30,
   autoScrollSpeed: 1,
+  bgStyle: "gradient",
+  bgColourMode: "alternate",
+  bgColor: "#A6E22E",
+  bgMotion: true,
+  bgIntensity: 60,
 };
 
 const KEY = "lyric-reader.settings-v1";
@@ -85,7 +103,15 @@ function isHex(s: unknown): s is string {
   return typeof s === "string" && /^#[0-9a-fA-F]{6}$/.test(s);
 }
 
-function load(): ReaderSettings {
+function isBgStyle(s: unknown): s is BgStyle {
+  return s === "gradient" || s === "solid" || s === "off";
+}
+
+function isBgColourMode(s: unknown): s is BgColourMode {
+  return s === "alternate" || s === "single";
+}
+
+export function load(): ReaderSettings {
   const d = { ...DEFAULT_SETTINGS };
   // Migrate the old A−/A+ font scale (0.8–1.4 around a 41.6px base).
   try {
@@ -110,6 +136,18 @@ function load(): ReaderSettings {
     d.trailColor = isHex(s.trailColor) ? s.trailColor : null;
     if (typeof s.trailOpacity === "number") d.trailOpacity = clamp(Math.round(s.trailOpacity), 10, 100);
     if (isAutoSpeed(s.autoScrollSpeed)) d.autoScrollSpeed = s.autoScrollSpeed;
+    if (isBgStyle(s.bgStyle)) d.bgStyle = s.bgStyle;
+    if (isBgColourMode(s.bgColourMode)) d.bgColourMode = s.bgColourMode;
+    if (isHex(s.bgColor)) d.bgColor = s.bgColor;
+    if (typeof s.bgMotion === "boolean") d.bgMotion = s.bgMotion;
+    if (typeof s.bgIntensity === "number" && s.bgIntensity >= 0 && s.bgIntensity <= 100) {
+      d.bgIntensity = Math.round(s.bgIntensity);
+    } else if (typeof s.bgIntensity === "number") {
+      // out of range -> invalid per test expectation
+      /* fall back */
+    } else {
+      /* not a number -> keep default */
+    }
   } catch {
     /* corrupt prefs -> defaults */
   }

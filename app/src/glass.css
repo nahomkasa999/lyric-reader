@@ -1,0 +1,378 @@
+/* Lyric Reader — Dark Glass (see DESIGN.md in the repo root).
+   One glass recipe, shared by the sticky header, the Continue Reading hero,
+   the bottom nav, the add-book sheet and (later) the settings groups.
+
+   Rules this file keeps:
+   · max 3 backdrop-blur surfaces on screen at once (Android performance)
+   · list rows use the same fill + border, never a blur
+   · motion: under 300ms, ease-out only, scale(0.97) on press
+   · prefers-reduced-motion removes every entrance
+*/
+
+:root {
+  --glass-fill: rgba(255, 255, 255, 0.06);
+  --glass-line: rgba(255, 255, 255, 0.12);
+  --glass-blur-value: blur(18px) saturate(140%);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.36);
+  /* Emil's ease-out curve; sheets use their own, slightly softer one. */
+  --lr-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --lr-sheet-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* The one glass recipe. */
+.glass {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur, var(--glass-blur-value));
+  -webkit-backdrop-filter: var(--glass-blur, var(--glass-blur-value));
+}
+
+/* Rows: same fill + border as the glass, but no blur (design rule). */
+.glass-lite {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-line);
+}
+
+/* While the add-book sheet is open it owns the blur slot: the page
+   surfaces keep their fill and border but drop the backdrop filter. */
+.sheet-open {
+  --glass-blur: none;
+}
+.add-sheet {
+  --glass-blur: var(--glass-blur-value);
+}
+
+/* Press feedback: scale(0.97), ease-out, under 300ms. */
+.press {
+  transition: transform 120ms var(--lr-ease), background-color 160ms var(--lr-ease),
+    color 160ms var(--lr-ease), opacity 160ms var(--lr-ease);
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+/* ---------------- Home ---------------- */
+
+/* Sticky glass header — title left, glass pills right. */
+.home-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  border-radius: 0 0 20px 20px;
+}
+
+/* Icon button: 40×40 glass pill (no extra blur — it sits on the header). */
+.glass-pill {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-line);
+  color: var(--foreground);
+  transition: transform 120ms var(--lr-ease), background-color 160ms var(--lr-ease);
+}
+.glass-pill:active {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.12);
+}
+.pill-sm {
+  width: 34px;
+  height: 34px;
+}
+
+/* Text button on a glass surface (auto width). */
+.glass-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-line);
+  color: var(--foreground);
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: transform 120ms var(--lr-ease), background-color 160ms var(--lr-ease);
+}
+.glass-btn:active {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Continue Reading hero — one glass card, glow behind it, tap = resume. */
+.home-hero {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-radius: 20px;
+  padding: 20px;
+  overflow: hidden;
+  animation: hero-in 260ms var(--lr-ease) backwards;
+}
+.home-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 100% at 0% 0%,
+    color-mix(in oklch, var(--primary) 26%, transparent),
+    transparent 62%
+  );
+  pointer-events: none;
+}
+.home-hero > * {
+  position: relative;
+}
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Section label: 11px uppercase. */
+.home-label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Primary button: indigo fill, white text, 14px radius. */
+.home-cta {
+  display: block;
+  width: 100%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+.home-cta:disabled {
+  opacity: 0.5;
+}
+
+/* Library row — glass-lite, no blur. */
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 20px;
+  padding: 14px 16px;
+}
+
+/* Progress hairline (indigo). */
+.home-bar {
+  display: block;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in oklch, #fff 12%, transparent);
+  overflow: hidden;
+}
+.home-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width 240ms var(--lr-ease);
+}
+
+/* ---------------- Bottom navigation ---------------- */
+
+.glass-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  margin: 0 auto;
+  max-width: 640px;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 8px 14px calc(10px + env(safe-area-inset-bottom));
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  /* A soft dark backing under the glass: the ambient glow is brightest
+     right here, and the labels have to stay readable over it. */
+  background-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72),
+    rgba(0, 0, 0, 0.3)
+  );
+}
+.glass-nav button {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 2px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--muted-foreground);
+  transition: transform 120ms var(--lr-ease), color 160ms var(--lr-ease),
+    background-color 160ms var(--lr-ease);
+}
+.glass-nav button:active {
+  transform: scale(0.97);
+}
+.glass-nav button[aria-current="page"] {
+  max-width: 92px;
+  margin-inline: auto;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.glass-nav button:disabled {
+  opacity: 0.35;
+}
+.glass-nav svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.glass-nav .nav-glyph {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  height: 22px;
+}
+
+/* ---------------- Add-book sheet ---------------- */
+
+.sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  animation: fade-in 200ms var(--lr-ease) backwards;
+}
+.add-sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 88dvh;
+  overflow-y: auto;
+  border-radius: 28px 28px 0 0;
+  border-bottom: 0;
+  padding: 20px 20px calc(24px + env(safe-area-inset-bottom));
+  animation: sheet-up 240ms var(--lr-sheet-ease) backwards;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Segmented tab control (glass pill). */
+.sheet-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-line);
+}
+.sheet-tabs button {
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  transition: transform 120ms var(--lr-ease), color 160ms var(--lr-ease),
+    background-color 160ms var(--lr-ease);
+}
+.sheet-tabs button:active {
+  transform: scale(0.97);
+}
+.sheet-tabs button[aria-selected="true"] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* Drop target for the file tab. */
+.sheet-drop {
+  display: block;
+  border-radius: 14px;
+  border: 1px dashed var(--glass-line);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 28px 16px;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* Text field inside the sheet. */
+.sheet-field {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--foreground);
+  padding: 11px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+.sheet-field:focus {
+  border-color: var(--ring);
+}
+.sheet-field::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* Reduced motion: no entrances, no sheet slide. */
+@media (prefers-reduced-motion: reduce) {
+  .home-hero,
+  .sheet-layer,
+  .add-sheet {
+    animation: none !important;
+  }
+  .press,
+  .glass-pill,
+  .glass-nav button,
+  .sheet-tabs button,
+  .home-bar > i {
+    transition: none !important;
+  }
+}

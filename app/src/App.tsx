@@ -3,6 +3,7 @@ import Library from "./components/Library";
 import Reader from "./components/Reader";
 import Saved from "./components/Saved";
 import Settings from "./components/Settings";
+import GlassNav, { type NavKey } from "./components/GlassNav";
 import { SettingsProvider } from "./lib/settings";
 import { extractKeyFromHash, setApiKey } from "./lib/apikey";
 import { discoverModel } from "./lib/gemini";
@@ -16,6 +17,7 @@ import {
   saveProgress,
 } from "./lib/db";
 import { SAMPLE_TEXT, SAMPLE_TITLE } from "./lib/sample";
+import AmbientBackground from "./components/AmbientBackground";
 
 const LAST_BOOK_KEY = "lyric-reader.last-book";
 
@@ -30,11 +32,10 @@ function readLastBook(): string | null {
 }
 
 function Shell() {
-  // If a book was open last time, land straight back in the reader.
-  const [view, setView] = useState<View>(() =>
-    readLastBook() ? "reader" : "library",
-  );
-  const [openBookId, setOpenBookId] = useState<string | null>(readLastBook);
+  // Home is the landing view — the Continue Reading hero resumes the book
+  // the user read last.
+  const [view, setView] = useState<View>("library");
+  const [openBookId, setOpenBookId] = useState<string | null>(null);
   const [settingsReturn, setSettingsReturn] = useState<"library" | "reader">(
     "library",
   );
@@ -42,6 +43,9 @@ function Shell() {
   const [savedReturn, setSavedReturn] = useState<"library" | "reader">(
     "library",
   );
+  const [savedTab, setSavedTab] = useState<"saved" | "words">("saved");
+  /** The book the bottom nav opens Saved/Words for. */
+  const [navBookId, setNavBookId] = useState<string | null>(readLastBook);
   const [seeded, setSeeded] = useState(false);
 
   // The whole app is dark-only (the reader mockup is pure black).
@@ -51,16 +55,17 @@ function Shell() {
 
   // If the remembered book no longer exists (deleted), forget it.
   useEffect(() => {
-    if (!openBookId) return;
-    getBook(openBookId)
+    const id = readLastBook();
+    if (!id) return;
+    getBook(id)
       .then((b) => {
         if (!b) {
-          setOpenBookId(null);
           try {
             localStorage.removeItem(LAST_BOOK_KEY);
           } catch {
             /* ignore */
           }
+          setNavBookId((cur) => (cur === id ? null : cur));
         }
       })
       .catch(() => {});
@@ -100,12 +105,9 @@ function Shell() {
   }, []);
 
   const closeBook = useCallback(() => {
+    // The last-book key stays: it is what the Continue Reading hero
+    // resumes from. (The app lands on Home now, not in the reader.)
     setOpenBookId(null);
-    try {
-      localStorage.removeItem(LAST_BOOK_KEY);
-    } catch {
-      /* ignore */
-    }
     setView("library");
   }, []);
 
@@ -114,11 +116,39 @@ function Shell() {
     setView("settings");
   }, []);
 
-  const openSaved = useCallback((bookId: string, from: "library" | "reader") => {
-    setSavedBookId(bookId);
-    setSavedReturn(from);
-    setView("saved");
-  }, []);
+  const openSaved = useCallback(
+    (
+      bookId: string,
+      from: "library" | "reader",
+      tab: "saved" | "words" = "saved",
+    ) => {
+      setSavedBookId(bookId);
+      setSavedReturn(from);
+      setSavedTab(tab);
+      setView("saved");
+    },
+    [],
+  );
+
+  /** The glass bottom nav — shared by every non-reader view. */
+  const navTo = useCallback(
+    (key: NavKey) => {
+      if (key === "home") {
+        setView("library");
+        return;
+      }
+      if (key === "settings") {
+        setSettingsReturn("library");
+        setView("settings");
+        return;
+      }
+      const id =
+        view === "saved" && savedBookId ? savedBookId : navBookId;
+      if (!id) return;
+      openSaved(id, "library", key === "words" ? "words" : "saved");
+    },
+    [view, savedBookId, navBookId, openSaved],
+  );
 
   /** Jump the reader to an exact saved part: persist the position first,
       then open the book — the reader restores it as the saved position. */
@@ -149,43 +179,73 @@ function Shell() {
 
   if (view === "settings") {
     return (
-      <Settings
-        onBack={() =>
-          setView(settingsReturn === "reader" && openBookId ? "reader" : "library")
-        }
-      />
+      <>
+        <AmbientBackground />
+        <Settings
+          onBack={() =>
+            setView(settingsReturn === "reader" && openBookId ? "reader" : "library")
+          }
+        />
+        <GlassNav
+          active="settings"
+          onNavigate={navTo}
+          canOpenBook={!!navBookId}
+        />
+      </>
     );
   }
 
   if (view === "saved" && savedBookId) {
     return (
-      <Saved
-        bookId={savedBookId}
-        onBack={() =>
-          setView(savedReturn === "reader" && openBookId ? "reader" : "library")
-        }
-        onJump={jumpToSaved}
-      />
+      <>
+        <AmbientBackground />
+        <Saved
+          bookId={savedBookId}
+          initialTab={savedTab}
+          onTabChange={setSavedTab}
+          onBack={() =>
+            setView(savedReturn === "reader" && openBookId ? "reader" : "library")
+          }
+          onJump={jumpToSaved}
+        />
+        <GlassNav
+          active={savedTab === "words" ? "words" : "saved"}
+          onNavigate={navTo}
+          canOpenBook={!!savedBookId}
+        />
+      </>
     );
   }
 
   if (view === "reader" && openBookId) {
     return (
-      <Reader
-        bookId={openBookId}
-        onBack={closeBook}
-        onOpenSettings={() => openSettingsFrom("reader")}
-        onOpenSaved={() => openSaved(openBookId, "reader")}
-      />
+      <>
+        <AmbientBackground />
+        <Reader
+          bookId={openBookId}
+          onBack={closeBook}
+          onOpenSettings={() => openSettingsFrom("reader")}
+          onOpenSaved={() => openSaved(openBookId, "reader")}
+        />
+      </>
     );
   }
 
   return (
-    <Library
-      onOpen={openBook}
-      onOpenSettings={() => openSettingsFrom("library")}
-      onOpenSaved={(bookId) => openSaved(bookId, "library")}
-    />
+    <>
+      <AmbientBackground />
+      <Library
+        onOpen={openBook}
+        onOpenSettings={() => openSettingsFrom("library")}
+        onOpenSaved={(bookId) => openSaved(bookId, "library")}
+        onActiveBook={setNavBookId}
+      />
+      <GlassNav
+        active="home"
+        onNavigate={navTo}
+        canOpenBook={!!navBookId}
+      />
+    </>
   );
 }
 

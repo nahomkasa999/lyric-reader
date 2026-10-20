@@ -30,7 +30,7 @@ async function seedSpeed(
 
 async function openSample(page: import("@playwright/test").Page) {
   await page.goto("/");
-  await page.getByTestId("upload-btn").waitFor();
+  await page.getByTestId("add-book-btn").waitFor();
   await page.locator('[data-testid^="open-book-"]').first().click();
   await page.getByTestId("current-item").waitFor();
 }

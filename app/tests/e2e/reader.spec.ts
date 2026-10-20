@@ -7,7 +7,7 @@ test.use({ viewport: { width: 390, height: 844 } });
 /** Open the seeded sample book and return to its reader. Fresh context per test. */
 async function openSample(page: import("@playwright/test").Page) {
   await page.goto("/");
-  await page.getByTestId("upload-btn").waitFor();
+  await page.getByTestId("add-book-btn").waitFor();
   await page.locator('[data-testid^="open-book-"]').first().click();
   await page.getByTestId("current-item").waitFor();
 }
@@ -556,7 +556,7 @@ test.describe("Lyric Reader — settings page", () => {
     page,
   }) => {
     await page.goto("/");
-    await page.getByTestId("upload-btn").waitFor();
+    await page.getByTestId("add-book-btn").waitFor();
     await page.getByTestId("settings-gear").click();
     await expect(page.getByTestId("settings-page")).toBeVisible();
     await page.getByTestId("settings-back").click();
@@ -659,7 +659,7 @@ test.describe("Lyric Reader — Saved view", () => {
 
   test("Saved is reachable from the library header", async ({ page }) => {
     await page.goto("/");
-    await page.getByTestId("upload-btn").waitFor();
+    await page.getByTestId("add-book-btn").waitFor();
     await page.getByTestId("library-saved-btn").click();
     await expect(page.getByTestId("saved-page")).toBeVisible();
     await page.getByTestId("saved-back").click();

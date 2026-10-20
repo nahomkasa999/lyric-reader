@@ -22,7 +22,10 @@ test("pasted long paragraph parts with dull/active rendering", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByTestId("upload-btn").waitFor();
+  await page.getByTestId("add-book-btn").waitFor();
+  // The paste form lives in the Add Book sheet now.
+  await page.getByTestId("add-book-btn").click();
+  await page.getByTestId("add-tab-paste").click();
   await page.getByTestId("paste-title").fill("Pastor test");
   await page.getByTestId("paste-text").fill([P1, P2, P3].join("\n\n"));
   await page.getByTestId("paste-save").click();
@@ -56,7 +59,7 @@ test("settings shows the build stamp (identifies the running build)", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByTestId("upload-btn").waitFor();
+  await page.getByTestId("add-book-btn").waitFor();
   await page.getByTestId("settings-gear").click();
   await page.getByTestId("settings-page").waitFor();
   const id = page.getByTestId("build-id");
