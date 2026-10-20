@@ -56,9 +56,13 @@ describe("the ambient background", () => {
   it("shows the glow by default", async () => {
     const { container, root } = await mount();
     const glow = q(container, "ambient-glow");
-    expect(glow.className).toContain("glow-layer");
+    expect(glow.className).toContain("ambient-glow");
     // The green the cycle starts at.
     expect(styleOf(glow)).toContain("--ambient-hue: 120");
+    // The wave that makes the top edge a curve.
+    expect(q(container, "ambient-wave-a")).toBeTruthy();
+    expect(q(container, "ambient-wave-b")).toBeTruthy();
+    expect(q(container, "ambient-wave-path-a")).toBeTruthy();
     await act(async () => root.unmount());
   });
 
@@ -88,14 +92,19 @@ describe("the ambient background", () => {
     const { container, root } = await mount();
     const glow = q(container, "ambient-glow");
 
-    // Alternate: the animation cycles the hue over minutes.
-    expect(glow.style.animation).toContain("ambient-hue-cycle");
+    // Alternate: the cycle runs and the wave reads the animated hue.
+    expect(glow.className).not.toContain("ambient-single");
+    expect(q(container, "ambient-wave-a").className).not.toContain(
+      "ambient-wave-single",
+    );
 
     await act(async () => update!({ bgColourMode: "single" }));
-    expect(glow.style.animation).not.toContain("ambient-hue-cycle");
+    expect(glow.className).toContain("ambient-single");
     // The glow holds the picked colour.
-    expect(glow.className).toContain("glow-single");
-    expect(styleOf(glow)).toContain("rgba(166, 226, 46");
+    expect(q(container, "ambient-wave-a").className).toContain(
+      "ambient-wave-single",
+    );
+    expect(styleOf(glow)).toContain("--ambient-color: #a6e22e");
 
     await act(async () => root.unmount());
   });
@@ -103,10 +112,11 @@ describe("the ambient background", () => {
   it("freezes the glow when the motion is off", async () => {
     const { container, root } = await mount();
     const glow = q(container, "ambient-glow");
-    expect(glow.style.animation).toContain("ambient-drift");
+    expect(glow.className).not.toContain("ambient-frozen");
 
     await act(async () => update!({ bgMotion: false }));
-    expect(glow.style.animation).toBe("none");
+    // Frozen: the colour cycle and the wave both stop.
+    expect(glow.className).toContain("ambient-frozen");
 
     await act(async () => root.unmount());
   });

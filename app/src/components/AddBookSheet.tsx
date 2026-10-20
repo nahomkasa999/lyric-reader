@@ -43,7 +43,7 @@ export default function AddBookSheet({
     >
       <div
         data-testid="add-book-sheet"
-        className="add-sheet glass"
+        className="add-sheet glass sheet-surface"
         role="dialog"
         aria-modal="true"
         aria-label="Add a book"

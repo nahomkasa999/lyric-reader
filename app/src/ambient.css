@@ -1,14 +1,15 @@
-/* The ambient background — one glow behind the reader and Home.
+/* The ambient background — one soft glow behind the reader and Home.
  *
- * The recipe (DESIGN.md):
- * · the glow rises from the bottom and is black by ~55% of the height
- * · alternate cycles the hue over 4 minutes — slow enough to be barely
- *   noticed; one colour holds the user's pick
- * · motion off freezes the glow completely
- * · transform and opacity only — nothing else animates
- * · prefers-reduced-motion stops the background dead
- *
- * The same .glow-layer recipe paints the miniature preview in Settings.
+ * The recipe (DESIGN.md + the Oct 20 review):
+ * · a wide RECTANGLE anchored to the bottom of the screen, full width
+ * · filled with a vertical LINEAR gradient — strongest at the bottom edge,
+ *   fading evenly to nothing by ~55-60% of the screen height
+ * · the top edge of that rectangle is a slow WAVE, and the wave moves
+ * · no radial gradient, no bright hotspot: the colour is the same across
+ *   the whole width at any height
+ * · alternate cycles the hue over 4 minutes; one colour holds the pick
+ * · motion off freezes the colour cycle AND the wave
+ * · prefers-reduced-motion freezes both as well
  */
 
 .ambient {
@@ -19,50 +20,86 @@
   overflow: hidden;
 }
 
+/* The layer that carries the values and the colour cycle. */
 .ambient-glow {
   position: absolute;
-  /* A little larger than the screen, so the blur never leaves a dark
-     band along the edges. */
-  inset: -48px;
-  /* The soft edge of the glow. It is composited once, then only the
-     transform changes — cheap on a phone. */
-  filter: blur(30px);
-  will-change: transform;
-  transform: translateZ(0);
+  inset: 0;
+  /* The colour cycle: only while cycling (alternate mode). */
+  animation: ambient-hue-cycle 240s linear infinite;
+}
+/* One colour: the glow holds the colour the user picked — no cycling. */
+.ambient-glow.ambient-single {
+  animation: none;
 }
 
-/* The glow itself. The values arrive as custom properties, so the hue can
-   be animated as a number and the colour blends between neighbours.
-   The vertical radius is the full height of the box, so the 45% stop is
-   half a screen up: black by 55% of the height. */
-.glow-layer {
-  background: radial-gradient(
-    150% 100% at 50% 100%,
-    hsl(var(--ambient-hue, 120) 68% 45% / var(--ambient-a1, 0.6)) 0%,
-    hsl(var(--ambient-hue, 120) 58% 30% / var(--ambient-a2, 0.36)) 18%,
-    hsl(var(--ambient-hue, 120) 42% 14% / var(--ambient-a3, 0.168)) 32%,
-    rgba(0, 0, 0, 0.85) 45%,
-    #000000 60%
-  );
+/* The wave: the top edge of the glow. Two shapes, half a phase apart. */
+.ambient-wave {
+  position: absolute;
+  /* A little wider and lower than the screen, so the blur never leaves a
+     dark band along the edges and the bottom stays the strongest. */
+  left: -60px;
+  right: -60px;
+  bottom: -60px;
+  height: calc(60dvh + 60px);
+  /* The soft edge of the glow. It is rasterised once — only the opacity
+     of the top layer changes, so the phone never redraws the blur. */
+  filter: blur(26px);
 }
 
+/* The miniature version, used by the live preview in Settings. */
+.ambient-wave-mini {
+  left: -14px;
+  right: -14px;
+  bottom: -14px;
+  height: calc(60% + 14px);
+  filter: blur(9px);
+}
+
+/* The lower wave — always there. */
+.ambient-wave-a {
+  opacity: 1;
+}
+
+/* The upper wave — fades in and out, so the edge undulates slowly. */
+.ambient-wave-b {
+  animation: ambient-wave-breathe 48s linear infinite alternate;
+  will-change: opacity;
+}
+@keyframes ambient-wave-breathe {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.85;
+  }
+}
+
+/* The gradient stops: the colour at the bottom edge, fading upwards.
+   The bottom stop is the strongest, the top one is gone. */
+.ambient-fade-strong {
+  stop-color: hsl(var(--ambient-hue, 120) 68% 45%);
+  stop-opacity: var(--ambient-a1, 0.6);
+}
+.ambient-fade-mid {
+  stop-color: hsl(var(--ambient-hue, 120) 68% 45%);
+  stop-opacity: var(--ambient-a2, 0.27);
+}
+.ambient-fade-soft {
+  stop-color: hsl(var(--ambient-hue, 120) 68% 45%);
+  stop-opacity: 0;
+}
 /* One colour: the glow holds the colour the user picked. */
-.glow-layer.glow-single {
-  background: radial-gradient(
-    150% 100% at 50% 100%,
-    var(--ambient-c1, rgba(166, 226, 46, 0.6)) 0%,
-    var(--ambient-c2, rgba(166, 226, 46, 0.36)) 18%,
-    var(--ambient-c3, rgba(166, 226, 46, 0.168)) 32%,
-    rgba(0, 0, 0, 0.85) 45%,
-    #000000 60%
-  );
+.ambient-wave-single .ambient-fade-strong,
+.ambient-wave-single .ambient-fade-mid,
+.ambient-wave-single .ambient-fade-soft {
+  stop-color: var(--ambient-color, #a6e22e);
 }
 
 /* The registered custom property lets the hue be animated as a number,
    so the colour blends between neighbours instead of jumping. */
 @property --ambient-hue {
   syntax: "<number>";
-  inherits: false;
+  inherits: true;
   initial-value: 120;
 }
 
@@ -93,27 +130,16 @@
   }
 }
 
-/* The gentle position drift. */
-@keyframes ambient-drift {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1.02);
-  }
-  25% {
-    transform: translate3d(1.2%, -1.4%, 0) scale(1.06);
-  }
-  50% {
-    transform: translate3d(-0.9%, 0.8%, 0) scale(1.04);
-  }
-  75% {
-    transform: translate3d(1.4%, 0.3%, 0) scale(1.07);
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1.02);
-  }
+/* Motion off: the colour cycle and the wave both freeze where they are. */
+.ambient-frozen,
+.ambient-frozen .ambient-glow,
+.ambient-frozen .ambient-wave {
+  animation-play-state: paused;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ambient-glow {
-    animation: none !important;
+  .ambient-glow,
+  .ambient-wave {
+    animation-play-state: paused !important;
   }
 }

@@ -34,6 +34,7 @@ import {
   testOpenRouterKey,
 } from "../lib/openrouter";
 import { glow } from "../lib/ambient";
+import AmbientWave from "./AmbientWave";
 import "../settings.css";
 import "../ambient.css";
 
@@ -209,7 +210,13 @@ function SliderRow({
  * The miniature background: the same recipe as the real ambient glow, so
  * the preview answers "what will the page look like?" at a glance.
  */
-function PreviewStage({ settings }: { settings: ReaderSettings }) {
+function PreviewStage({
+  settings,
+  live,
+}: {
+  settings: ReaderSettings;
+  live: boolean;
+}) {
   const { bgStyle, bgColourMode, bgColor, bgIntensity } = settings;
 
   if (bgStyle === "off") return null;
@@ -227,9 +234,11 @@ function PreviewStage({ settings }: { settings: ReaderSettings }) {
 
   return (
     <div
-      className={`set-preview-glow ${paint.className}`}
+      className={`${paint.className}${live ? "" : " ambient-frozen"}`}
       style={paint.style as React.CSSProperties}
-    />
+    >
+      <AmbientWave mode={bgColourMode} mini />
+    </div>
   );
 }
 
@@ -470,7 +479,7 @@ export default function Settings({ onBack }: Props) {
             className={`glass set-preview${live ? " live" : ""}`}
           >
             <div className="set-preview-stage">
-              <PreviewStage settings={settings} />
+              <PreviewStage settings={settings} live={live} />
             </div>
             <div className="set-preview-scrim" aria-hidden="true" />
             <div className="set-preview-copy">

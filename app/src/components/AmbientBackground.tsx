@@ -1,29 +1,27 @@
 // The ambient background — one soft glow behind the reader and Home.
 //
-// The model (DESIGN.md, Oct 20 2026):
-// · gradient — a glow rising from the bottom, fading to black by ~55% of
-//   the height; alternate slowly cycles the hue (green → teal → blue →
-//   indigo → purple → pink → amber → back) over 4 minutes, one colour
-//   holds the user's pick
+// The model (DESIGN.md, Oct 20 2026 + the review):
+// · gradient — a wide rectangle anchored to the bottom of the screen, a
+//   vertical linear gradient fading out by ~55-60% of the height, its top
+//   edge a slow wave; alternate slowly cycles the hue (green → teal →
+//   blue → indigo → purple → pink → amber → back) over 4 minutes, one
+//   colour holds the user's pick
 // · solid — the picked colour fills the screen, flat
 // · off — pure black
-// · motion off — the glow freezes where it is
+// · motion off — the colour cycle and the wave freeze where they are
 //
 // Every hook sits above every return: the style can change at any time and
 // the component must never change its hook order.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSettings } from "../lib/settings";
-import { AMBIENT_CYCLE_SECONDS, glow } from "../lib/ambient";
+import { glow } from "../lib/ambient";
+import AmbientWave from "./AmbientWave";
 import "../ambient.css";
-
-/** The drift: a slow float, transform only (DESIGN.md: transform/opacity). */
-const DRIFT_SECONDS = 180;
 
 export default function AmbientBackground() {
   const { settings } = useSettings();
   const { bgStyle, bgColourMode, bgColor, bgMotion, bgIntensity } = settings;
 
-  const glowRef = useRef<HTMLDivElement>(null);
   const [reduced, setReduced] = useState(false);
 
   // The system asks for less motion → the background stops moving.
@@ -36,33 +34,7 @@ export default function AmbientBackground() {
     return () => mq.removeEventListener?.("change", onChange);
   }, []);
 
-  const motionEnabled = bgMotion && !reduced;
-
-  // The animation lives on the glow element: transform (drift) and the
-  // hue custom property (cycle). Nothing else animates.
-  useEffect(() => {
-    const el = glowRef.current;
-    if (!el) return;
-    if (!motionEnabled) {
-      // Freeze where the glow is: keep the colour it has right now.
-      const current = window
-        .getComputedStyle(el)
-        .getPropertyValue("--ambient-hue")
-        .trim();
-      if (current) el.style.setProperty("--ambient-hue", current);
-      el.style.animation = "none";
-      return;
-    }
-    if (bgStyle !== "gradient") {
-      el.style.animation = "none";
-      return;
-    }
-    const drift = `ambient-drift ${DRIFT_SECONDS}s var(--lr-ease) infinite`;
-    el.style.animation =
-      bgColourMode === "alternate"
-        ? `ambient-hue-cycle ${AMBIENT_CYCLE_SECONDS}s linear infinite, ${drift}`
-        : drift;
-  }, [bgStyle, bgColourMode, motionEnabled]);
+  const frozen = !bgMotion || reduced;
 
   const paint = useMemo(
     () => glow({ mode: bgColourMode, color: bgColor, intensity: bgIntensity }),
@@ -81,11 +53,12 @@ export default function AmbientBackground() {
     >
       {bgStyle === "gradient" && (
         <div
-          ref={glowRef}
           data-testid="ambient-glow"
-          className={`ambient-glow ${paint.className}`}
+          className={`${paint.className}${frozen ? " ambient-frozen" : ""}`}
           style={paint.style as React.CSSProperties}
-        />
+        >
+          <AmbientWave mode={bgColourMode} />
+        </div>
       )}
     </div>
   );

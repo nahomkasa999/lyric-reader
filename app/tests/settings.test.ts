@@ -129,21 +129,22 @@ describe("settings page", () => {
 
     const stage = () =>
       container.querySelector(".set-preview-stage") as HTMLElement;
-    // Default: a gradient glow.
-    expect(stage().querySelector(".set-preview-glow")).toBeTruthy();
+    // Default: the glow — a wave at the bottom, the same as the real one.
+    expect(stage().querySelector(".ambient-wave")).toBeTruthy();
+    expect(stage().querySelector(".ambient-glow")).toBeTruthy();
 
     await act(async () => {
       q<HTMLButtonElement>(container, "bg-style-solid").click();
     });
     // Solid: a flat fill instead of the glow.
-    expect(stage().querySelector(".set-preview-glow")).toBeNull();
+    expect(stage().querySelector(".ambient-wave")).toBeNull();
     const fill = stage().querySelector("div[style]") as HTMLElement;
     expect(fill.style.background).toContain("#A6E22E");
 
     await act(async () => {
       q<HTMLButtonElement>(container, "bg-style-off").click();
     });
-    expect(stage().querySelector(".set-preview-glow")).toBeNull();
+    expect(stage().querySelector(".ambient-wave")).toBeNull();
     expect(stage().querySelector("div[style]")).toBeNull();
 
     await act(async () => root.unmount());

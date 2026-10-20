@@ -1,6 +1,8 @@
 // The Home view (glass restyle): the header, the Continue Reading hero,
 // the Add Book sheet and the bottom navigation.
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { createElement } from "react";
@@ -99,6 +101,32 @@ describe("home", () => {
     expect(q(container, "paste-text")).toBeTruthy();
     expect(q(container, "paste-save")).toBeTruthy();
     await act(async () => root.unmount());
+  });
+
+  it("the add-book sheet is opaque enough to read over the page", async () => {
+    const { container, root } = await mount(
+      createElement(Library, {
+        onOpen: () => {},
+        onOpenSettings: () => {},
+        onOpenSaved: () => {},
+      }),
+    );
+    await act(async () => {
+      q<HTMLButtonElement>(container, "add-book-btn").click();
+    });
+    const sheet = q(container, "add-book-sheet");
+    expect(sheet.className).toContain("sheet-surface");
+    await act(async () => root.unmount());
+  });
+
+  it("the sheet surface is a near-opaque dark fill", () => {
+    const css = readFileSync(
+      path.resolve(process.cwd(), "src/glass.css"),
+      "utf8",
+    );
+    expect(css).toMatch(
+      /\.glass\.sheet-surface\s*\{[^}]*background:\s*rgba\(10,\s*10,\s*12,\s*0\.94\)/,
+    );
   });
 
   it("resumes the last read book from the Continue Reading hero", async () => {

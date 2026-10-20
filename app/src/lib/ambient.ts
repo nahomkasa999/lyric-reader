@@ -2,11 +2,10 @@
 // reader and Home) and by the live preview in Settings, so the preview is
 // the same picture, only smaller.
 //
-// The look (DESIGN.md): one soft glow rising from the bottom of the screen,
-// fading to black by ~55% of the height. Nothing else on the page glows.
-//
-// The gradient itself lives in CSS (ambient.css) — the values travel from
-// here as custom properties, so the hue can be animated as a number.
+// The look (DESIGN.md + the Oct 20 review): a wide rectangle anchored to the
+// bottom of the screen, filled with a vertical linear gradient — strongest
+// at the bottom edge, fading evenly to nothing by ~55-60% of the height.
+// The top edge of that rectangle is a slow wave, and the wave moves.
 
 export type AmbientMode = "alternate" | "single";
 
@@ -20,6 +19,20 @@ export const AMBIENT_HUES = [120, 180, 220, 250, 290, 330, 40];
 /** One full colour cycle: 4 minutes — slow enough that the change is
     barely noticed. */
 export const AMBIENT_CYCLE_SECONDS = 240;
+
+/**
+ * The wave: the top edge of the glow. Two shapes, half a phase apart.
+ * The bottom layer is the wave itself; the top layer fades in and out on
+ * top of it, so the edge undulates without the shape ever being redrawn.
+ *
+ * The CSS keyframes in ambient.css animate the same two shapes — keep them
+ * in step.
+ */
+export const AMBIENT_WAVE_A =
+  "M -140 465 C -118.7 467.7, -54.7 477.0, -12.0 481.5 C 30.7 485.9, 73.3 489.9, 116.0 491.6 C 158.7 493.3, 201.3 493.3, 244.0 491.6 C 286.7 489.9, 329.3 485.9, 372.0 481.5 C 414.7 477.0, 457.3 470.5, 500.0 465.0 C 542.7 459.5, 585.3 453.0, 628.0 448.5 C 670.7 444.1, 713.3 440.1, 756.0 438.4 C 798.7 436.7, 841.3 436.7, 884.0 438.4 C 926.7 440.1, 969.3 444.1, 1012.0 448.5 C 1054.7 453.0, 1118.7 462.3, 1140.0 465.0 L 1140 620 L -140 620 Z";
+
+export const AMBIENT_WAVE_B =
+  "M -140 465 C -118.7 462.3, -54.7 453.0, -12.0 448.5 C 30.7 444.1, 73.3 440.1, 116.0 438.4 C 158.7 436.7, 201.3 436.7, 244.0 438.4 C 286.7 440.1, 329.3 444.1, 372.0 448.5 C 414.7 453.0, 457.3 459.5, 500.0 465.0 C 542.7 470.5, 585.3 477.0, 628.0 481.5 C 670.7 485.9, 713.3 489.9, 756.0 491.6 C 798.7 493.3, 841.3 493.3, 884.0 491.6 C 926.7 489.9, 969.3 485.9, 1012.0 481.5 C 1054.7 477.0, 1118.7 467.7, 1140.0 465.0 L 1140 620 L -140 620 Z";
 
 const HEX = /^#([0-9a-fA-F]{6})$/;
 
@@ -56,17 +69,18 @@ export function rgba(hex: string, alpha: number): string {
 
 /** The custom properties the glow reads (see ambient.css). */
 export interface GlowVars {
+  /** the animated hue (alternate mode) */
   "--ambient-hue": string;
+  /** the strongest stop — the bottom edge of the glow */
   "--ambient-a1": string;
+  /** the middle stop of the fade */
   "--ambient-a2": string;
-  "--ambient-a3": string;
-  "--ambient-c1": string;
-  "--ambient-c2": string;
-  "--ambient-c3": string;
+  /** the colour the user picked (one colour mode) */
+  "--ambient-color": string;
 }
 
 export interface Glow {
-  /** The class that carries the recipe. */
+  /** The class that paints it. */
   className: string;
   /** The values the recipe reads. */
   style: GlowVars;
@@ -86,15 +100,12 @@ export function glow(opts: {
   const hue =
     opts.mode === "alternate" ? AMBIENT_START_HUE : hexToHue(opts.color);
   return {
-    className: opts.mode === "single" ? "glow-layer glow-single" : "glow-layer",
+    className: opts.mode === "single" ? "ambient-glow ambient-single" : "ambient-glow",
     style: {
       "--ambient-hue": String(Math.round(hue)),
       "--ambient-a1": String(Number(a.toFixed(3))),
-      "--ambient-a2": String(Number((a * 0.6).toFixed(3))),
-      "--ambient-a3": String(Number((a * 0.28).toFixed(3))),
-      "--ambient-c1": rgba(opts.color, a),
-      "--ambient-c2": rgba(opts.color, a * 0.6),
-      "--ambient-c3": rgba(opts.color, a * 0.28),
+      "--ambient-a2": String(Number((a * 0.45).toFixed(3))),
+      "--ambient-color": opts.color,
     },
   };
 }

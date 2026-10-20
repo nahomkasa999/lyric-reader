@@ -1,10 +1,13 @@
-// The ambient background recipe: one soft glow rising from the bottom,
-// fading to black by ~55% of the height.
+// The ambient background recipe: a wide rectangle at the bottom of the
+// screen, a vertical linear gradient fading out by ~55-60% of the height,
+// and a slow wave for its top edge.
 import { describe, it, expect } from "vitest";
 import {
   AMBIENT_CYCLE_SECONDS,
   AMBIENT_HUES,
   AMBIENT_START_HUE,
+  AMBIENT_WAVE_A,
+  AMBIENT_WAVE_B,
   glow,
   hexToHue,
   hexToRgb,
@@ -34,14 +37,13 @@ describe("colour helpers", () => {
 describe("the glow", () => {
   it("holds the picked colour in one-colour mode", () => {
     const g = glow({ mode: "single", color: "#F472B6", intensity: 80 });
-    expect(g.className).toContain("glow-single");
-    expect(g.style["--ambient-c1"]).toBe("rgba(244, 114, 182, 0.8)");
-    expect(g.style["--ambient-c2"]).toBe("rgba(244, 114, 182, 0.48)");
+    expect(g.className).toContain("ambient-single");
+    expect(g.style["--ambient-color"]).toBe("#F472B6");
   });
 
   it("follows the animated hue while cycling", () => {
     const g = glow({ mode: "alternate", color: "#F472B6", intensity: 60 });
-    expect(g.className).toBe("glow-layer");
+    expect(g.className).toBe("ambient-glow");
     // The cycle starts at green, not at the colour the user picked.
     expect(g.style["--ambient-hue"]).toBe(String(AMBIENT_START_HUE));
   });
@@ -49,10 +51,25 @@ describe("the glow", () => {
   it("scales with the intensity", () => {
     const dim = glow({ mode: "single", color: "#A6E22E", intensity: 0 });
     const bright = glow({ mode: "single", color: "#A6E22E", intensity: 100 });
+    // The bottom edge is the strongest stop, the middle one is weaker.
     expect(dim.style["--ambient-a1"]).toBe("0");
     expect(bright.style["--ambient-a1"]).toBe("1");
-    expect(dim.style["--ambient-c1"]).toBe("rgba(166, 226, 46, 0)");
-    expect(bright.style["--ambient-c1"]).toBe("rgba(166, 226, 46, 1)");
+    expect(dim.style["--ambient-a2"]).toBe("0");
+    expect(bright.style["--ambient-a2"]).toBe("0.45");
+  });
+});
+
+describe("the wave", () => {
+  it("is a curve, not a straight line", () => {
+    // The top edge is drawn with curves and closes at the bottom.
+    expect(AMBIENT_WAVE_A).toMatch(/^M /);
+    expect(AMBIENT_WAVE_A).toContain(" C ");
+    expect(AMBIENT_WAVE_A).toMatch(/L 1140 620 L -140 620 Z$/);
+    expect(AMBIENT_WAVE_B).toMatch(/L 1140 620 L -140 620 Z$/);
+  });
+
+  it("has two shapes, half a phase apart", () => {
+    expect(AMBIENT_WAVE_A).not.toBe(AMBIENT_WAVE_B);
   });
 });
 

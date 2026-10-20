@@ -34,6 +34,13 @@
   border: 1px solid var(--glass-line);
 }
 
+/* Sheets and dialogs: a near-opaque dark surface. The page behind must not
+   be readable through them — the glass look stays (border, blur behind,
+   highlight), only the fill gets much darker. */
+.glass.sheet-surface {
+  background: rgba(10, 10, 12, 0.94);
+}
+
 /* While the add-book sheet is open it owns the blur slot: the page
    surfaces keep their fill and border but drop the backdrop filter. */
 .sheet-open {

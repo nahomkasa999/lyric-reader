@@ -265,15 +265,8 @@
   position: absolute;
   inset: 0;
   z-index: 0;
+  overflow: hidden;
   background: #000000;
-}
-.set-preview-glow {
-  position: absolute;
-  /* A little larger than the frame, exactly like the real glow, so the
-     preview shows the same picture in miniature. */
-  inset: -20px;
-  filter: blur(14px);
-  will-change: transform;
 }
 /* Keeps the sentence readable over the glow (DESIGN.md: 4.5:1). */
 .set-preview-scrim {
@@ -302,18 +295,8 @@
   line-height: 1.22;
   color: color-mix(in oklch, var(--lr-cm) calc(var(--lr-mo) * 1%), transparent);
 }
-/* Motion on: the preview drifts, like the real glow. */
-.set-preview.live .set-preview-glow {
-  animation: set-preview-drift 20s var(--lr-ease) infinite alternate;
-}
-@keyframes set-preview-drift {
-  from {
-    transform: translate3d(0, 0, 0) scale(1.02);
-  }
-  to {
-    transform: translate3d(2%, -1.5%, 0) scale(1.06);
-  }
-}
+/* Motion on: the preview drifts, like the real glow. The wave itself
+   breathes (see ambient.css) — the preview shows the same movement. */
 
 /* ---------------- text fields & the reset action ---------------- */
 
