@@ -160,6 +160,12 @@ async function revealChrome(page: Page) {
   await expect(page.getByTestId("top-bar")).toBeVisible();
 }
 
+/** Open the reader's overflow menu (the ⋯ in the top bar). */
+async function openMenu(page: import("@playwright/test").Page) {
+  await page.getByTestId("reader-menu-btn").click();
+  await page.getByTestId("reader-menu").waitFor();
+}
+
 test.describe("Lyric Reader v4.1 — custom selection", () => {
   test("long-press paints via CSS Highlights; native selection stays empty; Meaning opens the card", async ({
     page,
@@ -238,6 +244,7 @@ test.describe("Lyric Reader v4.1 — model discovery", () => {
     await stubApis(page);
     await openSample(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("gemini-key").fill("test-key");
     await page.getByTestId("gemini-test").click();

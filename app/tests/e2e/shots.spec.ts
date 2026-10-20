@@ -40,6 +40,12 @@ async function chromeSettled(page: Page) {
   await page.waitForTimeout(600);
 }
 
+/** Open the reader's overflow menu (the ⋯ in the top bar). */
+async function openMenu(page: import("@playwright/test").Page) {
+  await page.getByTestId("reader-menu-btn").click();
+  await page.getByTestId("reader-menu").waitFor();
+}
+
 test.describe("screenshots", () => {
   test("phone: library, reader, split sentence, popup, page input, bottom nav, settings", async ({
     page,
@@ -105,6 +111,7 @@ test.describe("screenshots", () => {
 
     // Settings page
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("settings-page").waitFor();
     await page.waitForTimeout(300);
@@ -150,6 +157,7 @@ test.describe("screenshots", () => {
       await page.keyboard.press("Escape");
     }
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("saved-btn").click();
     await page.getByTestId("saved-page").waitFor();
     await page.waitForTimeout(300);
@@ -310,6 +318,7 @@ test.describe("screenshots", () => {
     await page.keyboard.press("Escape");
 
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("saved-btn").click();
     await page.getByTestId("saved-tab-words").click();
     await page.locator('[data-testid^="word-day-"]').first().waitFor();
@@ -319,6 +328,7 @@ test.describe("screenshots", () => {
 
     // Set the key in Settings (stubbed ping) and shoot the AI section.
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("gemini-key").fill("test-key");
     await page.getByTestId("gemini-test").click();

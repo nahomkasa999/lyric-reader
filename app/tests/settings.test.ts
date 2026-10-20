@@ -43,6 +43,26 @@ function stored(): Record<string, unknown> {
 describe("settings page", () => {
   beforeEach(() => {
     localStorage.clear();
+    // A speech engine, so the read-aloud controls are live.
+    (globalThis as unknown as { speechSynthesis: unknown }).speechSynthesis = {
+      getVoices: () => [
+        {
+          voiceURI: "urn:one",
+          name: "Ada",
+          lang: "en-GB",
+          localService: true,
+          default: true,
+        },
+      ],
+      speak: () => {},
+      cancel: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+    (globalThis as unknown as { SpeechSynthesisUtterance: unknown })
+      .SpeechSynthesisUtterance = class {
+        constructor(public text: string) {}
+      };
   });
 
   it("keeps the old testids and adds the grouped sections", async () => {
@@ -154,6 +174,30 @@ describe("settings page", () => {
     await act(async () => root.unmount());
   });
 
+  it("writes the read-aloud settings into the persisted settings", async () => {
+    const { container, root } = await mount();
+
+    // The switch turns the voice on.
+    await act(async () => {
+      q<HTMLButtonElement>(container, "read-aloud-toggle").click();
+    });
+    expect(stored().readAloud).toBe(true);
+
+    // The speed slider writes a multiplier (the UI shows a percentage).
+    await act(async () => {
+      const slider = q<HTMLInputElement>(container, "read-aloud-rate");
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(slider, "150");
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(stored().readAloudRate).toBe(1.5);
+
+    await act(async () => root.unmount());
+  });
+
   it("the reset button puts every setting back to the default", async () => {
     const { container, root } = await mount();
 
@@ -170,6 +214,7 @@ describe("settings page", () => {
     expect(stored().bgColor).toBe("#A6E22E");
     expect(stored().bgMotion).toBe(true);
     expect(stored().bgIntensity).toBe(60);
+    expect(stored().readAloud).toBe(false);
 
     await act(async () => root.unmount());
   });

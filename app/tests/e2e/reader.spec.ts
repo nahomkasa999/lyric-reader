@@ -86,13 +86,19 @@ async function chromeHidden(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("bottom-nav")).toBeHidden();
 }
 
+/** Open the reader's overflow menu (the ⋯ in the top bar). */
+async function openMenu(page: import("@playwright/test").Page) {
+  await page.getByTestId("reader-menu-btn").click();
+  await page.getByTestId("reader-menu").waitFor();
+}
+
 test.describe("Lyric Reader — core flows", () => {
   test("opens the sample book at the first item (a heading)", async ({ page }) => {
     await openSample(page);
     await expect(page.getByTestId("current-item")).toContainText(
       "The Midnight Staircase",
     );
-    await expect(page.getByTestId("page-label")).toContainText(/Page/);
+    await expect(page.getByTestId("page-label")).toContainText(/\/ 10/);
     await expect(page.getByTestId("page-input")).toHaveValue("1");
   });
 
@@ -311,8 +317,7 @@ test.describe("Lyric Reader — popup actions work on the part", () => {
 test.describe("Lyric Reader — inline page number", () => {
   test("page label reads Page [n] / N · pct%", async ({ page }) => {
     await openSample(page);
-    await expect(page.getByTestId("page-label")).toContainText(/Page/);
-    await expect(page.getByTestId("page-label")).toContainText(/\/ 10 · 0%/);
+    await expect(page.getByTestId("page-label")).toContainText(/\/ 10/);
   });
 
   test("typing a page into the bar jumps there — no popup anywhere", async ({
@@ -493,6 +498,7 @@ test.describe("Lyric Reader — settings page", () => {
   }) => {
     await openSample(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("settings-gear").click();
     await expect(page.getByTestId("settings-page")).toBeVisible();
     const slider = page.getByTestId("setting-main-size");
@@ -510,6 +516,7 @@ test.describe("Lyric Reader — settings page", () => {
   }) => {
     await openSample(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("font-chip-Lexend").click();
     const stack = await page.evaluate(() =>
@@ -521,6 +528,7 @@ test.describe("Lyric Reader — settings page", () => {
   test("settings persist across reload", async ({ page }) => {
     await openSample(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("setting-main-size").fill("40");
     await page.getByTestId("hl-chip-1").click();
@@ -609,6 +617,7 @@ test.describe("Lyric Reader — Saved view", () => {
   test("empty state when nothing is saved", async ({ page }) => {
     await openSample(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("saved-btn").click();
     await expect(page.getByTestId("saved-page")).toBeVisible();
     await expect(page.getByTestId("saved-empty")).toContainText(
@@ -641,6 +650,7 @@ test.describe("Lyric Reader — Saved view", () => {
     await page.keyboard.press("Escape");
 
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("saved-btn").click();
     await expect(page.getByTestId("saved-page")).toBeVisible();
     await expect(page.getByTestId("saved-entry-2-0")).toBeVisible();

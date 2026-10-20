@@ -154,6 +154,12 @@ async function revealChrome(page: Page) {
   await expect(page.getByTestId("top-bar")).toBeVisible();
 }
 
+/** Open the reader's overflow menu (the ⋯ in the top bar). */
+async function openMenu(page: import("@playwright/test").Page) {
+  await page.getByTestId("reader-menu-btn").click();
+  await page.getByTestId("reader-menu").waitFor();
+}
+
 test.describe("Lyric Reader v4 — selection and Meaning", () => {
   test("selecting a word raises the pill; Meaning opens the card", async ({
     page,
@@ -254,6 +260,7 @@ test.describe("Lyric Reader v4 — selection and Meaning", () => {
 
     // Add a key in Settings, then the phrase resolves via Gemini.
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("gemini-key").fill("test-key");
     await page.getByTestId("gemini-test").click();
@@ -289,6 +296,7 @@ test.describe("Lyric Reader v4 — Words view", () => {
   }) => {
     await saveLampWord(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("saved-btn").click();
     await page.getByTestId("saved-tab-words").click();
     await expect(page.getByTestId("words-empty")).toBeHidden();
@@ -308,6 +316,7 @@ test.describe("Lyric Reader v4 — Words view", () => {
   test("deleting a word removes it and its underline", async ({ page }) => {
     await saveLampWord(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("saved-btn").click();
     await page.getByTestId("saved-tab-words").click();
     const del = page.locator('[data-testid^="word-del-"]').first();
@@ -322,6 +331,7 @@ test.describe("Lyric Reader v4 — Words view", () => {
   test("words empty state is calm", async ({ page }) => {
     await openSample(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("saved-btn").click();
     await page.getByTestId("saved-tab-words").click();
     await expect(page.getByTestId("words-empty")).toContainText(
@@ -358,6 +368,7 @@ test.describe("Lyric Reader v4 — Ask (?)", () => {
     await stubApis(page);
     await openSample(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("gemini-key").fill("test-key");
     await page.getByTestId("settings-back").click();
@@ -384,6 +395,7 @@ test.describe("Lyric Reader v4 — Ask (?)", () => {
     await stubApis(page);
     await openSample(page);
     await revealChrome(page);
+    await openMenu(page);
     await page.getByTestId("settings-gear").click();
     await page.getByTestId("gemini-key").fill("test-key");
     await page.getByTestId("settings-back").click();

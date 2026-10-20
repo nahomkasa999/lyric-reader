@@ -45,8 +45,16 @@ import {
   nextSpeed,
   paceMs,
 } from "../lib/autoscroll";
-import { speak, speechSupported, stopSpeech } from "../lib/speech";
 import AskSheet from "./AskSheet";
+import TopBar from "./reader/TopBar";
+import ReaderControls from "./reader/ReaderControls";
+import { useReadAloud } from "./reader/useReadAloud";
+import {
+  BookmarkIcon,
+  CopyIcon,
+  HighlightIcon,
+  NoteIcon,
+} from "./reader/icons";
 
 interface Props {
   bookId: string;
@@ -86,110 +94,6 @@ interface MeaningState {
 // Cache of AI "as used in this sentence" lines: norm + sentence head -> line.
 const contextCache = new Map<string, string>();
 
-function GearIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="17"
-      height="17"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
-
-function HighlightIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden>
-      <path d="M9 11l7-7 4 4-7 7z" />
-      <path d="M9 11l-5 5v4h4l5-5" />
-    </svg>
-  );
-}
-function BookmarkIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden>
-      <path d="M6 3h12v18l-6-4-6 4z" />
-    </svg>
-  );
-}
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden>
-      <rect x="9" y="9" width="11" height="11" rx="2" />
-      <path d="M5 15V6a2 2 0 0 1 2-2h8" />
-    </svg>
-  );
-}
-function NoteIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden>
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-    </svg>
-  );
-}
-function SavedIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="17"
-      height="17"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M6 3h12v18l-6-4-6 4z" />
-    </svg>
-  );
-}
-
-// v4.4: auto-scroll play/pause — same stroke language as the app's icons.
-function PlayIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="17"
-      height="17"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M7.5 4.8v14.4L19 12z" />
-    </svg>
-  );
-}
-function PauseIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="17"
-      height="17"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M8.5 5v14M15.5 5v14" />
-    </svg>
-  );
-}
-
 export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: Props) {
   const [book, setBook] = useState<BookDoc | null>(null);
   const [pos, setPos] = useState<Position>({ item: 0, part: 0 });
@@ -203,9 +107,6 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const [chromeVisible, setChromeVisible] = useState(false);
   const [noteEditing, setNoteEditing] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
-  // Inline page-number editing.
-  const [editing, setEditing] = useState(false);
-  const [editVal, setEditVal] = useState("1");
   // v4: text selection (pill) + meaning card + saved words + Ask.
   const [sel, setSel] = useState<{
     text: string;
@@ -220,16 +121,16 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const [speedFlash, setSpeedFlash] = useState<string | null>(null);
   // v4.7: the header overflow menu (text size, saved, settings).
   const [menuOpen, setMenuOpen] = useState(false);
-  // v4.7: read aloud — is the voice talking right now?
-  const [speaking, setSpeaking] = useState(false);
-  const canSpeak = useMemo(() => speechSupported(), []);
+  // v4.7: the voice — the read-aloud hook fills this in below.
+  const voiceRef = useRef<ReturnType<typeof useReadAloud> | null>(null);
 
   const { settings, update: updateSettings } = useSettings();
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const pillRef = useRef<HTMLDivElement | null>(null);  const meaningCardRef = useRef<HTMLDivElement | null>(null);
+  const pillRef = useRef<HTMLDivElement | null>(null);
+  const meaningCardRef = useRef<HTMLDivElement | null>(null);
   const askLayerRef = useRef<HTMLDivElement | null>(null);
 
   // Refs mirroring state so native handlers always see fresh values.
@@ -237,8 +138,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   posRef.current = pos;
   const popRef = useRef(pop);
   popRef.current = pop;
-  const editingRef = useRef(editing);
-  editingRef.current = editing;
+  // The page field (TopBar) reports when it is being edited.
+  const editingRef = useRef(false);
   const selRef = useRef(sel);
   selRef.current = sel;
   const meaningRef = useRef(meaning);
@@ -264,13 +165,6 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const speedRef = useRef(settings.autoScrollSpeed);
   speedRef.current = settings.autoScrollSpeed;
   const speedFlashTimer = useRef<number | null>(null);
-  // Long-press on the auto-scroll button (speed cycle) vs tap (toggle).
-  const autoLpRef = useRef<{ timer: number; x: number; y: number } | null>(
-    null,
-  );
-  const autoLpFiredRef = useRef(false);
-  // Set when Escape cancels the edit so the blur it triggers doesn't commit.
-  const cancelEditRef = useRef(false);
   const lastTap = useRef<{ t: number; key: string }>({ t: 0, key: "" });
   const moved = useRef(false);
   // Timestamp until which stage/chrome clicks are ignored, set when a
@@ -306,11 +200,6 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const pct = items.length
     ? Math.round((I / Math.max(1, items.length - 1)) * 100)
     : 0;
-
-  // Keep the edit field in sync with the real page when not editing.
-  useEffect(() => {
-    if (!editing) setEditVal(String(cp));
-  }, [cp, editing]);
 
   // --- Load: book + saved position (old {page,sent} records convert) ---
   useEffect(() => {
@@ -409,6 +298,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     setCopied(false);
     // v4.4: a popup that paused playback gives it back on close.
     maybeResumeAutoRef.current();
+    // v4.7: the voice picks the sentence up again.
+    voiceRef.current?.resume();
   }, []);
 
   /** v4.1: collapse the custom selection — clear the painted highlight
@@ -431,7 +322,11 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     } catch {
       /* ignore */
     }
-    if (resume) maybeResumeAutoRef.current();
+    if (resume) {
+      maybeResumeAutoRef.current();
+      // v4.7: the voice picks the sentence up again.
+      voiceRef.current?.resume();
+    }
   }, []);
 
   /** Paint a range as our selection and raise the Meaning/Copy pill above
@@ -444,6 +339,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     }
     // v4.4: selecting pauses playback transiently — resume on dismiss.
     pauseAutoTransientRef.current();
+    // v4.7: the voice stops while a selection is open.
+    voiceRef.current?.stop();
     selRangeRef.current = range;
     if (highlightsSupported()) paintSelection(range);
     const rect = range.getBoundingClientRect();
@@ -464,6 +361,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     setMeaning(null);
     // v4.4: the meaning card pauses playback transiently — give it back.
     maybeResumeAutoRef.current();
+    // v4.7: the voice picks the sentence up again.
+    voiceRef.current?.resume();
   }, []);
 
   /** Anything that moves the reading position closes the reading overlays:
@@ -616,6 +515,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const closeAsk = useCallback(() => {
     setAskOpen(false);
     maybeResumeAuto();
+    // v4.7: the voice picks the sentence up again.
+    voiceRef.current?.resume();
   }, [maybeResumeAuto]);
   const closeAskRef = useRef(closeAsk);
   closeAskRef.current = closeAsk;
@@ -638,83 +539,28 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   }, [updateSettings]);
 
   // --- v4.7: read aloud ---
-  // The voice is the browser's own (lib/speech.ts). The reader only decides
-  // WHAT is said: the part that is on screen right now.
-  const speechToken = useRef(0);
-  const spokenRef = useRef("");
-  const speakingRef = useRef(speaking);
-  speakingRef.current = speaking;
-
-  /** The text of the part that is on screen right now. */
+  // The hook owns the voice; the reader only tells it what is on screen.
   const currentText = useCallback(() => {
     const { item, part } = posRef.current;
     return partsRef.current[item]?.[part] ?? "";
   }, []);
-
-  /** Stop the voice, right now, with no resume. */
-  const stopSpeak = useCallback(() => {
-    speechToken.current += 1;
-    spokenRef.current = "";
-    stopSpeech();
-    setSpeaking(false);
-  }, []);
-
-  /** Say a text with the voice + speed the user picked. */
-  const say = useCallback(
-    async (text: string) => {
-      if (!canSpeak || !text.trim()) return;
-      // Already saying exactly this — don't restart it.
-      if (speakingRef.current && spokenRef.current === text) return;
-      stopSpeech();
-      const token = ++speechToken.current;
-      spokenRef.current = text;
-      setSpeaking(true);
-      try {
-        await speak(text, {
-          rate: settings.readAloudRate,
-          voiceURI: settings.readAloudVoice,
-        });
-      } catch {
-        /* this device has no speech engine */
-      }
-      if (speechToken.current === token) {
-        spokenRef.current = "";
-        setSpeaking(false);
-      }
-    },
-    [canSpeak, settings.readAloudRate, settings.readAloudVoice],
-  );
-
-  /** Follow along: the sentence you are on is the sentence being read. */
-  const resumeSpeech = useCallback(() => {
-    if (!settings.readAloud) return;
-    if (
-      popRef.current ||
-      selRef.current ||
-      meaningRef.current ||
-      askOpenRef.current
-    )
-      return;
-    void say(currentText());
-  }, [settings.readAloud, say, currentText]);
-
-  // Read aloud follows the reading position: move to a new sentence and it
-  // is spoken. Overlays hold the voice until they close.
-  useEffect(() => {
-    if (!settings.readAloud) {
-      stopSpeak();
-      return;
-    }
-    resumeSpeech();
-  }, [I, P, settings.readAloud, resumeSpeech, stopSpeak]);
-
-  // Leaving the reader (or the tab) stops the voice — no talking to nobody.
-  useEffect(
-    () => () => {
-      stopSpeech();
-    },
+  const speechBlocked = useCallback(
+    () =>
+      !!popRef.current ||
+      !!selRef.current ||
+      !!meaningRef.current ||
+      !!askOpenRef.current,
     [],
   );
+  const voice = useReadAloud({
+    enabled: settings.readAloud,
+    positionKey: `${I}:${P}`,
+    currentText,
+    blocked: speechBlocked,
+    rate: settings.readAloudRate,
+    voiceURI: settings.readAloudVoice,
+  });
+  voiceRef.current = voice;
 
   // Manual steps while playing re-arm the timer for the new part —
   // playback continues (the auto tick's own advance re-arms the same way).
@@ -844,6 +690,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     (i: number, p: number) => {
       // v4.4: the popup pauses playback transiently — resume on close.
       pauseAutoTransientRef.current();
+      // v4.7: the voice stops while the popup is open.
+      voiceRef.current?.stop();
       setPop({ i, p });
       setCopied(false);
       setNoteEditing(false);
@@ -866,6 +714,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     // v4.4: the meaning card pauses playback transiently. Pause first,
     // then collapse without resuming (the resume comes on card close).
     pauseAutoTransientRef.current();
+    // v4.7: the voice stops while the card is open.
+    voiceRef.current?.stop();
     collapseSelection(false);
     setMeaning({ text, status: "loading", saved: false });
     requestAnimationFrame(() => anchorCard(meaningCardRef, item));
@@ -1496,6 +1346,14 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         )
           return;
         let closed = false;
+        // v4.7: the overflow menu closes on any press outside it.
+        if (
+          menuOpenRef.current &&
+          !(t as HTMLElement).closest?.(".menu-toggle")
+        ) {
+          setMenuOpen(false);
+          closed = true;
+        }
         if (popRef.current) {
           closePop();
           closed = true;
@@ -1538,115 +1396,46 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         if ((nearTop || nearBottom) && !chromeRef.current) showChrome();
       }}
     >
-      {/* Top bar: library | Page [n] / N · pct% | A− A+ gear.
-          Hides with the rest of the chrome (v3.1) but keeps its layout
-          space so the stage never resizes and the track never jumps. */}
-      <header
-        data-topbar
-        data-testid="top-bar"
-        className={`reader-bar shrink-0${chromeVisible ? "" : " chrome-hidden"}`}
-        style={{ paddingTop: "calc(10px + env(safe-area-inset-top))" }}
-        onFocus={() => showChrome()}
-        onPointerDown={() => showChrome()}
-      >
-        <button
-          onClick={() => {
-            if (Date.now() < suppressUntil.current) return;
-            // v4.4: leaving the reader stays paused — no resume later.
-            stopAutoHard();
-            onBack();
-          }}
-          aria-label="Back to library"
-        >
-          ← Library
-        </button>
-        <span className="page-label" data-testid="page-label">
-          Page
-          <input
-            data-testid="page-input"
-            className="page-input"
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            aria-label="Page number"
-            value={editVal}
-            onFocus={(e) => {
-              // A tap swallowed as popup dismissal must not start editing.
-              if (Date.now() < suppressUntil.current) {
-                e.target.blur();
-                return;
-              }
-              setEditing(true);
-              e.target.select();
-            }}
-            onChange={(e) => setEditVal(e.target.value)}
-            onBlur={() => {
-              if (cancelEditRef.current) {
-                cancelEditRef.current = false;
-                return;
-              }
-              const v = parseInt(editVal, 10);
-              if (Number.isFinite(v)) toPageRef.current(clamp(v, 1, pages) - 1);
-              else setEditVal(String(cp));
-              setEditing(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              else if (e.key === "Escape") {
-                cancelEditRef.current = true;
-                setEditVal(String(cp));
-                setEditing(false);
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-          />
-          / {pages} · {pct}%
-        </span>
-        <div className="flex items-center">
-          <button
-            aria-label="Smaller text"
-            onClick={() => {
-              if (Date.now() < suppressUntil.current) return;
-              adjustMainSize(-2);
-            }}
-          >
-            A−
-          </button>
-          <button
-            aria-label="Larger text"
-            onClick={() => {
-              if (Date.now() < suppressUntil.current) return;
-              adjustMainSize(2);
-            }}
-          >
-            A+
-          </button>
-          <button
-            data-testid="saved-btn"
-            aria-label="Saved marks"
-            onClick={() => {
-              if (Date.now() < suppressUntil.current) return;
-              // v4.4: leaving the reader stays paused — no resume later.
-              stopAutoHard();
-              onOpenSaved();
-            }}
-          >
-            <SavedIcon />
-          </button>
-          <button
-            data-testid="settings-gear"
-            aria-label="Settings"
-            onClick={() => {
-              if (Date.now() < suppressUntil.current) return;
-              // v4.4: Settings stays paused — no resume later.
-              stopAutoHard();
-              onOpenSettings();
-            }}
-          >
-            <GearIcon />
-          </button>
-        </div>
-      </header>
+      {/* Top bar: back · page · menu. Everything else is behind the ⋯. */}
+      <TopBar
+        visible={chromeVisible}
+        page={cp}
+        pages={pages}
+        onJumpPage={(p) => toPageRef.current(p - 1)}
+        onBack={() => {
+          if (Date.now() < suppressUntil.current) return;
+          // v4.4: leaving the reader stays paused — no resume later.
+          stopAutoHard();
+          voiceRef.current?.stop();
+          onBack();
+        }}
+        onOpenSaved={() => {
+          if (Date.now() < suppressUntil.current) return;
+          // v4.4: leaving the reader stays paused — no resume later.
+          stopAutoHard();
+          voiceRef.current?.stop();
+          onOpenSaved();
+        }}
+        onOpenSettings={() => {
+          if (Date.now() < suppressUntil.current) return;
+          // v4.4: Settings stays paused — no resume later.
+          stopAutoHard();
+          voiceRef.current?.stop();
+          onOpenSettings();
+        }}
+        onTextSize={(delta) => {
+          if (Date.now() < suppressUntil.current) return;
+          adjustMainSize(delta);
+        }}
+        onReveal={() => showChrome()}
+        onEditingChange={(v) => {
+          editingRef.current = v;
+        }}
+        blocked={() => Date.now() < suppressUntil.current}
+        menuOpen={menuOpen}
+        onMenuToggle={() => setMenuOpen((o) => !o)}
+        menuRef={menuRef}
+      />
 
       {/* Hairline progress: visible with the chrome only (v3.1) */}
       <div
@@ -1714,135 +1503,52 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         </div>
       </div>
 
-      {/* Auto-hiding bottom nav: « prev heading · ‹ prev page · › next page · » next heading */}
-      <nav
-        data-bottom-nav
-        data-testid="bottom-nav"
-        className={`bottom-nav${chromeVisible ? " show" : ""}`}
-        aria-label="Page navigation"
-        onFocus={() => showChrome()}
-        onPointerDown={() => showChrome()}
-      >
-        <button
-          data-testid="nav-prev-section"
-          onClick={() => {
-            if (Date.now() < suppressUntil.current) return;
-            chap(-1);
-          }}
-          aria-label="Previous section"
-        >
-          «
-        </button>
-        <button
-          data-testid="nav-prev-page"
-          onClick={() => {
-            if (Date.now() < suppressUntil.current) return;
-            toPage(curPage - 1);
-          }}
-          aria-label="Previous page"
-        >
-          ‹
-        </button>
-        <button
-          data-testid="nav-next-page"
-          onClick={() => {
-            if (Date.now() < suppressUntil.current) return;
-            toPage(curPage + 1);
-          }}
-          aria-label="Next page"
-        >
-          ›
-        </button>
-        <button
-          data-testid="nav-next-section"
-          onClick={() => {
-            if (Date.now() < suppressUntil.current) return;
-            chap(1);
-          }}
-          aria-label="Next section"
-        >
-          »
-        </button>
-      </nav>
-
-      {/* v4: the "?" — a ghost button that joins the unified auto-hiding
-          chrome: visible exactly when the chrome is, stacked above « ‹ › ». */}
-      <button
-        data-testid="ask-btn"
-        aria-label="Ask about this passage"
-        className={`ask-btn${chromeVisible ? " show" : ""}`}
-        onClick={() => {
+      {/* The bottom chrome: page rail + the Ask / auto-scroll / voice
+          cluster, all hidden with the rest of the chrome. */}
+      <ReaderControls
+        visible={chromeVisible}
+        onReveal={() => showChrome()}
+        onPrevSection={() => {
+          if (Date.now() < suppressUntil.current) return;
+          chap(-1);
+        }}
+        onPrevPage={() => {
+          if (Date.now() < suppressUntil.current) return;
+          toPage(curPage - 1);
+        }}
+        onNextPage={() => {
+          if (Date.now() < suppressUntil.current) return;
+          toPage(curPage + 1);
+        }}
+        onNextSection={() => {
+          if (Date.now() < suppressUntil.current) return;
+          chap(1);
+        }}
+        onAsk={() => {
           if (Date.now() < suppressUntil.current) return;
           showChrome();
           // v4.4: the Ask sheet pauses playback transiently.
           pauseAutoTransientRef.current();
+          voiceRef.current?.stop();
           setAskOpen(true);
         }}
-      >
-        ?
-      </button>
-
-      {/* v4.4: auto-scroll play/pause — same chrome cluster as the "?":
-          visible exactly when the chrome is, beside it. Tap toggles;
-          long-press (~500ms) cycles the speed 1× → 1.25× → 1.5× → 0.75×. */}
-      <button
-        data-testid="autoscroll-btn"
-        aria-label={autoPlaying ? "Pause auto-scroll" : "Start auto-scroll"}
-        className={`auto-btn${chromeVisible ? " show" : ""}`}
-        onPointerDown={(e) => {
+        autoPlaying={autoPlaying}
+        onToggleAuto={() => {
           if (Date.now() < suppressUntil.current) return;
-          autoLpFiredRef.current = false;
-          autoLpRef.current = {
-            x: e.clientX,
-            y: e.clientY,
-            timer: window.setTimeout(() => {
-              autoLpRef.current = null;
-              autoLpFiredRef.current = true;
-              cycleSpeed();
-            }, 500),
-          };
-        }}
-        onPointerMove={(e) => {
-          const lp = autoLpRef.current;
-          if (
-            lp &&
-            Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10
-          ) {
-            window.clearTimeout(lp.timer);
-            autoLpRef.current = null;
-          }
-        }}
-        onPointerUp={() => {
-          if (autoLpRef.current) {
-            window.clearTimeout(autoLpRef.current.timer);
-            autoLpRef.current = null;
-          }
-        }}
-        onPointerLeave={() => {
-          if (autoLpRef.current) {
-            window.clearTimeout(autoLpRef.current.timer);
-            autoLpRef.current = null;
-          }
-        }}
-        onContextMenu={(e) => e.preventDefault()}
-        onClick={() => {
-          if (Date.now() < suppressUntil.current) return;
-          // A long-press must not also toggle.
-          if (autoLpFiredRef.current) {
-            autoLpFiredRef.current = false;
-            return;
-          }
           toggleAuto();
         }}
-      >
-        {autoPlaying ? <PauseIcon /> : <PlayIcon />}
-      </button>
-      {/* v4.4: transient speed label after a long-press cycle. */}
-      {speedFlash && (
-        <span data-testid="autoscroll-speed" className="auto-speed show">
-          {speedFlash}
-        </span>
-      )}
+        onCycleSpeed={() => {
+          if (Date.now() < suppressUntil.current) return;
+          cycleSpeed();
+        }}
+        speedFlash={speedFlash}
+        speaking={voice.speaking}
+        canSpeak={voice.supported}
+        onToggleSpeak={() => {
+          if (Date.now() < suppressUntil.current) return;
+          voiceRef.current?.toggle();
+        }}
+      />
 
       {/* v4: the floating selection pill (Meaning / Copy), above the selection. */}
       {sel && !meaning && (
