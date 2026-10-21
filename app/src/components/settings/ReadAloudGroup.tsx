@@ -16,6 +16,7 @@ import {
   getElevenLabsKey,
   removeElevenLabsKey,
   setElevenLabsKey,
+  standardVoiceName,
   testKey,
 } from "../../lib/elevenlabs";
 
@@ -142,9 +143,12 @@ export default function ReadAloudGroup() {
             className="set-chip"
             onClick={() => setSheet(true)}
           >
-            {settings.readAloudVoice
-              ? `${settings.readAloudVoice.slice(0, 8)}…`
-              : "Choose…"}
+            {settings.readAloudEngine === "system"
+              ? "This phone's voice"
+              : standardVoiceName(settings.readAloudVoice) ||
+                (settings.readAloudVoice
+                  ? `${settings.readAloudVoice.slice(0, 8)}…`
+                  : "Choose…")}
           </button>
           <p className="set-note">
             The voices on your ElevenLabs account — hear one before you pick
@@ -169,6 +173,8 @@ export default function ReadAloudGroup() {
           onClose={() => setSheet(false)}
           voice={settings.readAloudVoice}
           onVoiceChange={(v) => update({ readAloudVoice: v })}
+          systemVoice={settings.readAloudSystemVoice}
+          onSystemVoiceChange={(v) => update({ readAloudSystemVoice: v })}
           speed={settings.readAloudRate}
           onSpeedChange={(v) => update({ readAloudRate: v })}
           engine={settings.readAloudEngine}

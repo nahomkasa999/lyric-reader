@@ -4,6 +4,10 @@
 // anything the user cloned. Each one has a ▶ to audition it before you
 // commit, the way ChatGPT lets you hear a voice first.
 //
+// The phone's own engine has voices too, and they are listed here as well
+// (the phone's default first) — otherwise the phone's voice is always
+// "the default thing", with nothing to choose.
+//
 // Without a key the sheet says so and points at Settings; the phone's
 // own voice is always there as a fallback.
 import { useEffect, useState } from "react";
@@ -19,13 +23,16 @@ import {
   stopAudio,
   type ElevenVoice,
 } from "../../lib/elevenlabs";
-import { speak as speakSystem } from "../../lib/speech";
+import { loadVoices, speak as speakSystem, type VoiceInfo } from "../../lib/speech";
 
 interface Props {
   onClose: () => void;
-  /** the chosen voice */
+  /** the chosen ElevenLabs voice */
   voice: string;
   onVoiceChange: (v: string) => void;
+  /** the chosen voice of the phone's own engine (voiceURI) */
+  systemVoice: string;
+  onSystemVoiceChange: (v: string) => void;
   /** 0.7 – 1.5 */
   speed: number;
   onSpeedChange: (s: number) => void;
@@ -47,10 +54,32 @@ function toCard(v: ElevenVoice): VoiceCard {
   return { id: v.id, name: v.name, meta: bits.join(" · ") || "voice" };
 }
 
+/** The phone's voices, as cards. The phone's default comes first. */
+function phoneCards(voices: VoiceInfo[], chosen: string): VoiceCard[] {
+  const list: VoiceCard[] = [
+    { id: "", name: "Phone's default", meta: "the system voice" },
+  ];
+  for (const v of voices) {
+    list.push({
+      id: v.uri,
+      name: v.name,
+      meta: v.local ? v.lang : `${v.lang} · online`,
+    });
+  }
+  // The chosen voice must be in the list, even if the phone has since
+  // dropped it — otherwise nothing looks picked.
+  if (chosen && !list.some((c) => c.id === chosen)) {
+    list.push({ id: chosen, name: "Your voice", meta: "chosen earlier" });
+  }
+  return list;
+}
+
 export default function VoiceSheet({
   onClose,
   voice,
   onVoiceChange,
+  systemVoice,
+  onSystemVoiceChange,
   speed,
   onSpeedChange,
   engine,
@@ -58,6 +87,7 @@ export default function VoiceSheet({
   key,
 }: Props) {
   const [voices, setVoices] = useState<VoiceCard[]>([]);
+  const [phone, setPhone] = useState<VoiceCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<string | null>(null);
@@ -96,6 +126,18 @@ export default function VoiceSheet({
     };
   }, [key]);
 
+  // The phone's own voices — they arrive late in Chrome, so we wait for
+  // the list instead of taking the empty one.
+  useEffect(() => {
+    let alive = true;
+    void loadVoices().then((v) => {
+      if (alive) setPhone(phoneCards(v, systemVoice));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [systemVoice]);
+
   /** Audition a voice — the thing you actually want from a picker. */
   const preview = async (id: string) => {
     if (previewing) {
@@ -109,13 +151,17 @@ export default function VoiceSheet({
         const data = await speakAudio(SAMPLE, id, key, speed);
         await playAudio(data);
       } else {
-        await speakSystem(SAMPLE, { rate: speed });
+        await speakSystem(SAMPLE, { rate: speed, voiceURI: id });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not play that voice.");
     }
     setPreviewing(null);
   };
+
+  // The phone's voice is the one the phone reads with.
+  const phoneEngine = engine === "system" || !key;
+  const chosen = phoneEngine ? systemVoice : voice;
 
   return (
     <div className="ask-layer" data-testid="voice-layer">
@@ -140,27 +186,57 @@ export default function VoiceSheet({
         {/* ---- the engine ---- */}
         <div className="voice-engine" data-testid="voice-engine">
           <div className="voice-engine-copy">
-            <b>ElevenLabs</b>
+            <b>{phoneEngine ? "This phone" : "ElevenLabs"}</b>
             <span>
-              {!key
-                ? "No key yet — add one in Settings."
-                : loading
-                  ? "Reading the voice list…"
-                  : `${voices.length} voices available`}
+              {phoneEngine
+                ? phone.length
+                  ? `${phone.length - 1} voices on this device`
+                  : "The phone's own voice"
+                : !key
+                  ? "No key yet — add one in Settings."
+                  : loading
+                    ? "Reading the voice list…"
+                    : `${voices.length} voices available`}
             </span>
           </div>
-          {!key && (
-            <a
-              data-testid="voice-key-link"
-              className="set-chip shrink-0"
-              href={ELEVEN_KEYS_URL}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Get a key
-            </a>
-          )}
+          <button
+            data-testid="voice-engine-toggle"
+            className="set-chip shrink-0"
+            onClick={() => onEngineChange(phoneEngine ? "eleven" : "system")}
+          >
+            {phoneEngine ? "Use ElevenLabs" : "Use this phone"}
+          </button>
         </div>
+
+        {/* No key: say it plainly — the phone's voice is reading, and
+            this is why. */}
+        {!key && engine === "eleven" && (
+          <>
+            <p className="voice-note" data-testid="voice-no-key">
+              There is no ElevenLabs key on this phone, so the phone&apos;s
+              own voice reads. Add a free key in Settings → Read aloud to
+              use the ElevenLabs voices.
+            </p>
+            <div className="voice-foot-row" style={{ margin: "0 16px 10px" }}>
+              <a
+                data-testid="voice-key-link"
+                className="set-chip shrink-0"
+                href={ELEVEN_KEYS_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Get a key
+              </a>
+              <button
+                data-testid="voice-use-phone"
+                className="set-chip"
+                onClick={() => onEngineChange("system")}
+              >
+                Use this phone&apos;s voice
+              </button>
+            </div>
+          </>
+        )}
 
         {error && (
           <p className="voice-note" data-testid="voice-error">
@@ -169,13 +245,37 @@ export default function VoiceSheet({
         )}
 
         {/* ---- the voices ---- */}
-        <VoiceList
-          voices={voices}
-          voice={voice}
-          previewing={previewing}
-          onPick={onVoiceChange}
-          onPreview={(id) => void preview(id)}
-        />
+        {phoneEngine ? (
+          <>
+            <p className="voice-section" data-testid="voice-section-phone">
+              This phone&apos;s voices
+            </p>
+            <VoiceList
+              voices={phone}
+              voice={chosen}
+              previewing={previewing}
+              onPick={onSystemVoiceChange}
+              onPreview={(id) => void preview(id)}
+            />
+          </>
+        ) : loading ? (
+          <p className="voice-empty" data-testid="voice-list-loading">
+            Reading the voice list…
+          </p>
+        ) : (
+          <>
+            <p className="voice-section" data-testid="voice-section-eleven">
+              ElevenLabs voices
+            </p>
+            <VoiceList
+              voices={voices}
+              voice={chosen}
+              previewing={previewing}
+              onPick={onVoiceChange}
+              onPreview={(id) => void preview(id)}
+            />
+          </>
+        )}
 
         {/* ---- speed + fallback ---- */}
         <div className="voice-foot">
@@ -195,13 +295,13 @@ export default function VoiceSheet({
           </div>
           <div className="voice-foot-row">
             <button
-              data-testid="voice-engine-toggle"
+              data-testid="voice-engine-toggle-2"
               className="set-chip"
-              onClick={() => onEngineChange(engine === "eleven" ? "system" : "eleven")}
+              onClick={() => onEngineChange(phoneEngine ? "eleven" : "system")}
             >
-              {engine === "eleven" ? "Using ElevenLabs" : "Using the phone's voice"}
+              {phoneEngine ? "Switch to ElevenLabs" : "Switch to this phone"}
             </button>
-            {voice !== DEFAULT_VOICE && engine === "eleven" && (
+            {!phoneEngine && voice !== DEFAULT_VOICE && (
               <button
                 data-testid="voice-default"
                 className="set-chip"

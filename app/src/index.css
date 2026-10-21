@@ -1187,6 +1187,44 @@
   flex-wrap: wrap;
 }
 
+/* The name of the group of voices (ElevenLabs / this phone). */
+.voice-section {
+  margin: 0 16px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* v4.9: the voice could not read — the note that says so, put away with
+   a tap. It sits above the floating buttons. */
+.voice-toast {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(148px + env(safe-area-inset-bottom));
+  z-index: 26;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: oklch(0 0 0 / 0.88);
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 250ms ease, visibility 0s linear 250ms;
+}
+.voice-toast.show {
+  opacity: 0.95;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 250ms ease, visibility 0s;
+}
+
 /* v4.4: transient speed label after a long-press speed cycle. */
 .auto-speed {
   position: absolute;

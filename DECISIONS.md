@@ -755,3 +755,41 @@ added three small resilience items in the same pass:
   Settings identifies the running build instantly. No UI/UX change otherwise;
   no key material involved.
 - Scoped out: no changes to splitS/segment/render — they are correct.
+
+## v4.9 fix — the voice picker was unreachable, and the voice that read was not the voice that was picked (Oct 21, 2026)
+
+- **Finding 1 — the picker could not be opened from the reader at all.**
+  `Reader.tsx` rendered `<VoiceSheet>` and kept `setVoiceSheet`, but
+  nothing ever called `setVoiceSheet(true)`: the sheet was dead code in
+  the reader. The only way to a voice was Settings → Read aloud → Voice.
+  → Fix: the ⋯ menu gets a **Voice** row, and a **long-press on the
+  speaker** opens the picker (tap still starts/stops the reading — the
+  long-press flag is consumed by the following click, as with the
+  auto-scroll button). Opening it stops the reading; closing it starts
+  the reading again, in the voice that was just picked.
+
+- **Finding 2 — a voice change could still play the old voice's audio.**
+  The prefetch cache was keyed by the sentence text only, so the clip
+  fetched for George was served for the next voice. It also fired a
+  second network request for a sentence already on its way.
+  → Fix: the cache key carries the voice, the speed and the text, and
+  holds the *promise* (not the buffer), so the prefetch and the read
+  share one request. The cache is emptied when the voice or the speed
+  changes.
+
+- **Finding 3 — "it plays the default thing" had two causes, both
+  silent.** (a) The phone's own engine was called with no `voiceURI`, so
+  it could only ever use the browser's default voice. (b) When
+  ElevenLabs failed (no key, no quota, missing permission) the reader
+  silently swapped in the phone's voice — the user heard a different
+  voice with no explanation.
+  → Fix: the picker now lists **the phone's own voices** too (the
+  phone's default first), and the chosen one is passed to the engine.
+  A failed ElevenLabs read now raises a small note in the reader
+  ("…the phone's voice is reading instead"), and a missing key says so
+  plainly in the picker, with a one-tap switch to the phone's voice.
+
+- **The key never touches the repo.** `ELEVENLABS_API_KEY` lives in
+  `.env.local` (gitignored); the build bakes it in like the Gemini key.
+  The live tests (`tests/elevenlabs.live.test.ts`) read it from the
+  environment and are skipped when it is absent — they cost quota.

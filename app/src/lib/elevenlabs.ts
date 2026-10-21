@@ -30,6 +30,11 @@ export const DEFAULT_VOICE = "JBFqnCBsd6RMkjVDRZzb";
 export { STANDARD_VOICES };
 export { playAudio, stopAudio };
 
+/** The name of a standard voice, if we know it by id. */
+export function standardVoiceName(id: string): string {
+  return STANDARD_VOICES.find((v) => v.id === id)?.name ?? "";
+}
+
 export function getElevenLabsKey(): string {
   try {
     return (localStorage.getItem(KEY) ?? "").trim();
@@ -208,7 +213,7 @@ export function elevenError(e: unknown): ElevenError {
 }
 
 /** What ElevenLabs says went wrong, in a sentence a person can act on. */
-function errorText(e: unknown, fallback: string): string {
+export function errorText(e: unknown, fallback = "Something went wrong."): string {
   const err = elevenError(e);
   if (err.missing) {
     return `This key is missing the ${err.missing} permission.`;
@@ -217,4 +222,24 @@ function errorText(e: unknown, fallback: string): string {
   if (err.status === 429) return "Too many requests — the key's quota is used up.";
   if (err.status === 422) return "ElevenLabs did not like that request.";
   return err.message || fallback;
+}
+
+/**
+ * The same words, but for the reader: it says what went wrong AND that
+ * the phone's own voice is reading instead — the user must never wonder
+ * why the voice they picked is not the voice they hear.
+ */
+export function speakError(e: unknown): string {
+  const err = elevenError(e);
+  const why = errorText(e, "ElevenLabs could not read that.");
+  if (err.status === 401) {
+    return "ElevenLabs did not accept the key — the phone's voice is reading instead.";
+  }
+  if (err.status === 429) {
+    return "The ElevenLabs quota is used up — the phone's voice is reading instead.";
+  }
+  if (err.missing) {
+    return `The key is missing the ${err.missing} permission — the phone's voice is reading instead.`;
+  }
+  return `${why} The phone's voice is reading instead.`;
 }

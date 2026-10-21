@@ -26,6 +26,8 @@ interface Props {
   session: boolean;
   canSpeak: boolean;
   onToggleSpeak: () => void;
+  /** long-press on the voice button opens the voice picker */
+  onOpenVoice: () => void;
 }
 
 export default function ReaderControls({
@@ -44,15 +46,26 @@ export default function ReaderControls({
   session,
   canSpeak,
   onToggleSpeak,
+  onOpenVoice,
 }: Props) {
   // Long-press on the auto button = speed cycle, tap = play/pause.
   const press = useRef<{ x: number; y: number; timer: number } | null>(null);
   const longPressed = useRef(false);
+  // The same trick on the voice button: tap reads, hold picks the voice.
+  const voicePress = useRef<{ x: number; y: number; timer: number } | null>(null);
+  const voiceHeld = useRef(false);
 
   const cancelPress = () => {
     if (press.current) {
       window.clearTimeout(press.current.timer);
       press.current = null;
+    }
+  };
+
+  const cancelVoicePress = () => {
+    if (voicePress.current) {
+      window.clearTimeout(voicePress.current.timer);
+      voicePress.current = null;
     }
   };
 
@@ -106,15 +119,48 @@ export default function ReaderControls({
         ?
       </button>
 
-      {/* The voice: tap to start the reading session, tap again to stop. */}
+      {/* The voice: tap to start the reading session, tap again to stop.
+          Hold it to pick the voice — the picker is one finger away. */}
       {canSpeak && (
         <button
           data-testid="speak-btn"
-          aria-label={session ? "Stop reading" : "Read aloud"}
+          aria-label={
+            session ? "Stop reading" : "Read aloud — hold to choose the voice"
+          }
+          title="Read aloud — hold to choose the voice"
           className={`speak-btn${visible ? " show" : ""}${
             session || speaking ? " on" : ""
           }`}
-          onClick={onToggleSpeak}
+          onPointerDown={(e) => {
+            voiceHeld.current = false;
+            voicePress.current = {
+              x: e.clientX,
+              y: e.clientY,
+              timer: window.setTimeout(() => {
+                voicePress.current = null;
+                voiceHeld.current = true;
+                onOpenVoice();
+              }, 500),
+            };
+          }}
+          onPointerMove={(e) => {
+            const p = voicePress.current;
+            if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) {
+              cancelVoicePress();
+            }
+          }}
+          onPointerUp={cancelVoicePress}
+          onPointerLeave={cancelVoicePress}
+          onPointerCancel={cancelVoicePress}
+          onContextMenu={(e) => e.preventDefault()}
+          onClick={() => {
+            // A long-press must not also start the reading.
+            if (voiceHeld.current) {
+              voiceHeld.current = false;
+              return;
+            }
+            onToggleSpeak();
+          }}
         >
           {session || speaking ? <StopIcon /> : <SpeakerIcon />}
         </button>

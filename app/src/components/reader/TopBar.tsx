@@ -9,7 +9,7 @@
 // The page number stays editable (tap it, type a page). Everything else —
 // text size, saved marks, settings — lives behind the overflow menu.
 import { useEffect, useRef, useState } from "react";
-import { ArrowIcon, GearIcon, MoreIcon, SavedIcon } from "./icons";
+import { ArrowIcon, GearIcon, MoreIcon, SavedIcon, SpeakerIcon } from "./icons";
 
 interface Props {
   /** current page, 1-based */
@@ -21,6 +21,8 @@ interface Props {
   onBack: () => void;
   onOpenSaved: () => void;
   onOpenSettings: () => void;
+  /** open the voice picker (choose the voice that reads) */
+  onOpenVoice: () => void;
   /** −2 / +2 px on the reading size */
   onTextSize: (delta: number) => void;
   /** keep the chrome awake (the bar auto-hides) */
@@ -44,6 +46,7 @@ export default function TopBar({
   onBack,
   onOpenSaved,
   onOpenSettings,
+  onOpenVoice,
   onTextSize,
   onReveal,
   onEditingChange,
@@ -163,6 +166,14 @@ export default function TopBar({
               </button>
             </span>
           </div>
+          <button
+            className="menu-row"
+            data-testid="voice-btn"
+            onClick={onOpenVoice}
+          >
+            <SpeakerIcon />
+            <span>Voice</span>
+          </button>
           <button
             className="menu-row"
             data-testid="saved-btn"

@@ -53,6 +53,8 @@ export interface ReaderSettings {
   readAloud: boolean;
   /** the chosen ElevenLabs voice id */
   readAloudVoice: string;
+  /** the chosen voice of the phone's own engine (voiceURI); "" = its default */
+  readAloudSystemVoice: string;
   /** speaking speed, 0.7 – 1.5 */
   readAloudRate: number;
   /** which engine reads: "eleven" = ElevenLabs, "system" = the phone's voice */
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   bgIntensity: 60,
   readAloud: false,
   readAloudVoice: "JBFqnCBsd6RMkjVDRZzb",
+  readAloudSystemVoice: "",
   readAloudRate: 1,
   readAloudEngine: "eleven",
 };
@@ -162,6 +165,9 @@ export function load(): ReaderSettings {
     }
     if (typeof s.readAloud === "boolean") d.readAloud = s.readAloud;
     if (typeof s.readAloudVoice === "string") d.readAloudVoice = s.readAloudVoice;
+    if (typeof s.readAloudSystemVoice === "string") {
+      d.readAloudSystemVoice = s.readAloudSystemVoice;
+    }
     if (typeof s.readAloudRate === "number" && Number.isFinite(s.readAloudRate)) {
       d.readAloudRate = Math.min(1.5, Math.max(0.7, s.readAloudRate));
     }

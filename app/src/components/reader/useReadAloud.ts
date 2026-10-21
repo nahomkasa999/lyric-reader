@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   playAudio,
   speakAudio,
+  speakError,
   stopAudio,
 } from "../../lib/elevenlabs";
 import {
@@ -41,6 +42,8 @@ export interface ReadAloudOptions {
   advance: () => boolean;
   /** the ElevenLabs voice id */
   voice: string;
+  /** the phone's own voice (voiceURI); "" = the phone's default */
+  voiceURI: string;
   /** speaking speed, 0.7 – 1.5 */
   speed: number;
   /** which engine reads */
@@ -56,6 +59,12 @@ export interface ReadAloud {
   session: boolean;
   /** this device can speak at all */
   supported: boolean;
+  /** the engine that is really reading right now */
+  actual: "eleven" | "system";
+  /** why the other engine is reading, when it is */
+  error: string | null;
+  /** put the note away */
+  clearError: () => void;
   /** start or stop the reading session */
   toggle: () => void;
   /** stop the voice, no resume */
@@ -67,21 +76,42 @@ export interface ReadAloud {
 export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   const [speaking, setSpeaking] = useState(false);
   const [session, setSession] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
   // A token, so a cancelled utterance can never switch the button back.
   const token = useRef(0);
-  // Audio already on its way from ElevenLabs, keyed by the text.
-  const ready = useRef(new Map<string, ArrayBuffer>());
+  // Audio already on its way from ElevenLabs. The key carries the voice
+  // and the speed, so a voice change can never serve yesterday's audio.
+  const ready = useRef(new Map<string, Promise<ArrayBuffer>>());
 
-  const { follow, positionKey, currentText, nextText, blocked, advance, voice, speed, engine, key } =
-    opts;
+  const {
+    follow,
+    positionKey,
+    currentText,
+    nextText,
+    blocked,
+    advance,
+    voice,
+    voiceURI,
+    speed,
+    engine,
+    key,
+  } = opts;
 
   // The phone can speak if it has a key for ElevenLabs, or its own voice.
   const supported = useMemo(
     () => speechSupported() || !!key,
     [key],
   );
+
+  /** ElevenLabs only reads when it has a key to read with. */
+  const canUseEleven = engine === "eleven" && !!key;
+
+  /** Say it once — the note must not be rewritten on every sentence. */
+  const note = useCallback((msg: string | null) => {
+    setError((old) => (old === msg ? old : msg));
+  }, []);
 
   /** Stop everything — both engines. */
   const stop = useCallback(() => {
@@ -96,25 +126,32 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   /** The audio for a text: from the cache if it is already here. */
   const fetchAudio = useCallback(
     async (text: string): Promise<ArrayBuffer> => {
-      const hit = ready.current.get(text);
-      if (hit) {
-        ready.current.delete(text);
-        return hit;
-      }
-      return speakAudio(text, voice, key, speed);
+      const k = `${voice}\u0000${speed}\u0000${text}`;
+      const hit = ready.current.get(k);
+      if (hit) return hit;
+      const p = speakAudio(text, voice, key, speed).catch((e) => {
+        // A failed request must not be cached — it is fetched again.
+        ready.current.delete(k);
+        throw e;
+      });
+      ready.current.set(k, p);
+      return p;
     },
     [voice, key, speed],
   );
 
+  // A new voice (or speed) makes every cached clip worthless.
+  useEffect(() => {
+    ready.current.clear();
+  }, [voice, speed, key]);
+
   /** Start the next sentence while this one is being read. */
   const prefetch = useCallback(
     (text: string) => {
-      if (!text || ready.current.has(text)) return;
-      void fetchAudio(text)
-        .then((buf) => ready.current.set(text, buf))
-        .catch(() => {
-          /* it will be fetched again when it is needed */
-        });
+      if (!text) return;
+      void fetchAudio(text).catch(() => {
+        /* it will be fetched again when it is needed */
+      });
     },
     [fetchAudio],
   );
@@ -125,27 +162,36 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
       const mine = ++token.current;
       setSpeaking(true);
       let played = false;
-      if (engine === "eleven" && key) {
+      if (canUseEleven) {
         try {
           const data = await fetchAudio(text);
           if (token.current !== mine) return;
           await playAudio(data);
           played = true;
-        } catch {
-          // ElevenLabs could not do it — the phone's voice takes over.
+          note(null);
+        } catch (e) {
+          // ElevenLabs could not do it — say so, and let the phone's
+          // voice take over. Silently swapping engines is what made the
+          // reader sound like "the default thing" with no explanation.
+          note(speakError(e));
           played = false;
         }
+      } else if (engine === "eleven") {
+        // ElevenLabs was asked for, but there is no key to read with.
+        note(
+          "No ElevenLabs key — the phone's voice is reading instead. Add a key in Settings.",
+        );
       }
       if (!played) {
         try {
-          await speakSystem(text, { rate: speed });
+          await speakSystem(text, { rate: speed, voiceURI });
         } catch {
           /* this device has no speech at all */
         }
       }
       if (token.current === mine) setSpeaking(false);
     },
-    [engine, key, fetchAudio, speed],
+    [canUseEleven, engine, fetchAudio, speed, voiceURI, note],
   );
 
   /** Say the current sentence; when it ends, turn the page and go on. */
@@ -158,12 +204,12 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
     }
     const spoken = play(text);
     // The next sentence is on its way while this one is read.
-    if (engine === "eleven" && key) prefetch(nextText());
+    if (canUseEleven) prefetch(nextText());
     await spoken;
     if (!sessionRef.current) return;
     // The end of the book stops the session.
     if (!advance()) stop();
-  }, [blocked, currentText, play, prefetch, nextText, engine, key, advance, stop]);
+  }, [blocked, currentText, play, prefetch, nextText, canUseEleven, advance, stop]);
 
   /** The speaker button: start the session, or stop it. */
   const toggle = useCallback(() => {
@@ -198,5 +244,15 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   // Never talk to nobody: leaving the reader stops the voice.
   useEffect(() => () => stopSpeech(), []);
 
-  return { speaking, session, supported, toggle, stop, resume };
+  return {
+    speaking,
+    session,
+    supported,
+    actual: canUseEleven ? "eleven" : "system",
+    error,
+    clearError: () => note(null),
+    toggle,
+    stop,
+    resume,
+  };
 }

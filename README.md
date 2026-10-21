@@ -103,10 +103,18 @@ offline afterwards.
     only downloads the sound: nothing heavy runs on it, which is what a
     budget phone needs. The app ships with a key of its own (shared
     quota); in Settings you can paste **your own** ElevenLabs key — it
-    stays on your phone and is sent only to ElevenLabs. The voice picker
-    lists your account's voices (the library plus anything you cloned),
-    each with a preview button, the way ChatGPT lets you audition one.
-    With no key, or if you pick the phone's own voice, the browser's
+    stays on your phone and is sent only to ElevenLabs.
+  - **Choosing the voice:** tap the speaker to read, **hold** it to open
+    the voice picker (or ⋯ → Voice in the top bar). The picker lists your
+    account's voices — the library plus anything you cloned — each with a
+    ▶ to audition, the way ChatGPT lets you audition one. The phone's own
+    voices are listed too (pick *Use this phone*), because the browser's
+    default voice is nobody's choice.
+  - The voice that is picked is the voice that reads: a new pick is
+    fetched again, never served from the last one's audio. If ElevenLabs
+    cannot read (no key, no quota, missing permission), the reader says
+    so in a small note instead of quietly swapping in another voice.
+  - With no key, or if you pick the phone's own voice, the browser's
     speech engine reads instead.
 - **Settings:** the gear opens a dedicated settings page — font (Geist /
     Serif / Mono / Lexend / System), sentence sizes, text colours and
@@ -159,8 +167,15 @@ is pure and unit-tested; the Reader is a thin view over it.
 ## Tests
 
 ```bash
-npx vitest run                  # unit: 35 tests
-npx playwright test              # e2e: 33 interaction + 2 screenshot suites
+npx vitest run                  # unit: 206 tests
+npx playwright test              # e2e: 34 interaction + 2 screenshot suites
+```
+
+The ElevenLabs tests that talk to the real API are skipped unless a key
+is given:
+
+```bash
+ELEVENLABS_API_KEY=sk_… npx vitest run tests/elevenlabs.live.test.ts
 ```
 
 Results are recorded in [TEST_REPORT.md](TEST_REPORT.md); screenshots in

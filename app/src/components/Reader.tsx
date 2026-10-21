@@ -125,6 +125,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const [menuOpen, setMenuOpen] = useState(false);
   // v4.8: the voice sheet (choose a voice, install the HD engine).
   const [voiceSheet, setVoiceSheet] = useState(false);
+  const voiceSheetRef = useRef(voiceSheet);
+  voiceSheetRef.current = voiceSheet;
   // v4.7: the voice — the read-aloud hook fills this in below.
   const voiceRef = useRef<ReturnType<typeof useReadAloud> | null>(null);
 
@@ -136,6 +138,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const pillRef = useRef<HTMLDivElement | null>(null);
   const meaningCardRef = useRef<HTMLDivElement | null>(null);
   const askLayerRef = useRef<HTMLDivElement | null>(null);
+  // v4.9: the voice sheet's layer — a press on the page behind it must
+  // not step the sentence while the picker is open.
+  const voiceLayerRef = useRef<HTMLDivElement | null>(null);
 
   // Refs mirroring state so native handlers always see fresh values.
   const posRef = useRef(pos);
@@ -554,7 +559,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       !!popRef.current ||
       !!selRef.current ||
       !!meaningRef.current ||
-      !!askOpenRef.current,
+      !!askOpenRef.current ||
+      !!voiceSheetRef.current,
     [],
   );
   /** The session turns the page itself: forward one part, or stop at the end. */
@@ -580,11 +586,38 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     blocked: speechBlocked,
     advance: advanceRead,
     voice: settings.readAloudVoice,
+    voiceURI: settings.readAloudSystemVoice,
     speed: settings.readAloudRate,
     engine: settings.readAloudEngine,
     key: getEffectiveElevenLabsKey(),
   });
   voiceRef.current = voice;
+
+  // v4.9: the voice picker, opened from the reader itself — the ⋯ menu
+  // and a long-press on the speaker both land here. The reading stops
+  // while the sheet is open and picks up again (in the voice that was
+  // just picked) when it closes.
+  const voiceWasReading = useRef(false);
+  const openVoice = useCallback(() => {
+    if (Date.now() < suppressUntil.current) return;
+    voiceWasReading.current = !!voiceRef.current?.session;
+    voiceRef.current?.stop();
+    // The menu that opened the picker goes away with it.
+    setMenuOpen(false);
+    setVoiceSheet(true);
+    showChrome(4000);
+  }, [showChrome]);
+
+  const closeVoiceSheet = useCallback(() => {
+    setVoiceSheet(false);
+    if (voiceWasReading.current) {
+      voiceWasReading.current = false;
+      // The book was reading: start it again, in the new voice.
+      voiceRef.current?.toggle();
+    }
+  }, []);
+  const closeVoiceSheetRef = useRef(closeVoiceSheet);
+  closeVoiceSheetRef.current = closeVoiceSheet;
 
   // Manual steps while playing re-arm the timer for the new part —
   // playback continues (the auto tick's own advance re-arms the same way).
@@ -1366,7 +1399,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           menuRef.current?.contains(t) ||
           pillRef.current?.contains(t) ||
           meaningCardRef.current?.contains(t) ||
-          askLayerRef.current?.contains(t)
+          askLayerRef.current?.contains(t) ||
+          voiceLayerRef.current?.contains(t)
         )
           return;
         let closed = false;
@@ -1405,6 +1439,11 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         }
         if (askOpenRef.current) {
           closeAskRef.current();
+          closed = true;
+        }
+        // v4.9: a press outside the voice picker closes it.
+        if (voiceSheetRef.current) {
+          closeVoiceSheetRef.current();
           closed = true;
         }
         if (closed) {
@@ -1447,6 +1486,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           voiceRef.current?.stop();
           onOpenSettings();
         }}
+        onOpenVoice={openVoice}
         onTextSize={(delta) => {
           if (Date.now() < suppressUntil.current) return;
           adjustMainSize(delta);
@@ -1578,7 +1618,20 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           // still reaches the button when the user wants to stop it.
           if (!wasReading) hideChrome();
         }}
+        onOpenVoice={openVoice}
       />
+
+      {/* v4.9: the voice could not do it — say so. The reader must never
+          silently swap in another voice and leave the user wondering. */}
+      {voice.error && (
+        <button
+          data-testid="voice-error-toast"
+          className="voice-toast show"
+          onClick={() => voice.clearError()}
+        >
+          {voice.error}
+        </button>
+      )}
 
       {/* v4: the floating selection pill (Meaning / Copy), above the selection. */}
       {sel && !meaning && (
@@ -1759,18 +1812,24 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       )}
 
       {/* v4.8: the voice sheet — pick a voice, install the HD engine. */}
-      {voiceSheet && (
-        <VoiceSheet
-          onClose={() => setVoiceSheet(false)}
-          voice={settings.readAloudVoice}
-          onVoiceChange={(v) => updateSettings({ readAloudVoice: v })}
-          speed={settings.readAloudRate}
-          onSpeedChange={(v) => updateSettings({ readAloudRate: v })}
-          engine={settings.readAloudEngine}
-          onEngineChange={(v) => updateSettings({ readAloudEngine: v })}
-          key={getEffectiveElevenLabsKey()}
-        />
-      )}
+      <div ref={voiceLayerRef}>
+        {voiceSheet && (
+          <VoiceSheet
+            onClose={closeVoiceSheet}
+            voice={settings.readAloudVoice}
+            onVoiceChange={(v) => updateSettings({ readAloudVoice: v })}
+            systemVoice={settings.readAloudSystemVoice}
+            onSystemVoiceChange={(v) =>
+              updateSettings({ readAloudSystemVoice: v })
+            }
+            speed={settings.readAloudRate}
+            onSpeedChange={(v) => updateSettings({ readAloudRate: v })}
+            engine={settings.readAloudEngine}
+            onEngineChange={(v) => updateSettings({ readAloudEngine: v })}
+            key={getEffectiveElevenLabsKey()}
+          />
+        )}
+      </div>
 
       {/* v4: the Ask sheet. */}
       <div ref={askLayerRef}>
