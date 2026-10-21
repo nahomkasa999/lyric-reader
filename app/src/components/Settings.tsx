@@ -585,7 +585,11 @@ export default function Settings({ onBack }: Props) {
                 label="Background music"
               />
             </div>
-            <p className="set-note">Coming soon — not built yet.</p>
+            <p className="set-note">
+              The music button at the bottom-left of the reader — tap it,
+              paste a YouTube link, and it plays behind the page. A switch
+              that starts it from here is not built yet.
+            </p>
           </Row>
         </Group>
 

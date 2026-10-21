@@ -873,6 +873,58 @@ added three small resilience items in the same pass:
 - The Gemini app key is untouched — that one is a deliberate
   zero-setup decision for the AI features.
 
+## v4.11 — YouTube → audio: a music player in the reader (Oct 21, 2026)
+
+- **Where it sits**: bottom-**left** of the reader, on the same level as
+  the "?" / ▶ / speaker cluster opposite it. Three shapes, in this order:
+  **circle** (resting) → tap → **bar** (opens sideways, a field to paste
+  a link in) → paste → it plays and the control folds back into the
+  **circle** → tap → **panel** (a rectangle: the links you played before
+  on top, the controls and a field to change the audio at the bottom).
+  The circle keeps its place once something is loaded — it is the only
+  way to stop the sound without digging for it.
+- **The sound is a real YouTube embed, off-screen.** The frame is 200×200
+  (YouTube's player needs a real viewport; a 1px frame is not allowed to
+  play) and parked at `left:-9999px`, so only the audio is heard. It is
+  driven over **postMessage**, not the IFrame API script: no third-party
+  script, nothing to block, no extra bytes — the same wire the official
+  script uses underneath (`lib/youtubeWire.ts`).
+  → Change: `lib/youtube.ts` (the embed URLs), `lib/youtubeWire.ts` (the
+  wire).
+- **The wire, learned from it** (not documented by YouTube — this is what
+  the official script talks over):
+  `listening` → the player answers `initialDelivery` once and then
+  `infoDelivery` patches; we drive it with `command`
+  (`playVideo`, `pauseVideo`, `setVolume`, `mute`, `nextVideo`, …).
+  Two rules that each shipped as a bug once: **the player ignores a
+  greeting that arrives before its own script has run** (so the greeting
+  is repeated every 500ms until it answers), and **every load of the
+  frame is a NEW player** (the old state is forgotten, or a stale
+  "playing" judges the new one before it has said anything).
+  → Change: `components/reader/useYoutubePlayer.ts`.
+- **Playlists, two ways.** A pasted **YouTube playlist link** plays
+  through YouTube's own `videoseries` embed (it walks the list itself;
+  next/previous are commands). **Several pasted links** become a
+  playlist of ours. And the **links you played before** (kept in
+  localStorage, newest first) can be played again — or all of them at
+  once with "Play all". Whatever is playing joins that list as it goes,
+  so a YouTube playlist fills the list while it plays.
+  → Change: `lib/youtubePlaylist.ts`, `components/reader/useYoutubePlaylist.ts`.
+- **It waits its turn.** While the book reads itself (read aloud), the
+  music pauses and comes back when the voice stops — two voices at once
+  is nobody's idea of reading.
+- **What it cannot do, and the UI does not pretend otherwise**: an
+  embedded player is cross-origin, so the sound cannot be analysed. This
+  is a player, not a mixer; no beat-sync, no EQ.
+- **Files** (each under 230 lines): `lib/youtube.ts` (links + embed
+  URLs), `lib/youtubeWire.ts` (the wire), `lib/youtubePlaylist.ts` (the
+  list of links), `components/reader/useYoutubePlayer.ts` (the
+  connection), `useYoutubePlaylist.ts` (what is playing + the list),
+  `useYoutubeAudio.ts` (the control's state), `YoutubeAudio.tsx` (the
+  circle + the bar), `YoutubePanel.tsx` (the panel). The control is
+  Tailwind, like the rest of the app; only its entrance is declared in
+  `index.css` (`--animate-yt-in`).
+
 ## v4.10 — the model that reads: v2 for the speed, v4 for Amharic (Oct 21, 2026)
 
 - From the ElevenLabs text-to-speech skill: `eleven_multilingual_v2` is the

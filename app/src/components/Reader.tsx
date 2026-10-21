@@ -49,6 +49,7 @@ import AskSheet from "./AskSheet";
 import TopBar from "./reader/TopBar";
 import VoiceSheet from "./reader/VoiceSheet";
 import ReaderControls from "./reader/ReaderControls";
+import YoutubeAudio from "./reader/YoutubeAudio";
 import { useReadAloud } from "./reader/useReadAloud";
 import { getElevenLabsKey } from "../lib/elevenlabs";
 import {
@@ -1619,6 +1620,14 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           if (!wasReading) hideChrome();
         }}
         onOpenVoice={openVoice}
+      />
+
+      {/* v4.11: YouTube → audio. Bottom-left, on the same level as the
+          "?" / ▶ / speaker cluster opposite it. It keeps its place while
+          it plays, and it waits its turn when the book reads itself. */}
+      <YoutubeAudio
+        visible={chromeVisible}
+        interrupt={voice.speaking || voice.session}
       />
 
       {/* v4.9: the voice could not do it — say so. The reader must never

@@ -1059,6 +1059,23 @@
   background: var(--accent);
 }
 
+/* v4.11: YouTube → audio. The control itself is Tailwind (see
+   components/reader/YoutubeAudio.tsx) — only its entrance is declared
+   here, as a theme animation like every other entrance in the app. */
+@theme {
+  --animate-yt-in: yt-in 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@keyframes yt-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* v4.8: the voice sheet — the HD engine, the voices, the speed. */
 .voice-sheet {
   max-height: 88%;

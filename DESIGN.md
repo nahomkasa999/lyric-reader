@@ -82,6 +82,11 @@ Settings, in groups: Background → Reading → Ambience → Read Aloud → Quiz
 Sticky glass preview at the top that shows the background + a sentence, live.
 
 Reader: unchanged layout. Ambient background sits behind the text.
+One extra control at the bottom-left, on the same level as the floating
+"?" / ▶ / speaker cluster opposite it: the YouTube → audio button. It is
+a circle at rest; tapped, it opens sideways into a field for a link;
+once something plays it folds back into the circle and opens into a
+panel (the links you played before on top, the controls below).
 
 ## Elevation & Depth
 

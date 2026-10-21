@@ -114,3 +114,63 @@ export function StopIcon() {
     </svg>
   );
 }
+
+/** v4.11: the music note — the YouTube audio button. */
+export function MusicIcon() {
+  return (
+    <svg {...base} width="19" height="19">
+      <path d="M9 18V6.5l10-2V16" />
+      <circle cx="6.5" cy="18" r="2.5" />
+      <circle cx="16.5" cy="16" r="2.5" />
+    </svg>
+  );
+}
+
+/** v4.11: the level bars — the same button while it is playing. */
+export function WaveIcon() {
+  return (
+    <svg {...base} width="19" height="19">
+      <path d="M4 10v4M8 7v10M12 9v6M16 6v12M20 10v4" />
+    </svg>
+  );
+}
+
+/** v4.11: the previous track. */
+export function PrevIcon() {
+  return (
+    <svg {...base} width="18" height="18">
+      <path d="M16.5 6v12L7.5 12z" />
+      <path d="M5.5 6v12" />
+    </svg>
+  );
+}
+
+/** v4.11: the next track. */
+export function NextIcon() {
+  return (
+    <svg {...base} width="18" height="18">
+      <path d="M7.5 6v12L16.5 12z" />
+      <path d="M18.5 6v12" />
+    </svg>
+  );
+}
+
+/** v4.11: the volume. */
+export function VolumeIcon() {
+  return (
+    <svg {...base} width="18" height="18">
+      <path d="M4 9v6h4l5 4V5L8 9z" />
+      <path d="M16.5 8.5a5 5 0 0 1 0 7" />
+    </svg>
+  );
+}
+
+/** v4.11: the muted volume. */
+export function MuteIcon() {
+  return (
+    <svg {...base} width="18" height="18">
+      <path d="M4 9v6h4l5 4V5L8 9z" />
+      <path d="M16.5 9.5l5 5M21.5 9.5l-5 5" />
+    </svg>
+  );
+}
