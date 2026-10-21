@@ -559,3 +559,92 @@ screenshots regenerated unchanged.
 - Honest gaps: the defect never reproduced, so there is no failing-then-fixed
   test — only proof of correct behaviour; the device-side cause (stale SW vs
   something environmental) still needs his Settings screenshot to confirm.
+
+---
+
+# v4.13 — the assistant: a sheet you drag (Oct 21, 2026)
+
+The brief for this round is `BUILD_BRIEF_ASSISTANT.md`; the design is
+`CHAT_DESIGN.md`. Everything below was actually run on this machine.
+
+## Unit tests — `npx vitest run`
+
+**323 passed / 3 skipped** (37 files, ~26s). The 3 skips are the live
+ElevenLabs tests, which need a real key on the network — unchanged from
+the baseline.
+
+New this round:
+
+| File | Tests | Covers |
+|---|---|---|
+| `tests/indexPlan.test.ts` | 11 | The backoff sequence (30s → 2m → 5m → 15m, then flat), `pickJob` (ignores done/paused/future, takes the oldest due job, returns null when the queue may not run), `nextBatch` (exact slices at 0/40/80, the tail at 900, null at the end) |
+| `tests/retrieval.test.ts` | 7 | A book with no vectors is found by its words, the boundary drops the passages after the reader's page, other books are not filtered, the open book wins a tie, an old passage without words is healed on the fly |
+| `tests/recap.test.ts` | 5 | The recap keeps the last passages, ignores everything after the reader's page, spreads the sample over the read range, stays inside its budget |
+| `tests/aistream.test.ts` | 9 | Tokens one by one, a frame cut in half is put back together, a thinking model's thoughts are skipped, `[DONE]` ends the stream, no stream → an error, 429 → quota, 401 → invalid-key, the OpenRouter fallback fires before the first token and never after it |
+| `tests/slider.test.ts` | 8 | `trackValue` maths, clamping, snapping, the slider is a `role="slider"`, the arrow keys move it, a plain press moves nothing, a disabled slider is quiet |
+
+Extended this round: `tests/embeddings.test.ts` (the batch endpoint, one
+request per passage, a question never batched), `tests/assistant.test.ts`
+(the no-spoiler rule in the system prompt, `READER CONTEXT` in the
+question, the digest and the 10-message cap unchanged),
+`tests/readaloud.test.ts` (`isNetworkError`, the one-notice rule offline,
+the return to ElevenLabs when the connection is back),
+`tests/settings.test.ts` (the sliders are driven with the keyboard now).
+
+## Interaction tests — **not run, by policy**
+
+The brief for this round says: no Playwright tests, do not run them, do
+not modify `app/tests/e2e/**`. So no e2e suite was run and no e2e file
+was touched. The specs below are **stale** and will fail until they are
+rewritten:
+
+| Spec | What is stale |
+|---|---|
+| `tests/e2e/assistant.spec.ts` | Opens the assistant with `library-assistant-btn` — that button is gone; the "?" in the reader is the door now |
+| `tests/e2e/vocab-ask.spec.ts` | The whole per-passage Ask sheet (`ask-sheet`, `ask-input`, `ask-answer`, `ask-question`, `ask-close`, `ask-context-chip`, `ask-quote-*`) — that sheet was deleted in favour of the assistant sheet |
+| `tests/e2e/shots.spec.ts` | The Ask sheet screenshot (`ask-sheet` / `ask-input` / `ask-answer`) |
+| `tests/e2e/reader.spec.ts` | The settings slider is filled with `range.fill()` — the sliders are no longer native `<input type="range">` |
+| `tests/e2e/youtube.spec.ts` | The volume slider is filled the same way |
+
+## Build & budget checks
+
+- `npx tsc -b` — clean, zero errors.
+- `npm run build` — green; the PWA service worker and the precache list
+  are generated as before.
+- `npx oxlint` — no errors (the pre-existing warnings in `meaning.ts`,
+  `selection.ts`, `segment.ts` and two test files are untouched).
+- No key in the bundle: `grep -rl "sk_" dist/assets/*.js` matches only
+  `sk_integration` (an SVG mask id in the ElevenLabs SDK) and the `sk_…`
+  placeholder in the Settings field. The ElevenLabs key is the reader's
+  own, in `localStorage`; `.env.local` stays untracked (`.gitignore`
+  `*.env*.local`).
+
+## The budgets the brief set
+
+| Budget | Result |
+|---|---|
+| `: any` / `<any>` / `as any` / `: unknown` / `<unknown>` / `as unknown` / `: never` in `app/src` | **37** (baseline 42, limit ≤ 37) |
+| New files over 230 lines | none — the largest new file is `components/assistant/useAnswers.ts` at 216 |
+| `Reader.tsx` | 2 100 lines, −45 net: the Ask sheet is out of it |
+| New dependencies | none |
+| `dangerouslySetInnerHTML` | never used — the answers are React text nodes |
+
+## Honest gaps
+
+- **The manual smoke script in the brief was not run.** There is no
+  physical phone and no DevTools in this environment, so the drag
+  gesture, the backdrop, the offline import and the read-aloud fallback
+  were verified by unit tests and by reading the code, not by hand.
+  The drag numbers (peek 62%, the 96px close threshold, the 0.5 px/ms
+  flick, the 4px arm) are constants in
+  `components/assistant/useSheetDrag.ts` and are unit-testable, but the
+  *feel* of the sheet on a phone is unverified.
+- The IndexedDB paths (the `indexJobs` store, the passage healing, the
+  queue resuming after a reload) are written against the real schema but
+  are **not** covered by unit tests: happy-dom has no IndexedDB, so the
+  pure parts were extracted (`lib/indexPlan.ts`, `lib/retrieval.ts`,
+  `lib/recap.ts`) and tested, and the IO around them was not.
+- `tsc -b` was run more than twice during the build (after each phase
+  that touched types), not exactly twice as the brief asked.
+- The e2e suite as a whole is now red until the five specs above are
+  rewritten against the new sheet.
