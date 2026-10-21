@@ -11,11 +11,14 @@ import {
   indexLabel,
   indexLibraryNow,
   onIndexProgress,
+  pauseIndexing,
+  resumeIndexing,
   retryIndexing,
 } from "../lib/indexBook";
 import type { IndexProgress } from "../lib/indexJobs";
 import { passageCount } from "../lib/passages";
 import { listBooks } from "../lib/db";
+import { isOnline } from "../lib/online";
 
 export interface AssistantLibrary {
   /** how many passages the knowledge base holds */
@@ -30,12 +33,19 @@ export interface AssistantLibrary {
   label: string | null;
   /** try one book again */
   retry: (bookId: string) => void;
+  /** stop the queue */
+  pause: () => void;
+  /** start the queue again */
+  resume: () => void;
+  /** is the phone online right now */
+  online: boolean;
 }
 
 export function useAssistantLibrary(): AssistantLibrary {
   const [indexed, setIndexed] = useState(0);
   const [jobs, setJobs] = useState<IndexProgress[]>([]);
   const [indexing, setIndexing] = useState(false);
+  const [online, setOnline] = useState(() => isOnline());
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +87,26 @@ export function useAssistantLibrary(): AssistantLibrary {
     void retryIndexing(bookId).catch(() => {});
   }, []);
 
+  const pause = useCallback(() => {
+    void pauseIndexing().catch(() => {});
+  }, []);
+
+  const resume = useCallback(() => {
+    void resumeIndexing().catch(() => {});
+  }, []);
+
+  // The phone's connection: a hint, but a useful one.
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+
   const first = jobs.find((j) => j.state !== "done");
 
   return {
@@ -86,5 +116,8 @@ export function useAssistantLibrary(): AssistantLibrary {
     jobs,
     label: first ? indexLabel(first) : null,
     retry,
+    pause,
+    resume,
+    online,
   };
 }

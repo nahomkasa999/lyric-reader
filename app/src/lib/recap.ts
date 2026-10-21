@@ -9,6 +9,7 @@
 // than a char budget.
 import { aiGenerate, GeminiError } from "./ai";
 import type { Passage } from "./assistantContext";
+import type { Source } from "./assistantStore";
 import { passagesOfBook } from "./passages";
 import type { StoredChunk } from "./vectorStore";
 
@@ -108,4 +109,19 @@ export async function recapReadSoFar(opts: {
     maxTokens: 900,
   });
   return { text: text.trim(), passages };
+}
+
+/** The sources of a recap: the passages it was built from. */
+export function recapSources(
+  bookId: string,
+  passages: Passage[],
+): Source[] {
+  return passages.map((p) => ({
+    bookId,
+    bookTitle: p.bookTitle,
+    heading: p.heading,
+    page: p.page,
+    item: 0,
+    text: p.text,
+  }));
 }

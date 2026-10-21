@@ -11,7 +11,10 @@
 import { useEffect, useRef, useState } from "react";
 import ChatSheet from "./assistant/ChatSheet";
 import Composer from "./assistant/Composer";
+import IndexStrip from "./assistant/IndexStrip";
 import Message from "./assistant/Message";
+import { NewThreadButton, ThreadsButton } from "./assistant/SheetHeader";
+import ThreadDrawer from "./assistant/ThreadDrawer";
 import { useSheetDrag } from "./assistant/useSheetDrag";
 import { useAssistant, type AssistantOptions } from "./useAssistant";
 
@@ -33,6 +36,7 @@ export default function AssistantSheet({
   const drag = useSheetDrag(onClose);
   const listRef = useRef<HTMLDivElement | null>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Keep the latest message in view — unless the reader scrolled up.
   useEffect(() => {
@@ -40,69 +44,44 @@ export default function AssistantSheet({
     if (el && atBottom) el.scrollTop = el.scrollHeight;
   }, [a.messages, a.sending, a.streaming, atBottom]);
 
-  const send = () => {
-    const q = a.input.trim();
+  const send = (question: string) => {
+    const q = question.trim();
     if (!q) return;
     a.setInput("");
     void a.send(q);
   };
 
-  /** The buttons of the header are not the drag surface. */
-  const noDrag = (e: { stopPropagation: () => void }) => e.stopPropagation();
-
-  const headerLeft = (
-    <button
-      data-testid="assistant-menu"
-      className="chat-iconbtn"
-      aria-label="Threads"
-      onPointerDown={noDrag}
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
-        <path
-          d="M4 7h16M4 12h16M4 17h16"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
-    </button>
+  const header = (
+    <>
+      <ThreadsButton onOpenThreads={() => setDrawerOpen(true)} />
+    </>
   );
-
   const headerRight = (
-    <button
-      data-testid="assistant-new-thread"
-      className="chat-iconbtn"
-      aria-label="New thread"
-      onPointerDown={noDrag}
-      onClick={a.newThread}
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
-        <path
-          d="M12 5v14M5 12h14"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <rect
-          x="4"
-          y="4"
-          width="16"
-          height="16"
-          rx="4"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          fill="none"
-        />
-      </svg>
-    </button>
+    <NewThreadButton
+      onNewThread={() => {
+        a.newThread();
+        setDrawerOpen(false);
+      }}
+    />
   );
 
   return (
     <ChatSheet
       drag={drag}
       onClose={onClose}
-      left={headerLeft}
+      left={header}
       right={headerRight}
+      drawer={
+        drawerOpen ? (
+          <ThreadDrawer
+            threads={a.threads}
+            currentId={a.thread?.id ?? null}
+            onSelect={a.selectThread}
+            onDelete={a.deleteThread}
+            onClose={() => setDrawerOpen(false)}
+          />
+        ) : null
+      }
     >
       {!a.hasKey ? (
         <div data-testid="assistant-nokey" className="chat-nokey">
@@ -138,6 +117,22 @@ export default function AssistantSheet({
               />
               <span>Allow spoilers</span>
             </label>
+            {a.messages.length === 0 && (
+              <div className="chat-empty">
+                <p>Ask your library</p>
+                <div className="chat-suggest">
+                  {a.suggestions.map((s, i) => (
+                    <button
+                      key={s}
+                      data-testid={`assistant-suggest-${i}`}
+                      onClick={() => send(`Tell me about “${s}”.`)}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {a.messages.map((m, i) => (
               <Message key={i} message={m} onJump={onJump} />
             ))}
@@ -176,10 +171,18 @@ export default function AssistantSheet({
           <Composer
             value={a.input}
             onChange={a.setInput}
-            onSend={send}
+            onSend={() => send(a.input)}
             onStop={a.stop}
             streaming={a.streaming}
             onFocus={() => drag.snapTo("full")}
+            strip={
+              <IndexStrip
+                jobs={a.jobs}
+                online={a.online}
+                onPause={a.pause}
+                onRetry={a.retryIndex}
+              />
+            }
           />
         </>
       )}
