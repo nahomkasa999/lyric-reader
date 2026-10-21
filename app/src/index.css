@@ -1457,7 +1457,138 @@
 @media (prefers-reduced-motion: reduce) {
   .ask-sheet,
   .ask-layer,
-  .sel-pill {
+  .sel-pill,
+  .outline-sheet,
+  .outline-layer {
     animation: none !important;
   }
+}
+
+/* v4.13: the outline — the book's chapters, in a sheet over the reader. */
+.outline-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: oklch(0 0 0 / 0.35);
+  animation: card-in 200ms ease-out;
+}
+.outline-sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 82%;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -20px 60px oklch(0 0 0 / 0.5);
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: sheet-up 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.outline-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 16px 8px;
+}
+.outline-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.outline-sub {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+.outline-x {
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+.outline-filter {
+  padding: 0 16px 8px;
+}
+.outline-input {
+  width: 100%;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--foreground);
+  outline: none;
+}
+.outline-input:focus {
+  border-color: var(--ring);
+}
+.outline-list {
+  flex: 1;
+  overflow-y: auto;
+  touch-action: pan-y;
+  padding: 0 8px 16px;
+  min-height: 120px;
+}
+.outline-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 12px;
+  color: var(--foreground);
+}
+.outline-row:active {
+  background: var(--accent);
+}
+.outline-row-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.outline-row-hint {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+  line-height: 1.4;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outline-row-page {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+/* The chapter the reader is in. */
+.outline-row.cur {
+  background: color-mix(in oklch, var(--primary) 14%, transparent);
+}
+.outline-row.cur .outline-row-title {
+  color: var(--primary);
+  font-weight: 600;
+}
+.outline-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+/* v4.13: the saved-word preview — the same card as the meaning card. */
+.vocab-card {
+  max-width: min(86vw, 340px);
 }

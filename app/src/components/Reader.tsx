@@ -50,6 +50,8 @@ import AskSheet from "./AskSheet";
 import TopBar from "./reader/TopBar";
 import VoiceSheet from "./reader/VoiceSheet";
 import ReaderControls from "./reader/ReaderControls";
+import OutlineSheet from "./reader/OutlineSheet";
+import VocabCard from "./reader/VocabCard";
 import YoutubeAudio from "./reader/YoutubeAudio";
 import { useReadAloud } from "./reader/useReadAloud";
 import { getElevenLabsKey } from "../lib/elevenlabs";
@@ -138,6 +140,14 @@ export default function Reader({
   const [voiceSheet, setVoiceSheet] = useState(false);
   const voiceSheetRef = useRef(voiceSheet);
   voiceSheetRef.current = voiceSheet;
+  // v4.13: the outline — the book's chapters, in a sheet over the reader.
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  // v4.13: the saved-word preview — tap a dotted word, see its meaning.
+  const [vocabPreview, setVocabPreview] = useState<{
+    record: VocabRecord;
+    top: number;
+    left: number;
+  } | null>(null);
   // v4.7: the voice — the read-aloud hook fills this in below.
   const voiceRef = useRef<ReturnType<typeof useReadAloud> | null>(null);
 
@@ -152,6 +162,9 @@ export default function Reader({
   // v4.9: the voice sheet's layer — a press on the page behind it must
   // not step the sentence while the picker is open.
   const voiceLayerRef = useRef<HTMLDivElement | null>(null);
+  // v4.13: the outline sheet's layer + the saved-word preview card.
+  const outlineLayerRef = useRef<HTMLDivElement | null>(null);
+  const vocabCardRef = useRef<HTMLDivElement | null>(null);
 
   // Refs mirroring state so native handlers always see fresh values.
   const posRef = useRef(pos);
@@ -168,6 +181,11 @@ export default function Reader({
   vocabRef.current = vocab;
   const askOpenRef = useRef(askOpen);
   askOpenRef.current = askOpen;
+  // v4.13: the outline sheet + the saved-word preview.
+  const outlineOpenRef = useRef(outlineOpen);
+  outlineOpenRef.current = outlineOpen;
+  const vocabPreviewRef = useRef(vocabPreview);
+  vocabPreviewRef.current = vocabPreview;
   // v4.7: the overflow menu — the chrome must not auto-hide under it.
   const menuOpenRef = useRef(menuOpen);
   menuOpenRef.current = menuOpen;
@@ -459,7 +477,9 @@ export default function Reader({
       popRef.current ||
       selRef.current ||
       meaningRef.current ||
-      askOpenRef.current
+      askOpenRef.current ||
+      outlineOpenRef.current ||
+      vocabPreviewRef.current
     )
       return;
     const step = nextAutoStep(partsRef.current, posRef.current);
@@ -558,6 +578,89 @@ export default function Reader({
     );
   }, [updateSettings]);
 
+  // --- v4.13: the outline — the book's chapters, in a sheet ---
+  const openOutline = useCallback(() => {
+    if (Date.now() < suppressUntil.current) return;
+    setMenuOpen(false);
+    // The sheet pauses playback transiently — it gives it back on close.
+    pauseAutoTransientRef.current();
+    voiceRef.current?.stop();
+    setOutlineOpen(true);
+    showChrome(3000);
+  }, [showChrome]);
+
+  const closeOutline = useCallback(() => {
+    setOutlineOpen(false);
+    maybeResumeAuto();
+  }, [maybeResumeAuto]);
+  const closeOutlineRef = useRef(closeOutline);
+  closeOutlineRef.current = closeOutline;
+
+  // --- v4.13: the saved-word preview ---
+  /** Tap a dotted word in the text and this card says what it means. */
+  const openVocabPreview = useCallback(
+    (
+      record: VocabRecord,
+      el: HTMLElement,
+      item: number,
+      part: number,
+    ) => {
+      // The card owns the pause while it is open: any transient pause the
+      // overlays were holding is dropped, so closing them must not resume.
+      autoResumeRef.current = false;
+      closePop();
+      collapseSelection(false);
+      closeMeaning();
+      clearAutoTimer();
+      if (autoPlayingRef.current) {
+        autoResumeRef.current = true;
+        setAutoPlaying(false);
+      }
+      // v4.7: the voice stops while the card is open.
+      voiceRef.current?.stop();
+      const r = el.getBoundingClientRect();
+      setVocabPreview({
+        record,
+        top: r.bottom + 12,
+        left: clamp(r.left, 12, window.innerWidth - 220),
+      });
+      // The word may sit on another sentence — the reader goes there.
+      if (item !== posRef.current.item) {
+        setPos({ item, part });
+      }
+    },
+    [closePop, collapseSelection, closeMeaning],
+  );
+
+  const closeVocabPreview = useCallback(() => {
+    vocabPreviewRef.current = null;
+    setVocabPreview(null);
+    maybeResumeAuto();
+    voiceRef.current?.resume();
+  }, [maybeResumeAuto]);
+
+  // Keep the preview card inside the screen — the word can sit anywhere.
+  useEffect(() => {
+    if (!vocabPreview) return;
+    const raf = requestAnimationFrame(() => {
+      const card = vocabCardRef.current;
+      if (!card) return;
+      const w = card.offsetWidth;
+      const h = card.offsetHeight;
+      setVocabPreview((prev) => {
+        if (!prev) return prev;
+        const left = Math.max(
+          12,
+          Math.min(prev.left, window.innerWidth - w - 12),
+        );
+        const top = Math.max(12, Math.min(prev.top, window.innerHeight - h - 12));
+        if (left === prev.left && top === prev.top) return prev;
+        return { ...prev, left, top };
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [vocabPreview]);
+
   // --- v4.8: read aloud ---
   // The hook owns the voice and the reading session; the reader tells it
   // what is on screen and lets it turn the page.
@@ -571,7 +674,9 @@ export default function Reader({
       !!selRef.current ||
       !!meaningRef.current ||
       !!askOpenRef.current ||
-      !!voiceSheetRef.current,
+      !!voiceSheetRef.current ||
+      !!outlineOpenRef.current ||
+      !!vocabPreviewRef.current,
     [],
   );
   /** The session turns the page itself: forward one part, or stop at the end. */
@@ -934,10 +1039,13 @@ export default function Reader({
       // v4: while a selection is active, a meaning card open, or the Ask
       // sheet open, every stepping input is suppressed. v4.1: also while a
       // long-press is pending or a selection drag is in progress.
+      // v4.13: the outline and the saved-word preview suppress it too.
       if (
         selRef.current ||
         meaningRef.current ||
         askOpenRef.current ||
+        outlineOpenRef.current ||
+        vocabPreviewRef.current ||
         lpRef.current ||
         extendRef.current
       )
@@ -960,10 +1068,13 @@ export default function Reader({
       // v4: a touch-drag that is actually selecting text must not step.
       // v4.1: the long-press pending state and the selection drag both
       // suppress stepping too.
+      // v4.13: the outline and the saved-word preview suppress it too.
       if (
         selRef.current ||
         meaningRef.current ||
         askOpenRef.current ||
+        outlineOpenRef.current ||
+        vocabPreviewRef.current ||
         lpRef.current ||
         extendRef.current
       )
@@ -1004,6 +1115,18 @@ export default function Reader({
       const i = Number(s.getAttribute("data-item"));
       const cur = posRef.current;
       const pl = partsRef.current;
+      // v4.13: a tap on a saved word (the dotted ones) shows what it
+      // means. It never steps the sentence and never opens the card.
+      const voc = t.closest?.(".voc") as HTMLElement | null;
+      if (voc) {
+        const norm = (voc.textContent ?? "").trim().toLowerCase();
+        const rec = vocabRef.current.find((v) => v.norm === norm);
+        const vp = voc.closest("[data-p]") as HTMLElement | null;
+        if (rec && vp) {
+          openVocabPreview(rec, voc, i, Number(vp.getAttribute("data-p")));
+          return;
+        }
+      }
       if (i !== cur.item) {
         // Adjacent item: jump to it (forward = part 0, back = last part).
         if (Math.abs(i - cur.item) === 1) {
@@ -1046,6 +1169,15 @@ export default function Reader({
       }
       if (meaningRef.current) {
         if (e.key === "Escape") closeMeaning();
+        return;
+      }
+      // v4.13: the saved-word preview and the outline own their keys.
+      if (vocabPreviewRef.current) {
+        if (e.key === "Escape") closeVocabPreview();
+        return;
+      }
+      if (outlineOpenRef.current) {
+        if (e.key === "Escape") closeOutlineRef.current();
         return;
       }
       if (askOpenRef.current) {
@@ -1229,6 +1361,8 @@ export default function Reader({
     hideChrome,
     collapseSelection,
     closeMeaning,
+    closeVocabPreview,
+    openVocabPreview,
     raiseCustomSelection,
     toggleAuto,
     closeAsk,
@@ -1413,7 +1547,7 @@ export default function Reader({
     <div
       data-testid="reader-root"
       className={`reader-root fixed inset-0 flex flex-col overflow-hidden${
-        pop || meaning || askOpen ? " fx" : ""
+        pop || meaning || askOpen || outlineOpen || vocabPreview ? " fx" : ""
       }`}
       // One dismissal mechanism for every floating card (v3.2, extended in
       // v4): while an overlay is open, a press ANYWHERE outside it (capture
@@ -1427,7 +1561,9 @@ export default function Reader({
           pillRef.current?.contains(t) ||
           meaningCardRef.current?.contains(t) ||
           askLayerRef.current?.contains(t) ||
-          voiceLayerRef.current?.contains(t)
+          voiceLayerRef.current?.contains(t) ||
+          outlineLayerRef.current?.contains(t) ||
+          vocabCardRef.current?.contains(t)
         )
           return;
         let closed = false;
@@ -1466,6 +1602,17 @@ export default function Reader({
         }
         if (askOpenRef.current) {
           closeAskRef.current();
+          closed = true;
+        }
+        // v4.13: a press outside the outline sheet closes it — the
+        // reader stays exactly where it was.
+        if (outlineOpenRef.current) {
+          closeOutlineRef.current();
+          closed = true;
+        }
+        // v4.13: a press outside the saved-word preview closes it.
+        if (vocabPreviewRef.current) {
+          closeVocabPreview();
           closed = true;
         }
         // v4.9: a press outside the voice picker closes it.
@@ -1514,6 +1661,7 @@ export default function Reader({
           onOpenSettings();
         }}
         onOpenVoice={openVoice}
+        onOpenOutline={openOutline}
         onOpenAssistant={() => {
           if (Date.now() < suppressUntil.current) return;
           // Leaving the page for a sheet stays paused — no resume later.
@@ -1887,6 +2035,40 @@ export default function Reader({
           />
         )}
       </div>
+
+      {/* v4.13: the outline — the book's chapters, in a sheet over the
+          reader. Pick one and the reader goes there; ✕ brings it back. */}
+      <div ref={outlineLayerRef}>
+        {outlineOpen && (
+          <OutlineSheet
+            items={items}
+            current={I}
+            onJump={(item) => {
+              closeReadingOverlays();
+              setPos({ item, part: 0 });
+              showChrome(1200);
+            }}
+            onClose={closeOutline}
+          />
+        )}
+      </div>
+
+      {/* v4.13: the saved-word preview — tap a dotted word in the text. */}
+      {vocabPreview && (
+        <div className="meaning-layer" data-testid="vocab-layer">
+          <VocabCard
+            ref={vocabCardRef}
+            record={vocabPreview.record}
+            style={{ top: vocabPreview.top, left: vocabPreview.left }}
+            onJump={() => {
+              const rec = vocabPreview.record;
+              closeVocabPreview();
+              jumpToPart(rec.item, rec.part);
+            }}
+            onClose={closeVocabPreview}
+          />
+        </div>
+      )}
 
       {/* v4: the Ask sheet. */}
       <div ref={askLayerRef}>

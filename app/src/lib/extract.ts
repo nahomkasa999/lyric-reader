@@ -37,16 +37,59 @@ interface TextItem {
   str: string;
   x: number;
   y: number;
+  /** the font height — how big this run of text is set */
+  size: number;
+}
+
+/** One line of a PDF page, with the type size it is set in. */
+interface PdfLine {
+  text: string;
+  size: number;
+}
+
+/**
+ * A line is a heading when its type is clearly bigger than the body
+ * text. 1.12 catches a chapter title set one point above the text
+ * without firing on a stray italic or a footnote marker.
+ */
+const HEADING_RATIO = 1.12;
+/** A heading is a title, not a sentence. */
+const HEADING_MAX_CHARS = 120;
+
+/** Font sizes are compared in half-points, so near-equal sizes match. */
+function roundSize(s: number): number {
+  return Math.round(s * 2) / 2;
+}
+
+function median(values: number[]): number {
+  if (!values.length) return 0;
+  const v = [...values].sort((a, b) => a - b);
+  const m = v.length >> 1;
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+
+/** The heading levels by size: the biggest type is level 1, then 2, 3. */
+function levelsBySize(sizes: number[]): Map<number, number> {
+  const distinct = [...new Set(sizes.map(roundSize))].sort((a, b) => b - a);
+  const map = new Map<number, number>();
+  distinct.forEach((s, i) => map.set(s, Math.min(3, i + 1)));
+  return map;
 }
 
 /** Rebuild reading-order lines from a PDF page's text items. */
-async function pageLines(page: any): Promise<string[]> {
+async function pageLines(page: any): Promise<PdfLine[]> {
   const tc = await page.getTextContent();
   const items: TextItem[] = [];
   for (const it of tc.items as any[]) {
     if (!("str" in it) || !it.str.trim()) continue;
     const t = it.transform as number[];
-    items.push({ str: it.str, x: t[4], y: t[5] });
+    const height = typeof it.height === "number" ? it.height : 0;
+    items.push({
+      str: it.str,
+      x: t[4],
+      y: t[5],
+      size: height > 0 ? height : Math.abs(t[3] ?? 0),
+    });
   }
   // Group into lines by y (tolerance), then order lines top->bottom,
   // items left->right.
@@ -59,15 +102,16 @@ async function pageLines(page: any): Promise<string[]> {
   }
   lines.sort((a, b) => b[0].y - a[0].y);
   return lines
-    .map((l) =>
-      l
+    .map((l) => ({
+      text: l
         .sort((a, b) => a.x - b.x)
         .map((i) => i.str)
         .join(" ")
         .replace(/\s+/g, " ")
         .trim(),
-    )
-    .filter(Boolean);
+      size: l.reduce((m, i) => Math.max(m, i.size), 0),
+    }))
+    .filter((l) => l.text);
 }
 
 export async function extractPdf(
@@ -75,19 +119,51 @@ export async function extractPdf(
   title: string,
 ): Promise<BookDoc> {
   const pdf = await pdfjsLib.getDocument({ data }).promise;
-  const items: Item[] = [];
+  // Every page is read first: the size of the body text is only known
+  // once the whole book has been seen, and the headings are ranked
+  // against it. The lines are kept per page, not joined, so the text
+  // that becomes a heading can still be found in it.
+  const pages: PdfLine[][] = [];
+  const allSizes: number[] = [];
   for (let n = 1; n <= pdf.numPages; n++) {
     const page = await pdf.getPage(n);
     const lines = await pageLines(page);
-    const blocks = parseTextBlocks(lines.join("\n"));
-    // One reader page per PDF page (the user's rule keeps real pages).
-    const drafts = flattenBlocks(blocks, splitSentences);
-    for (const d of drafts) items.push({ ...d, page: n - 1 });
+    pages.push(lines);
+    for (const l of lines) allSizes.push(l.size);
     page.cleanup();
   }
   // pdf.destroy() exists at runtime in pdfjs-dist v4/v5; the bundled
   // types omit it, so call it defensively.
   await (pdf as unknown as { destroy?: () => Promise<void> }).destroy?.().catch(() => {});
+
+  // The body text: the size most of the book is set in.
+  const body = median(allSizes);
+  // The headings, ranked: the biggest type is the book's top level.
+  const levels = levelsBySize(
+    allSizes.filter((s) => s >= body * HEADING_RATIO),
+  );
+
+  const items: Item[] = [];
+  pages.forEach((lines, n) => {
+    const headingLines: number[] = [];
+    lines.forEach((l, i) => {
+      if (l.size < body * HEADING_RATIO) return;
+      if (!l.text.trim() || l.text.length > HEADING_MAX_CHARS) return;
+      headingLines.push(i);
+    });
+    const blocks = parseTextBlocks(
+      lines.map((l) => l.text).join("\n"),
+      { headingLines, sizes: lines.map((l) => l.size) },
+    );
+    for (const b of blocks) {
+      if (b.kind === "heading" && typeof b.size === "number") {
+        b.level = levels.get(roundSize(b.size)) ?? 2;
+      }
+    }
+    // One reader page per PDF page (the user's rule keeps real pages).
+    const drafts = flattenBlocks(blocks, splitSentences);
+    for (const d of drafts) items.push({ ...d, page: n });
+  });
   return makeBook(title, items, "upload");
 }
 

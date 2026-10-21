@@ -183,3 +183,13 @@ export function ChatIcon() {
     </svg>
   );
 }
+
+/** v4.13: the outline — a list of lines. */
+export function ListIcon() {
+  return (
+    <svg {...base} width="18" height="18">
+      <path d="M9 6h11M9 12h11M9 18h11" />
+      <path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" />
+    </svg>
+  );
+}

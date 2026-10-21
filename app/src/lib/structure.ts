@@ -6,6 +6,17 @@ import type { Block } from "./types";
 const BULLET_RE = /^(\s*)([-*•–—]|\d+[.)]|[a-zA-Z][.)])\s+(.*)$/;
 const MD_HEADING_RE = /^(#{1,6})\s+(.*)$/;
 
+export interface ParseOptions {
+  /**
+   * 0-based line indices that are known headings. A PDF has no blank lines
+   * to spot a title by, so the reader tells the parser which lines were
+   * set in a bigger type — they become real headings.
+   */
+  headingLines?: number[];
+  /** the font size of each line, aligned with the lines of the text */
+  sizes?: number[];
+}
+
 /**
  * Heuristic heading detection for a lone short line surrounded by blank
  * lines (e.g. chapter titles in plain text). Conservative: short, no
@@ -27,10 +38,16 @@ function looksLikeHeading(line: string): boolean {
   return false;
 }
 
-export function parseTextBlocks(text: string): Block[] {
+export function parseTextBlocks(
+  text: string,
+  opts: ParseOptions = {},
+): Block[] {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   const blocks: Block[] = [];
   let para: string[] = [];
+  const known = opts.headingLines?.length
+    ? new Set(opts.headingLines)
+    : null;
 
   const flushPara = () => {
     const t = para.join(" ").replace(/\s+/g, " ").trim();
@@ -48,6 +65,18 @@ export function parseTextBlocks(text: string): Block[] {
     if (md) {
       flushPara();
       blocks.push({ kind: "heading", level: md[1].length, text: md[2].trim() });
+      continue;
+    }
+    // A line the caller knows is a heading (a PDF's bigger type) — it
+    // stands alone, not glued into the paragraph around it.
+    if (known?.has(i)) {
+      flushPara();
+      blocks.push({
+        kind: "heading",
+        level: 2,
+        text: line.trim(),
+        size: opts.sizes?.[i],
+      });
       continue;
     }
     const b = line.match(BULLET_RE);

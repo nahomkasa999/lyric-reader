@@ -13,6 +13,7 @@ import {
   ArrowIcon,
   ChatIcon,
   GearIcon,
+  ListIcon,
   MoreIcon,
   SavedIcon,
   SpeakerIcon,
@@ -30,6 +31,8 @@ interface Props {
   onOpenSettings: () => void;
   /** open the assistant (ask the whole library) */
   onOpenAssistant: () => void;
+  /** open the outline (the book's chapters) */
+  onOpenOutline: () => void;
   /** open the voice picker (choose the voice that reads) */
   onOpenVoice: () => void;
   /** −2 / +2 px on the reading size */
@@ -56,6 +59,7 @@ export default function TopBar({
   onOpenSaved,
   onOpenSettings,
   onOpenAssistant,
+  onOpenOutline,
   onOpenVoice,
   onTextSize,
   onReveal,
@@ -191,6 +195,14 @@ export default function TopBar({
           >
             <ChatIcon />
             <span>Assistant</span>
+          </button>
+          <button
+            className="menu-row"
+            data-testid="outline-btn"
+            onClick={onOpenOutline}
+          >
+            <ListIcon />
+            <span>Outline</span>
           </button>
           <button
             className="menu-row"

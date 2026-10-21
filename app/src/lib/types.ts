@@ -12,6 +12,12 @@ export interface Block {
   /** heading depth (1-6) or bullet nesting level (0-based) */
   level: number;
   text: string;
+  /**
+   * The font size this block was set in (PDFs only) — the outline uses it
+   * to rank headings: the biggest type in the book is level 1, the next
+   * one down level 2, and so on.
+   */
+  size?: number;
 }
 
 export interface Item {
