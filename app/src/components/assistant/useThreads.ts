@@ -26,19 +26,20 @@ export function useThreads(bookId?: string): ThreadsState {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
 
+  // The threads of THIS book — a different book has its own.
   useEffect(() => {
     let cancelled = false;
-    listThreads()
+    listThreads(bookId)
       .then((rows) => {
         if (cancelled) return;
         setThreads(rows);
-        setThreadId((cur) => cur ?? rows[0]?.id ?? null);
+        setThreadId((cur) => rows.some((t) => t.id === cur) ? cur : rows[0]?.id ?? null);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [bookId]);
 
   const newThread = useCallback(() => {
     const t = makeThread(bookId ? "book" : "library", bookId);

@@ -118,9 +118,9 @@
 }
 
 .chat-toggle[data-on="true"] {
-  color: #cfcbfb;
-  border-color: rgb(91 79 233 / 0.6);
-  background: rgb(91 79 233 / 0.22);
+  color: #fff;
+  border-color: #7c3aed;
+  background: #7c3aed;
 }
 
 .chat-toggle-label {

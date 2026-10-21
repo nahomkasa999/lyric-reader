@@ -732,3 +732,31 @@ five lines and the meaning card's buttons still want a look on the
 device. The rate-limit work is a self-tuning back-off, not a promise
 from Google about what a free key may do; the truth is now shown in
 the app instead of hidden.
+
+---
+
+## v4.14 — the assistant is about ONE book (Oct 21, 2026)
+
+The assistant was cross-sectional: it searched the whole library and
+its conversations were shared by every book. Now it is about the book
+the reader has open.
+
+| What | Before | Now |
+|---|---|---|
+| The passages it may use | every passage of every book | only the passages of the book on screen |
+| The conversations | every thread of the library | the threads of that book |
+| The passages it says it has | every book's | that book's |
+| The empty state | "Ask your library" | "Ask about «the book»" |
+
+The library-wide search is still there for the case where no book is
+open (`retrieve` with no `bookId` searches everything) — but the "?"
+always opens a book, so the reader never sees a cross-book answer.
+
+Also in this round: the spoiler switch is purple when it is on, and the
+conversation titles sit on the right with the drawer's padding back.
+
+**Verified:** `tsc -b` clean · `vitest` 328 passed / 3 skipped (the
+new `tests/threads.test.ts` covers the per-book conversations, and
+`tests/retrieval.test.ts` now proves that another book is never
+reached into) · `npm run build` green · no `any`/`unknown`/`never` in
+`app/src`.

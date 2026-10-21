@@ -45,9 +45,13 @@ const BOOK_BOOST = 0.06;
 /**
  * Rank the passages — pure, so it can be tested on its own.
  *
- * Every passage of every book is a candidate: the keyword lane works
- * whether a passage was embedded or not. A passage scores nothing when
- * it matches neither lane, and it is dropped.
+ * The conversation is about ONE book — the one the reader has open — so
+ * the only candidates are that book's passages. Nothing from another
+ * book can answer, and nothing from another book can be quoted.
+ *
+ * Every passage of that book is a candidate, embedded or not: the
+ * keyword lane works whether a passage was embedded or not. A passage
+ * scores nothing when it matches neither lane, and it is dropped.
  *
  * The question's own vector is optional: without it the semantic lane
  * is empty and the keyword lane does the work.
@@ -62,13 +66,14 @@ export function rankPassages(
   const topK = opts.topK ?? 8;
   const hits: SearchHit[] = [];
   for (const chunk of chunks) {
-    // The boundary: the book on screen must not give away what comes
-    // after the page the reader is on. Other books are not filtered —
-    // they are separate books the reader added.
+    // The book on screen: the conversation is about THIS book, so
+    // another book's passages are not candidates at all.
+    if (opts.bookId !== undefined && chunk.bookId !== opts.bookId) continue;
+    // The boundary: the book must not give away what comes after the
+    // page the reader is on.
     if (
       opts.bookId !== undefined &&
       opts.maxItem !== undefined &&
-      chunk.bookId === opts.bookId &&
       chunk.from > opts.maxItem
     ) {
       continue;

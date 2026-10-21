@@ -116,7 +116,7 @@ export default function AssistantSheet({
           >
             {a.messages.length === 0 && (
               <div className="chat-empty">
-                <p>Ask your library</p>
+                <p>Ask about {bookTitle ? `«${bookTitle}»` : "this book"}</p>
                 <div className="chat-suggest">
                   {a.suggestions.map((s, i) => (
                     <button
@@ -181,6 +181,9 @@ export default function AssistantSheet({
             </button>
           )}
           <Composer
+            placeholder={
+              bookTitle ? `Ask about «${bookTitle}»…` : "Ask your library…"
+            }
             value={a.input}
             onChange={a.setInput}
             onSend={() => send(a.input)}

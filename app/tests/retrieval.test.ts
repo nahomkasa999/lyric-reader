@@ -82,7 +82,9 @@ describe("the boundary", () => {
     expect(hits.map((h) => h.chunk.id)).toEqual(["b1:1"]);
   });
 
-  it("keeps the passages of the other books", () => {
+  it("never reaches into another book", () => {
+    // The conversation is about the book on screen: another book's
+    // passages are not candidates at all.
     const other = chunk({
       id: "b2:0",
       bookId: "b2",
@@ -94,6 +96,21 @@ describe("the boundary", () => {
       new Map(),
       "brother house morning",
       { bookId: "b1", maxItem: 120 },
+    );
+    expect(hits).toEqual([]);
+  });
+
+  it("answers from the whole library when no book is open", () => {
+    const other = chunk({
+      id: "b2:0",
+      bookId: "b2",
+      text: "The brother left the house that morning.",
+    });
+    const hits = rankPassages(
+      [other],
+      new Map(),
+      "brother house morning",
+      {},
     );
     expect(hits.map((h) => h.chunk.id)).toEqual(["b2:0"]);
   });
@@ -110,12 +127,12 @@ describe("the boundary", () => {
 });
 
 describe("the book on screen", () => {
-  it("wins the tie", () => {
+  it("is the only book in the conversation", () => {
     const mine = chunk({ id: "b1:0", text: "the same words here" });
     const other = chunk({ id: "b2:0", bookId: "b2", text: "the same words here" });
     const hits = rankPassages([other, mine], new Map(), "same words here", {
       bookId: "b1",
     });
-    expect(hits[0].chunk.id).toBe("b1:0");
+    expect(hits.map((h) => h.chunk.id)).toEqual(["b1:0"]);
   });
 });

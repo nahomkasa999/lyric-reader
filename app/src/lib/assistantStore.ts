@@ -83,10 +83,33 @@ async function getAll<T>(store: string): Promise<T[]> {
   });
 }
 
-/** Every thread, newest first. */
-export async function listThreads(): Promise<Thread[]> {
+/**
+ * The threads of one book — pure, so it can be tested.
+ *
+ * A conversation belongs to the book it was about. The reader who
+ * opens a book sees that book's conversations, and the assistant
+ * answers from that book only.
+ */
+export function threadsOfBook(
+  threads: Thread[],
+  bookId?: string,
+): Thread[] {
+  const mine = bookId
+    ? threads.filter((t) => t.bookId === bookId)
+    : threads;
+  return mine.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/**
+ * Every thread, newest first.
+ *
+ * The conversations belong to a book: a reader who opens a book sees
+ * the threads of THAT book. Without a book (the library) every thread
+ * is listed.
+ */
+export async function listThreads(bookId?: string): Promise<Thread[]> {
   const all = await getAll<Thread>("threads").catch(() => []);
-  return all.sort((a, b) => b.updatedAt - a.updatedAt);
+  return threadsOfBook(all, bookId);
 }
 
 /** One thread by id. */

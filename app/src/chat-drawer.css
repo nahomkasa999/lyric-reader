@@ -30,7 +30,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 18px 0 10px;
+  padding: 18px 14px 10px;
   font-size: 15px;
   font-weight: 600;
 }
@@ -38,7 +38,7 @@
 .chat-drawer-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 0 16px;
+  padding: 0 14px 16px;
 }
 
 .chat-drawer-row {
@@ -48,7 +48,7 @@
   width: 100%;
   padding: 11px 0;
   border-radius: 0;
-  text-align: left;
+  text-align: right;
 }
 
 .chat-drawer-row.active {
@@ -63,6 +63,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: right;
 }
 
 .chat-drawer-time {
@@ -84,6 +85,7 @@
 
 .chat-drawer-empty {
   padding: 24px 0;
+  text-align: right;
   color: rgb(255 255 255 / 0.55);
   font-size: 13px;
 }

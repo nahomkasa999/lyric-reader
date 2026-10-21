@@ -37,7 +37,7 @@ export function useAssistant(opts: AssistantOptions = {}): AssistantState {
   const [spoilers, setSpoilers] = useState(false);
   const [hasKey, setHasKey] = useState(() => getEffectiveApiKey().length > 0);
   const threads = useThreads(bookId);
-  const library = useAssistantLibrary();
+  const library = useAssistantLibrary(bookId);
   const suggestions = useSuggestions(bookId);
   const answers = useAnswers({
     bookId,

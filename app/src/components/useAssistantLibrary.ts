@@ -17,7 +17,6 @@ import {
 } from "../lib/indexBook";
 import type { IndexProgress } from "../lib/indexJobs";
 import { passageCount } from "../lib/passages";
-import { listBooks } from "../lib/db";
 import { isOnline } from "../lib/online";
 
 export interface AssistantLibrary {
@@ -41,7 +40,14 @@ export interface AssistantLibrary {
   online: boolean;
 }
 
-export function useAssistantLibrary(): AssistantLibrary {
+/**
+ * The knowledge base of ONE book.
+ *
+ * The assistant is about the book the reader has open, so the numbers
+ * it shows are that book's: how many of its passages are searchable,
+ * and how far its embedding has got.
+ */
+export function useAssistantLibrary(bookId?: string): AssistantLibrary {
   const [indexed, setIndexed] = useState(0);
   const [jobs, setJobs] = useState<IndexProgress[]>([]);
   const [indexing, setIndexing] = useState(false);
@@ -50,18 +56,21 @@ export function useAssistantLibrary(): AssistantLibrary {
   useEffect(() => {
     let cancelled = false;
     const count = () => {
-      listBooks()
-        .then((metas) =>
-          Promise.all(metas.map((m) => passageCount(m.id).catch(() => 0))),
-        )
-        .then((counts) => {
-          if (!cancelled) setIndexed(counts.reduce((a, b) => a + b, 0));
+      if (!bookId) {
+        if (!cancelled) setIndexed(0);
+        return;
+      }
+      passageCount(bookId)
+        .then((n) => {
+          if (!cancelled) setIndexed(n);
         })
         .catch(() => {});
     };
     count();
     // The index grows while a book is being indexed — keep the count true.
     const off = onIndexProgress((p) => {
+      // The strip is about the book on screen.
+      if (bookId && p.bookId !== bookId) return;
       setJobs((prev) => {
         const rest = prev.filter((j) => j.bookId !== p.bookId);
         return [p, ...rest].sort((a, b) => a.bookId.localeCompare(b.bookId));
@@ -72,7 +81,7 @@ export function useAssistantLibrary(): AssistantLibrary {
       cancelled = true;
       off();
     };
-  }, []);
+  }, [bookId]);
 
   const indexLibrary = useCallback(() => {
     setIndexing(true);
