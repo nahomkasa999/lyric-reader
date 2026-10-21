@@ -1047,10 +1047,10 @@
   pointer-events: auto;
   transition: opacity 250ms ease, visibility 0s;
 }
+/* While it is reading, the button only changes its look — it still
+   hides with the rest of the chrome, so nothing sits on the page while
+   the book reads itself. */
 .speak-btn.on {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
   border-color: var(--primary);
   color: var(--primary);
 }

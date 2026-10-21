@@ -1571,7 +1571,12 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         canSpeak={voice.supported}
         onToggleSpeak={() => {
           if (Date.now() < suppressUntil.current) return;
+          const wasReading = voiceRef.current?.session;
           voiceRef.current?.toggle();
+          // Manners: starting a reading hides the chrome — full focus,
+          // the same way auto-scroll does. The standard reveal gesture
+          // still reaches the button when the user wants to stop it.
+          if (!wasReading) hideChrome();
         }}
       />
 
