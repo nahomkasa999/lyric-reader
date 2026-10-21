@@ -22,6 +22,9 @@ interface Props {
   strip?: React.ReactNode;
 }
 
+/** Five lines is as tall as the composer gets. */
+const MAX_HEIGHT = 120;
+
 export default function Composer({
   value,
   onChange,
@@ -35,12 +38,14 @@ export default function Composer({
 }: Props) {
   const areaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // The textarea grows with the text, up to five lines.
+  // The textarea grows with the text, up to five lines. It is measured
+  // from a collapsed box, so the height is always the height of the
+  // text and never more.
   useEffect(() => {
     const el = areaRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
   }, [value]);
 
   return (

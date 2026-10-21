@@ -86,6 +86,8 @@ export default function Reader({
   const [outlineOpen, setOutlineOpen] = useState(false);
 
   const autoPlayingRef = useRef(false);
+  // The voice is reading: the auto-scroll must not outrun it.
+  const voiceBusyRef = useRef(false);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -281,34 +283,6 @@ export default function Reader({
     [items, closeReadingOverlays, showChrome],
   );
 
-  // --- v4.4: auto-scroll (auto-advance, part by part) ---
-  const auto = useReaderAutoScroll({
-    partsRef,
-    posRef: bookState.posRef,
-    item: I,
-    part: P,
-    popRef,
-    selRef,
-    meaningRef,
-    assistantOpenRef,
-    outlineOpenRef,
-    vocabPreviewRef,
-    setPos,
-    setSpeedFlash,
-    hideChrome,
-    closeReadingOverlays,
-    speed: settings.autoScrollSpeed,
-    updateSpeed: (v) => updateSettings({ autoScrollSpeed: v }),
-    bookId,
-    maybeResumeAutoRef,
-    pauseAutoTransientRef,
-  });
-  const autoPlaying = auto.playing;
-  const stopAutoHard = auto.stopHard;
-  const toggleAuto = auto.toggle;
-  const cycleSpeed = auto.cycleSpeed;
-  autoPlayingRef.current = auto.playing;
-
   // --- v4.8: read aloud ---
   const readerVoice = useReaderVoice({
     partsRef,
@@ -339,6 +313,37 @@ export default function Reader({
   const openVoice = readerVoice.openVoice;
   const closeVoiceSheet = readerVoice.closeVoiceSheet;
   const closeVoiceSheetRef = readerVoice.closeVoiceSheetRef;
+
+  // --- v4.4: auto-scroll (auto-advance, part by part) ---
+  const auto = useReaderAutoScroll({
+    partsRef,
+    posRef: bookState.posRef,
+    item: I,
+    part: P,
+    popRef,
+    selRef,
+    meaningRef,
+    assistantOpenRef,
+    outlineOpenRef,
+    vocabPreviewRef,
+    setPos,
+    setSpeedFlash,
+    hideChrome,
+    closeReadingOverlays,
+    speed: settings.autoScrollSpeed,
+    updateSpeed: (v) => updateSettings({ autoScrollSpeed: v }),
+    bookId,
+    voiceBusy: voice.speaking || voice.session,
+    voiceBusyRef,
+    maybeResumeAutoRef,
+    pauseAutoTransientRef,
+  });
+  const autoPlaying = auto.playing;
+  const stopAutoHard = auto.stopHard;
+  const toggleAuto = auto.toggle;
+  const cycleSpeed = auto.cycleSpeed;
+  autoPlayingRef.current = auto.playing;
+  voiceBusyRef.current = voice.speaking || voice.session;
 
   // --- v4.13: the outline — the book's chapters, in a sheet ---
   const openOutline = useCallback(() => {

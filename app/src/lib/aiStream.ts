@@ -8,7 +8,7 @@
 // shown, a second provider would say something different, and the
 // reader would see two answers spliced together.
 import { GeminiError } from "./errors";
-import { getEffectiveApiKey } from "./apikey";
+import { getApiKeys } from "./apikey";
 import { geminiStream } from "./geminiStream";
 import { openRouterStream } from "./openRouterStream";
 import { getOpenRouterKey, hasOpenRouterKey } from "./openrouter";
@@ -30,19 +30,21 @@ export interface StreamOpts {
  * as it arrives.
  */
 export async function aiStream(opts: StreamOpts): Promise<string> {
-  const geminiKey = opts.apiKey ?? getEffectiveApiKey();
+  // The reader's own key wins; the keys after it are the spares.
+  const keys = opts.apiKey ? [opts.apiKey] : getApiKeys();
   const orKey = hasOpenRouterKey() ? getOpenRouterKey() : "";
   let spoken = false;
+  let firstError: Error | null = null;
   const onToken = (token: string) => {
     spoken = true;
     opts.onToken(token);
   };
 
-  if (geminiKey) {
+  for (const key of keys) {
     try {
       return await geminiStream(
         {
-          key: geminiKey,
+          key,
           system: opts.system,
           messages: opts.messages,
           maxTokens: opts.maxTokens,
@@ -52,11 +54,20 @@ export async function aiStream(opts: StreamOpts): Promise<string> {
         onToken,
       );
     } catch (e) {
+      if (!firstError) firstError = e instanceof Error ? e : new Error("The AI did not answer.");
       // A stopped answer is not a failure to work around, and a half
       // spoken answer must not be restarted somewhere else.
       if (opts.signal?.aborted) throw e;
-      if (spoken || !orKey) throw e;
-      return openRouterStream(
+      if (spoken) throw e;
+      // Only a RATE LIMIT is worth trying with the spare key — a bad key
+      // or a broken request fails the same way with the next one.
+      if (!(e instanceof GeminiError) || e.code !== "quota") break;
+    }
+  }
+
+  if (orKey) {
+    try {
+      return await openRouterStream(
         {
           key: orKey,
           system: opts.system,
@@ -67,25 +78,16 @@ export async function aiStream(opts: StreamOpts): Promise<string> {
         },
         onToken,
       );
+    } catch {
+      throw firstError ?? new GeminiError("unknown", "The AI did not answer.");
     }
   }
 
-  if (orKey) {
-    return openRouterStream(
-      {
-        key: orKey,
-        system: opts.system,
-        messages: opts.messages,
-        maxTokens: opts.maxTokens,
-        signal: opts.signal,
-        fetchFn: opts.fetchFn,
-      },
-      onToken,
-    );
-  }
-
-  throw new GeminiError(
-    "no-key",
-    "Add a Gemini key (or an OpenRouter key) in Settings to use the AI.",
+  throw (
+    firstError ??
+    new GeminiError(
+      "no-key",
+      "Add a Gemini key (or an OpenRouter key) in Settings to use the AI.",
+    )
   );
 }

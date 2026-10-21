@@ -57,9 +57,10 @@ export default function ThreadDrawer({
       </div>
       <div className="chat-drawer-list">
         {threads.length === 0 && (
-          <p className="chat-drawer-empty">
-            No conversations yet — ask something.
-          </p>
+          <div className="chat-drawer-empty">
+            <p className="chat-drawer-empty-title">Starting conversations</p>
+            <p>Ask something — every question you ask opens a thread.</p>
+          </div>
         )}
         {threads.map((t) => (
           <div

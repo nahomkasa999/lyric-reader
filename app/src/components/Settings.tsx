@@ -22,8 +22,11 @@ import {
 import {
   getApiKey,
   getEnvApiKey,
+  getSecondApiKey,
   removeApiKey,
+  removeSecondApiKey,
   setApiKey,
+  setSecondApiKey,
 } from "../lib/apikey";
 import { testApiKey } from "../lib/gemini";
 import { kickIndexer } from "../lib/indexBook";
@@ -81,12 +84,14 @@ function usePrefersReducedMotion(): boolean {
 
 function AiKeySection() {
   const [key, setKey] = useState(() => getApiKey());
+  const [spare, setSpare] = useState(() => getSecondApiKey());
   const [show, setShow] = useState(false);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   // v4.3: env key is baked at build time — static for the session.
   const [hasEnvKey] = useState(() => getEnvApiKey().length > 0);
   const personal = key.trim().length > 0;
+  const hasSpare = spare.trim().length > 0;
 
   return (
     <>
@@ -127,6 +132,47 @@ function AiKeySection() {
             {show ? "Hide" : "Show"}
           </button>
         </div>
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            data-testid="gemini-key-2"
+            type={show ? "text" : "password"}
+            value={spare}
+            onChange={(e) => {
+              setSpare(e.target.value);
+              setSecondApiKey(e.target.value);
+              kickIndexer();
+            }}
+            placeholder="A second key — for when the first is rate-limited"
+            autoComplete="off"
+            spellCheck={false}
+            className="set-field mono min-w-0 flex-1"
+            aria-label="Second Gemini API key"
+          />
+          {hasSpare && (
+            <button
+              data-testid="gemini-remove-key-2"
+              onClick={() => {
+                removeSecondApiKey();
+                setSpare("");
+              }}
+              className="set-chip shrink-0"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+        <p
+          data-testid="gemini-key-state"
+          className="mt-2 text-xs leading-relaxed text-muted-foreground"
+        >
+          {personal
+            ? hasSpare
+              ? "Using your own key, with a spare for a rate limit."
+              : "Using your own key. Add a second one and the app will use it when the first is rate-limited."
+            : hasEnvKey
+              ? "Using the app's key — it is shared by everyone who has the app, so it hits its limit. Paste your own key above."
+              : "No key yet — paste one above and the AI switches on."}
+        </p>
         <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
           Free key from{" "}
           <a

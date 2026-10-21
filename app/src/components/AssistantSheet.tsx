@@ -13,6 +13,7 @@ import ChatSheet from "./assistant/ChatSheet";
 import Composer from "./assistant/Composer";
 import IndexStrip from "./assistant/IndexStrip";
 import Message from "./assistant/Message";
+import SpoilersToggle from "./assistant/SpoilersToggle";
 import Markdown from "./assistant/Markdown";
 import { NewThreadButton, ThreadsButton } from "./assistant/SheetHeader";
 import ThreadDrawer from "./assistant/ThreadDrawer";
@@ -58,12 +59,15 @@ export default function AssistantSheet({
     </>
   );
   const headerRight = (
-    <NewThreadButton
-      onNewThread={() => {
-        a.newThread();
-        setDrawerOpen(false);
-      }}
-    />
+    <>
+      <SpoilersToggle on={a.spoilers} onChange={a.setSpoilers} />
+      <NewThreadButton
+        onNewThread={() => {
+          a.newThread();
+          setDrawerOpen(false);
+        }}
+      />
+    </>
   );
 
   return (
@@ -109,15 +113,6 @@ export default function AssistantSheet({
               setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
             }}
           >
-            <label className="chat-spoilers">
-              <input
-                type="checkbox"
-                data-testid="assistant-spoilers"
-                checked={a.spoilers}
-                onChange={(e) => a.setSpoilers(e.target.checked)}
-              />
-              <span>Allow spoilers</span>
-            </label>
             {a.messages.length === 0 && (
               <div className="chat-empty">
                 <p>Ask your library</p>
@@ -135,7 +130,16 @@ export default function AssistantSheet({
               </div>
             )}
             {a.messages.map((m, i) => (
-              <Message key={i} message={m} onJump={onJump} />
+              <Message
+                key={i}
+                message={m}
+                onJump={onJump}
+                editing={a.editing === i}
+                onStartEdit={() => a.startEdit(i)}
+                onCancelEdit={a.cancelEdit}
+                onSaveEdit={a.saveEdit}
+                onRemove={() => a.removeMessage(i)}
+              />
             ))}
             {a.streaming && (
               <div data-testid="assistant-answer" className="chat-ai">
@@ -180,7 +184,7 @@ export default function AssistantSheet({
             onChange={a.setInput}
             onSend={() => send(a.input)}
             onStop={a.stop}
-            streaming={a.streaming}
+            streaming={a.streaming || a.sending}
             onFocus={() => drag.snapTo("full")}
             strip={
               <IndexStrip

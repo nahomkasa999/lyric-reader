@@ -8,6 +8,7 @@
 // The row is the whole truth about a book's job. Nothing else is kept
 // in memory, because the phone can be closed between two batches.
 import { openDb } from "./db";
+import { EMBED_BATCH, MIN_GAP_MS } from "./indexPlan";
 
 /** Where a job stands. */
 export type IndexState = "pending" | "running" | "paused" | "failed" | "done";
@@ -26,6 +27,14 @@ export interface IndexJobRow {
   updatedAt: number;
   /** epoch ms; 0 = eligible now */
   nextTryAt: number;
+  /**
+   * How many passages go into one request. It shrinks when the API
+   * says the batch is too big for the quota — a rate limit on a fresh
+   * key usually means the batch, not the key.
+   */
+  batch: number;
+  /** How long to wait between two requests, in ms. */
+  gapMs: number;
 }
 
 /** How the queue is doing — what the library and the sheet show. */
@@ -50,6 +59,8 @@ export function newJob(bookId: string, total: number): IndexJobRow {
     lastError: null,
     updatedAt: Date.now(),
     nextTryAt: 0,
+    batch: EMBED_BATCH,
+    gapMs: MIN_GAP_MS,
   };
 }
 

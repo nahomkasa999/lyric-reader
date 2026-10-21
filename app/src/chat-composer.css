@@ -16,7 +16,8 @@
   gap: 8px;
   min-height: 52px;
   padding: 8px 8px 8px 16px;
-  border-radius: 999px;
+  /* A rounded rectangle, not a blob: it keeps its shape when it grows. */
+  border-radius: 26px;
   background: rgb(255 255 255 / 0.06);
   border: 1px solid rgb(255 255 255 / 0.12);
 }
@@ -33,6 +34,7 @@
   line-height: 1.4;
   padding: 6px 0;
   max-height: 120px;
+  overflow-y: auto;
 }
 
 .chat-input::placeholder {
@@ -95,21 +97,23 @@
 }
 
 /* The spoiler switch, and the pill that jumps back to the newest. */
-.chat-spoilers {
+.chat-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  align-self: flex-start;
-  padding: 5px 10px;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
   border-radius: 999px;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: rgb(255 255 255 / 0.04);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(255 255 255 / 0.06);
   color: rgb(255 255 255 / 0.55);
   font-size: 12px;
 }
 
-.chat-spoilers input {
-  accent-color: #5b4fe9;
+.chat-toggle.on {
+  color: #cfcbfb;
+  border-color: rgb(91 79 233 / 0.6);
+  background: rgb(91 79 233 / 0.22);
 }
 
 .chat-latest {

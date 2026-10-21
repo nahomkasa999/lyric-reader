@@ -37,6 +37,9 @@ export interface AutoScrollOptions {
   updateSpeed: (v: number) => void;
   /** a new book starts paused */
   bookId: string;
+  /** the voice is reading right now — the timer must not outrun it */
+  voiceBusy: boolean;
+  voiceBusyRef: RefObject<boolean>;
   /** the two callbacks the overlays call */
   maybeResumeAutoRef: RefObject<() => void>;
   pauseAutoTransientRef: RefObject<() => void>;
@@ -92,6 +95,10 @@ export function useReaderAutoScroll(opts: AutoScrollOptions): AutoScroll {
         opts.vocabPreviewRef.current
       )
         return;
+      // The voice is reading: the page turns when the sentence has been
+      // said, not on a guess. The timer is done — the voice's own
+      // advance re-arms it.
+      if (opts.voiceBusyRef.current) return;
       const step = nextAutoStep(opts.partsRef.current, opts.posRef.current);
       if ("end" in step) {
         // End of book: stop, icon back to ▶.
@@ -173,10 +180,11 @@ export function useReaderAutoScroll(opts: AutoScrollOptions): AutoScroll {
   opts.maybeResumeAutoRef.current = maybeResumeAuto;
   opts.pauseAutoTransientRef.current = pauseAutoTransient;
 
-  // Manual steps while playing re-arm the timer for the new part.
+  // Manual steps while playing re-arm the timer for the new part — and
+  // so does the voice starting or stopping.
   useEffect(() => {
     if (playing) arm();
-  }, [opts.item, opts.part, playing, arm]);
+  }, [opts.item, opts.part, opts.voiceBusy, playing, arm]);
 
   // Speed changes mid-playback re-time the current part.
   useEffect(() => {

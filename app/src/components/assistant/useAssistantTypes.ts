@@ -37,6 +37,15 @@ export interface AssistantState {
   hasKey: boolean;
   /** the sources of the last answer */
   sources: Source[];
+  /** the index of the message being rewritten */
+  editing: number | null;
+  /** rewrite a question */
+  startEdit: (index: number) => void;
+  cancelEdit: () => void;
+  /** ask the question again, with new words */
+  saveEdit: (text: string) => void;
+  /** take a message back */
+  removeMessage: (index: number) => void;
   /** may the answer mention what happens later? */
   spoilers: boolean;
   setSpoilers: (v: boolean) => void;

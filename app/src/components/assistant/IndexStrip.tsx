@@ -27,6 +27,18 @@ export default function IndexStrip({ jobs, online, onPause, onRetry }: Props) {
     );
   }
 
+  // A rate limit is not a failure — the queue is waiting its turn. Say
+  // so, so the reader knows the app is working, not stuck.
+  const throttled = waiting.find((j) => j.state === "pending" && j.error);
+  if (throttled) {
+    return (
+      <div data-testid="assistant-index-strip" className="chat-strip">
+        <span>{throttled.error}</span>
+        <button onClick={onPause}>Pause</button>
+      </div>
+    );
+  }
+
   if (!online) {
     return (
       <div data-testid="assistant-index-strip" className="chat-strip">

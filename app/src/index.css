@@ -863,6 +863,17 @@
 }
 .meaning-card {
   max-width: min(86vw, 340px);
+  /* A long card scrolls INSIDE itself — the buttons under it stay put,
+     so "Save word" is never below the edge of the screen. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.meaning-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .meaning-word {
   font-size: var(--lr-main-size);
@@ -919,6 +930,8 @@
   display: flex;
   gap: 8px;
   margin: 12px 8px 6px;
+  flex-shrink: 0;
+  background: var(--card);
 }
 .meaning-save {
   flex: 1;

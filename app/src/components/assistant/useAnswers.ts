@@ -3,7 +3,7 @@
 // The three actions that talk to the model live together, so the hook
 // that holds the state (components/useAssistant.ts) stays small: it
 // owns the screen, this owns the conversation.
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { GeminiError } from "../../lib/errors";
 import { getEffectiveApiKey } from "../../lib/apikey";
 import { answerQuestion } from "../../lib/answerQuestion";
@@ -33,6 +33,14 @@ export interface Answers {
   retry: () => void;
   recap: () => Promise<void>;
   stop: () => void;
+  /** the index of the message being rewritten */
+  editing: number | null;
+  startEdit: (index: number) => void;
+  cancelEdit: () => void;
+  /** ask the question again, with new words */
+  saveEdit: (text: string) => void;
+  /** take a message back */
+  removeMessage: (index: number) => void;
 }
 
 /** Why did the last request fail? */
@@ -48,6 +56,7 @@ const NO_KEY =
 
 export function useAnswers(opts: AnswerOptions): Answers {
   const { bookId, bookTitle, threads } = opts;
+  const [editing, setEditing] = useState<number | null>(null);
   const itemRef = useRef(opts.item);
   itemRef.current = opts.item;
   const spoilersRef = useRef(opts.spoilers);
@@ -212,5 +221,54 @@ export function useAnswers(opts: AnswerOptions): Answers {
     ctrl.current?.abort();
   }, []);
 
-  return { send, retry, recap, stop };
+  /** Rewrite a question: the old answer goes, the new one comes. */
+  const saveEdit = useCallback(
+    (text: string) => {
+      const q = text.trim();
+      const index = editing;
+      setEditing(null);
+      if (!q || index === null) return;
+      const messages = threads.thread?.messages ?? [];
+      const before = messages.slice(0, index);
+      const base = threads.thread;
+      if (!base) return;
+      // The thread keeps everything before the question, and the new
+      // words take its place.
+      threads.commit({
+        ...base,
+        messages: [...before, { role: "user", text: q, at: Date.now() }],
+      });
+      opts.setSending(true);
+      opts.setError(null);
+      void answer(q, before);
+    },
+    [answer, editing, opts, threads],
+  );
+
+  /** Take a message back — the question and the answer it produced. */
+  const removeMessage = useCallback(
+    (index: number) => {
+      const messages = threads.thread?.messages ?? [];
+      const base = threads.thread;
+      if (!base) return;
+      const kept = messages.filter(
+        (_, i) => i !== index && !(i === index + 1 && messages[i].role === "ai"),
+      );
+      threads.commit({ ...base, messages: kept });
+      setEditing(null);
+    },
+    [threads],
+  );
+
+  return {
+    send,
+    retry,
+    recap,
+    stop,
+    editing,
+    startEdit: setEditing,
+    cancelEdit: () => setEditing(null),
+    saveEdit,
+    removeMessage,
+  };
 }

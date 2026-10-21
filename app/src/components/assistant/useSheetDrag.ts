@@ -81,7 +81,13 @@ export function useSheetDrag(onClose: () => void): SheetDrag {
   const apply = useCallback((y: number) => {
     yRef.current = y;
     const sheet = sheetRef.current;
-    if (sheet) sheet.style.transform = `translate3d(0, ${y}px, 0)`;
+    if (sheet) {
+      sheet.style.transform = `translate3d(0, ${y}px, 0)`;
+      // The sheet is exactly as tall as the screen it shows, so the
+      // composer sits on the bottom edge of the visible sheet — at peek
+      // as well as at full.
+      sheet.style.height = `${Math.max(0, window.innerHeight - y)}px`;
+    }
     const backdrop = backdropRef.current;
     if (backdrop) backdrop.style.opacity = String(backdropOf(y));
   }, []);

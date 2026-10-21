@@ -11,7 +11,7 @@
 // many passages are embedded, and the next run picks up from there.
 import { getBook, listBooks } from "./db";
 import { embedTexts } from "./embeddings";
-import { getEffectiveApiKey } from "./apikey";
+import { getApiKeys, getEffectiveApiKey } from "./apikey";
 import { GeminiError } from "./gemini";
 import {
   deleteJob,
@@ -23,7 +23,16 @@ import {
   type IndexJobRow,
   type IndexProgress,
 } from "./indexJobs";
-import { backoffMs, MAX_ATTEMPTS, nextBatch, pickJob } from "./indexPlan";
+import {
+  biggerGap,
+  EMBED_BATCH,
+  MAX_ATTEMPTS,
+  MIN_GAP_MS,
+  nextBatch,
+  pickJob,
+  smallerBatch,
+  throttleMs,
+} from "./indexPlan";
 import { ensurePassages, passagesOfBook } from "./passages";
 import {
   appendVectors,
@@ -159,6 +168,8 @@ export function startIndexing(book: BookDoc): void {
       const vectors = await vectorsOfBook(book.id).catch(() => []);
       const job: IndexJobRow = existing ?? newJob(book.id, passages.length);
       job.total = passages.length;
+      job.batch = job.batch || EMBED_BATCH;
+      job.gapMs = job.gapMs || MIN_GAP_MS;
       // Keep the work that was already done.
       job.embedded = Math.min(job.embedded, vectors.length);
       if (job.state !== "done" || job.embedded < job.total) {
@@ -286,7 +297,6 @@ async function runJob(job: IndexJobRow): Promise<void> {
   job.state = "running";
   await persist(job);
 
-  const key = getEffectiveApiKey();
   for (;;) {
     if (cancelled.has(job.bookId)) {
       cancelled.delete(job.bookId);
@@ -300,7 +310,7 @@ async function runJob(job: IndexJobRow): Promise<void> {
       await persist(job);
       return;
     }
-    const slice = nextBatch(job.total, job.embedded);
+    const slice = nextBatch(job.total, job.embedded, job.batch);
     if (!slice) {
       job.state = "done";
       job.embedded = job.total;
@@ -311,7 +321,9 @@ async function runJob(job: IndexJobRow): Promise<void> {
     const texts = ready.slice(slice.from, slice.to).map((p) => p.text);
     let batch: Float32Array[];
     try {
-      batch = await embedTexts(texts, "RETRIEVAL_DOCUMENT", key);
+      // The queue does not hammer the API: the requests are spaced out.
+      await waitForTurn(job.gapMs || MIN_GAP_MS);
+      batch = await embedWithRotation(texts);
     } catch (e) {
       await failJob(job, e instanceof Error ? e : new Error("Indexing failed."));
       return;
@@ -324,6 +336,50 @@ async function runJob(job: IndexJobRow): Promise<void> {
     job.embedded = slice.to;
     await persist(job);
   }
+}
+
+/**
+ * The gap between two embedding requests.
+ *
+ * The free tier counts every passage of a batch against the quota, so
+ * a book can trip the limit with two requests. The queue waits its
+ * turn instead.
+ */
+let lastRequestAt = 0;
+
+function waitForTurn(gapMs: number): Promise<void> {
+  const now = Date.now();
+  const due = lastRequestAt + Math.max(0, gapMs);
+  lastRequestAt = Math.max(now, due);
+  const wait = due - now;
+  if (wait <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, wait);
+  });
+}
+
+/**
+ * Embed a batch, trying the reader's other key when the first one is
+ * rate limited. A limit is a busy project, not a wrong key.
+ */
+async function embedWithRotation(
+  texts: string[],
+): Promise<Float32Array[]> {
+  const keys = getApiKeys();
+  let lastError: Error | null = null;
+  for (const key of keys) {
+    try {
+      return await embedTexts(texts, "RETRIEVAL_DOCUMENT", key);
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error("Indexing failed.");
+      const quota = lastError instanceof GeminiError && lastError.code === "quota";
+      if (!quota) throw lastError;
+    }
+  }
+  throw (
+    lastError ??
+    new GeminiError("no-key", "Add a Gemini key in Settings to index your books.")
+  );
 }
 
 /**
@@ -351,12 +407,18 @@ async function failJob(job: IndexJobRow, e: Error): Promise<void> {
     job.nextTryAt = 0;
     skipped.add(job.bookId);
   } else if (code === "quota") {
+    // A rate limit is not a broken key: the project is busy. The batch
+    // gets smaller, the requests get further apart, and the job waits
+    // — it is not counted as a failure, so it never gives up.
     job.attempts += 1;
-    job.nextTryAt = now + backoffMs(job.attempts);
+    job.batch = smallerBatch(job.batch || EMBED_BATCH);
+    job.gapMs = biggerGap(job.gapMs || MIN_GAP_MS);
+    job.nextTryAt = now + throttleMs(job.attempts);
+    job.state = "pending";
   } else {
     job.nextTryAt = now + 60_000;
   }
-  if (job.attempts >= MAX_ATTEMPTS) {
+  if (code !== "quota" && job.attempts >= MAX_ATTEMPTS) {
     // Stop trying on our own — the reader can press Retry.
     job.nextTryAt = Number.MAX_SAFE_INTEGER;
   }

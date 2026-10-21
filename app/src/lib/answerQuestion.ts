@@ -50,8 +50,11 @@ export async function answerQuestion(
   //    lane still finds the passage.
   let vector: Float32Array | null = null;
   try {
-    vector = await embedQuery(req.question, req.key);
-  } catch {
+    vector = await embedQuery(req.question, req.key, fetch, req.signal);
+  } catch (e) {
+    // A stopped request must not fall through to the words.
+    if (req.signal?.aborted) throw e;
+    // No embedding (offline, no quota): the words still work.
     vector = null;
   }
 

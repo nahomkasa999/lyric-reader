@@ -60,6 +60,7 @@ async function post(
   body: object,
   key: string,
   fetchFn: typeof fetch,
+  signal?: AbortSignal,
 ): Promise<EmbedResponse> {
   let res: Response;
   try {
@@ -70,8 +71,9 @@ async function post(
         "x-goog-api-key": key,
       },
       body: JSON.stringify(body),
-    });
+    }, signal);
   } catch (e) {
+    if (signal?.aborted) throw e;
     throw new GeminiError(
       "network",
       isAbortName(e instanceof Error ? e.name : "")
@@ -136,10 +138,17 @@ async function embedOneByOne(
   task: EmbedTask,
   key: string,
   fetchFn: typeof fetch,
+  signal?: AbortSignal,
 ): Promise<Float32Array[]> {
   const out: Float32Array[] = [];
   for (const text of texts) {
-    const data = await post(EMBED_URL, singleBody(text, task), key, fetchFn);
+    const data = await post(
+      EMBED_URL,
+      singleBody(text, task),
+      key,
+      fetchFn,
+      signal,
+    );
     const one = vectorsOf(data);
     if (!one.length)
       throw new GeminiError("unknown", "The AI sent back an empty vector.");
@@ -160,6 +169,7 @@ async function embedInBatch(
   task: EmbedTask,
   key: string,
   fetchFn: typeof fetch,
+  signal?: AbortSignal,
 ): Promise<Float32Array[]> {
   const body = {
     requests: texts.map((text) => ({
@@ -169,10 +179,10 @@ async function embedInBatch(
       outputDimensionality: EMBED_DIM,
     })),
   };
-  const data = await post(BATCH_URL, body, key, fetchFn);
+  const data = await post(BATCH_URL, body, key, fetchFn, signal);
   const vectors = vectorsOf(data);
   if (vectors.length !== texts.length) {
-    return embedOneByOne(texts, task, key, fetchFn);
+    return embedOneByOne(texts, task, key, fetchFn, signal);
   }
   return vectors.map((v) => normalize(new Float32Array(v)));
 }
@@ -189,15 +199,16 @@ export async function embedTexts(
   task: EmbedTask,
   key: string,
   fetchFn: typeof fetch = fetch,
+  signal?: AbortSignal,
 ): Promise<Float32Array[]> {
   if (!texts.length) return [];
   if (task === "RETRIEVAL_QUERY") {
-    return embedOneByOne(texts, task, key, fetchFn);
+    return embedOneByOne(texts, task, key, fetchFn, signal);
   }
   const out: Float32Array[] = [];
   for (let i = 0; i < texts.length; i += EMBED_BATCH) {
     const slice = texts.slice(i, i + EMBED_BATCH);
-    const batch = await embedInBatch(slice, task, key, fetchFn);
+    const batch = await embedInBatch(slice, task, key, fetchFn, signal);
     out.push(...batch);
   }
   return out;
@@ -208,7 +219,14 @@ export async function embedQuery(
   question: string,
   key: string,
   fetchFn: typeof fetch = fetch,
+  signal?: AbortSignal,
 ): Promise<Float32Array | null> {
-  const [v] = await embedTexts([question], "RETRIEVAL_QUERY", key, fetchFn);
+  const [v] = await embedTexts(
+    [question],
+    "RETRIEVAL_QUERY",
+    key,
+    fetchFn,
+    signal,
+  );
   return v ?? null;
 }

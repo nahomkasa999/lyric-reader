@@ -10,6 +10,21 @@ import type { IndexJobRow } from "./indexJobs";
 /** How many passages go into one embedding request. */
 export const EMBED_BATCH = 40;
 
+/**
+ * The smallest batch we will try.
+ *
+ * Google counts every passage inside a batch against the quota, so a
+ * big batch on a small quota is a rate limit. When that happens the
+ * batch is halved — until it is small enough to go through.
+ */
+export const MIN_BATCH = 4;
+
+/** The shortest wait between two embedding requests. */
+export const MIN_GAP_MS = 1_200;
+
+/** The longest wait between two embedding requests. */
+export const MAX_GAP_MS = 300_000;
+
 /** How many times a job may retry itself before it waits for the reader. */
 export const MAX_ATTEMPTS = 8;
 
@@ -24,6 +39,27 @@ export function backoffMs(attempts: number): number {
   const steps = [30_000, 120_000, 300_000, 900_000];
   const i = Math.max(0, Math.floor(attempts));
   return steps[Math.min(i, steps.length - 1)];
+}
+
+/**
+ * How long to wait after a RATE LIMIT.
+ *
+ * A limit is not a broken key: it is a busy project. So the wait grows
+ * quickly, and it is not counted as a failure — the job is still good.
+ */
+export function throttleMs(attempts: number): number {
+  const step = MIN_GAP_MS * 2 ** Math.max(0, Math.floor(attempts) - 1);
+  return Math.min(MAX_GAP_MS, step);
+}
+
+/** The next batch size to try, after a rate limit. */
+export function smallerBatch(batch: number): number {
+  return Math.max(MIN_BATCH, Math.floor(batch / 2));
+}
+
+/** The next wait between requests, after a rate limit. */
+export function biggerGap(gap: number): number {
+  return Math.min(MAX_GAP_MS, Math.max(MIN_GAP_MS, gap * 2));
 }
 
 /** Is this job allowed to run right now? */
@@ -57,13 +93,16 @@ export function pickJob(
  * The slice to embed next.
  *
  * `to` is exclusive. Null when the book is fully embedded — the caller
- * then marks the job done.
+ * then marks the job done. The batch size shrinks when the API says
+ * the batch is too big for the quota.
  */
 export function nextBatch(
   total: number,
   embedded: number,
+  batch: number = EMBED_BATCH,
 ): { from: number; to: number } | null {
   if (embedded >= total) return null;
   const from = Math.max(0, embedded);
-  return { from, to: Math.min(total, from + EMBED_BATCH) };
+  const size = Math.max(1, Math.floor(batch));
+  return { from, to: Math.min(total, from + size) };
 }
