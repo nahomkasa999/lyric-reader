@@ -1,4 +1,4 @@
-// The assistant's prompt (v4.12) — pure, so it can be tested.
+// The assistant's prompt (v4.13) — pure, so it can be tested.
 //
 // Three things go in:
 //  1. the passages the search found (the only thing the answer may use);
@@ -9,6 +9,10 @@
 // (2) is capped and (3) replaces everything older, so the prompt NEVER
 // grows without bound — that is the "the chart is going really large"
 // fix, done in the one place that decides what the model sees.
+//
+// And one more thing goes in: where the reader IS. The model must know
+// that the reader has only read up to this page, so it never gives away
+// what happens later in the book.
 import type { AssistantMessage } from "./assistantStore";
 import type { SearchHit } from "./vectorIndex";
 
@@ -29,6 +33,15 @@ export interface Passage {
   heading: string;
   page: number;
   text: string;
+}
+
+/** Where the reader is right now. */
+export interface ReaderContext {
+  bookTitle?: string;
+  /** 1-based page */
+  page?: number;
+  /** the item index the reader has read up to */
+  readUpToItem?: number;
 }
 
 /**
@@ -67,6 +80,26 @@ export interface AssistantPrompt {
 }
 
 /**
+ * The no-spoiler rule, appended to the system prompt.
+ *
+ * The reader is reading one book and has only read up to this page.
+ * Anything later in that book is a spoiler, and the model must say
+ * "that comes later" instead of telling it.
+ */
+export function boundaryRule(ctx?: ReaderContext): string {
+  const title = ctx?.bookTitle?.trim();
+  if (!title) return "";
+  const page = ctx?.page ?? 0;
+  return (
+    `The reader is reading «${title}» and is on page ${page}. ` +
+    "They have read only up to that point. Never reveal, hint at, " +
+    "quote or summarise anything that happens later in that book. " +
+    "If the question needs later pages, say that it comes later and " +
+    "that you will not spoil it."
+  );
+}
+
+/**
  * Build the prompt for one question.
  *
  * The passages come first — they are the ground truth — and the question
@@ -76,6 +109,7 @@ export function buildAssistantPrompt(
   question: string,
   passages: Passage[],
   history: AssistantMessage[],
+  ctx?: ReaderContext,
 ): AssistantPrompt {
   const recent = history.slice(-RECENT_MESSAGES);
   const digest = digestOf(history);
@@ -90,6 +124,12 @@ export function buildAssistantPrompt(
 
   const parts: string[] = [];
   if (digest) parts.push(digest);
+  const title = ctx?.bookTitle?.trim();
+  if (title) {
+    parts.push(
+      `READER CONTEXT: reading «${title}», page ${ctx?.page ?? 0}.`,
+    );
+  }
   if (passages.length) {
     parts.push(
       `PASSAGES FROM THE READER'S BOOKS:\n${passageBlock(passages)}`,
@@ -103,7 +143,11 @@ export function buildAssistantPrompt(
   parts.push(`MY QUESTION: ${question}`);
 
   messages.push({ role: "user", text: parts.join("\n\n") });
-  return { system: ASSISTANT_SYSTEM, messages };
+  const rule = boundaryRule(ctx);
+  return {
+    system: rule ? `${ASSISTANT_SYSTEM}\n\n${rule}` : ASSISTANT_SYSTEM,
+    messages,
+  };
 }
 
 /** The passages a search found, with the books they came from. */

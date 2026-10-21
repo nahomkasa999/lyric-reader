@@ -190,3 +190,70 @@ describe("what the model is shown", () => {
     expect(passages[0].heading).toBe("Chapter 3");
   });
 });
+
+describe("where the reader is", () => {
+  const ctx = { bookTitle: "The Crash", page: 12, readUpToItem: 120 };
+
+  it("tells the model not to spoil the book", () => {
+    const prompt = buildAssistantPrompt(
+      "why did he leave?",
+      [],
+      [],
+      ctx,
+    );
+    expect(prompt.system).toContain("The reader is reading «The Crash»");
+    expect(prompt.system).toContain("page 12");
+    expect(prompt.system).toContain("Never reveal");
+    expect(prompt.system).toContain("will not spoil it");
+  });
+
+  it("says where the reader is in the question", () => {
+    const prompt = buildAssistantPrompt("why?", [], [], ctx);
+    const last = prompt.messages[prompt.messages.length - 1];
+    expect(last.text).toContain("READER CONTEXT: reading «The Crash», page 12.");
+    // The context comes before the passages.
+    expect(last.text.indexOf("READER CONTEXT")).toBeLessThan(
+      last.text.indexOf("PASSAGES"),
+    );
+  });
+
+  it("keeps the old system prompt", () => {
+    const prompt = buildAssistantPrompt("why?", [], [], ctx);
+    expect(prompt.system).toContain("You are the reader's assistant");
+    expect(prompt.system).toContain("PASSAGES");
+  });
+
+  it("says nothing about the reader when there is no book", () => {
+    const prompt = buildAssistantPrompt("why?", [], []);
+    expect(prompt.system).not.toContain("READER CONTEXT");
+    expect(prompt.system).not.toContain("Never reveal");
+  });
+
+  it("never shows a passage from after the reader's page", () => {
+    // The search itself drops them (lib/retrieval.ts); the prompt only
+    // ever holds what the search returned.
+    const passages = passagesOf(
+      [
+        {
+          chunk: {
+            id: "b1:0",
+            bookId: "b1",
+            text: "The car turned at 30th Street.",
+            heading: "Chapter 3",
+            page: 4,
+            from: 10,
+            to: 12,
+          },
+          score: 1,
+          semantic: 1,
+          lexical: 0,
+        },
+      ] as SearchHit[],
+      new Map([["b1", "The Crash"]]),
+    );
+    const prompt = buildAssistantPrompt("why?", passages, [], ctx);
+    const last = prompt.messages[prompt.messages.length - 1];
+    expect(last.text).toContain("The car turned at 30th Street.");
+    expect(last.text).not.toContain("afterwards the whole town");
+  });
+});

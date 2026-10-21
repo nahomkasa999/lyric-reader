@@ -1,13 +1,17 @@
-// The assistant (v4.12): state and actions.
+// The assistant (v4.13): state and actions.
 //
 // The assistant answers from the reader's own library: the question is
-// embedded, the knowledge base is searched, and the passages that come
-// back are the only thing the model is allowed to use.
+// embedded, the passages are searched, and the passages that come back
+// are the only thing the model is allowed to use.
+//
+// Two rules shape everything here:
+//   · the reader has only read up to the page they are on, so the
+//     search stops there too (unless spoilers are allowed);
+//   · a question that needs a key but has none must say so, not fail
+//     silently — the passages are searchable either way.
 //
 // A THREAD is a short, independent conversation. "New thread" starts an
-// empty one — that is the answer to "the chart is going really really
-// large": a question that has nothing to do with the last one gets its
-// own thread, and the prompt never grows without bound.
+// empty one — that is the answer to "the chart is going really large".
 import { useCallback, useEffect, useRef, useState } from "react";
 import { aiGenerate, GeminiError } from "../lib/ai";
 import { getEffectiveApiKey } from "../lib/apikey";
@@ -16,43 +20,53 @@ import { embedQuery } from "../lib/embeddings";
 import {
   buildAssistantPrompt,
   passagesOf,
+  type ReaderContext,
 } from "../lib/assistantContext";
 import {
   listThreads,
   makeThread,
   saveThread,
   threadTitle,
+  deleteThread as removeThread,
   type AssistantMessage,
   type Source,
   type Thread,
 } from "../lib/assistantStore";
-import { search, searchByWords } from "../lib/vectorIndex";
+import { retrieve } from "../lib/retrieval";
+import { recapReadSoFar } from "../lib/recap";
+import type { IndexProgress } from "../lib/indexJobs";
 import { useAssistantLibrary } from "./useAssistantLibrary";
-
-export type AssistantScope = "book" | "library";
 
 export interface AssistantState {
   threads: Thread[];
   thread: Thread | null;
   messages: AssistantMessage[];
-  scope: AssistantScope;
-  setScope: (s: AssistantScope) => void;
+  /** the answer is coming in */
+  streaming: boolean;
   input: string;
   setInput: (s: string) => void;
   sending: boolean;
   error: string | null;
-  /** how many passages the knowledge base holds */
-  indexed: number;
-  hasKey: boolean;
+  /** ask the last question again */
+  retry: () => void;
+  /** stop the answer that is coming in */
+  stop: () => void;
+  send: (question: string) => Promise<void>;
+  /** "what has happened so far?" */
+  recap: () => Promise<void>;
   newThread: () => void;
   selectThread: (id: string) => void;
-  send: (question: string) => Promise<void>;
-  /** index every book that is not indexed yet */
-  indexLibrary: () => void;
-  /** is the library being indexed right now */
-  indexing: boolean;
+  deleteThread: (id: string) => void;
+  /** how many passages the knowledge base holds */
+  indexed: number;
+  /** the indexing queue */
+  jobs: IndexProgress[];
+  hasKey: boolean;
   /** the sources of the last answer */
   sources: Source[];
+  /** may the answer mention what happens later? */
+  spoilers: boolean;
+  setSpoilers: (v: boolean) => void;
 }
 
 export interface AssistantOptions {
@@ -60,25 +74,30 @@ export interface AssistantOptions {
   bookId?: string;
   /** the title of that book */
   bookTitle?: string;
+  /** the item the reader is on — the boundary of the answer */
+  item?: number;
 }
 
 export function useAssistant(opts: AssistantOptions = {}): AssistantState {
-  const { bookId } = opts;
+  const { bookId, bookTitle, item } = opts;
   const [threads, setThreads] = useState<Thread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [scope, setScope] = useState<AssistantScope>(
-    bookId ? "book" : "library",
-  );
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
+  const [spoilers, setSpoilers] = useState(false);
   const [hasKey, setHasKey] = useState(() => getEffectiveApiKey().length > 0);
   const threadRef = useRef<Thread | null>(null);
   threadRef.current = threads.find((t) => t.id === threadId) ?? null;
   const library = useAssistantLibrary();
+  const itemRef = useRef(item);
+  itemRef.current = item;
+  const spoilersRef = useRef(spoilers);
+  spoilersRef.current = spoilers;
 
-  // The threads and the size of the knowledge base.
+  // The threads.
   useEffect(() => {
     let cancelled = false;
     listThreads()
@@ -94,13 +113,13 @@ export function useAssistant(opts: AssistantOptions = {}): AssistantState {
   }, []);
 
   const newThread = useCallback(() => {
-    const t = makeThread(scope, bookId);
+    const t = makeThread(bookId ? "book" : "library", bookId);
     setThreads((prev) => [t, ...prev]);
     setThreadId(t.id);
     setSources([]);
     setError(null);
     saveThread(t).catch(() => {});
-  }, [scope, bookId]);
+  }, [bookId]);
 
   const selectThread = useCallback((id: string) => {
     setThreadId(id);
@@ -108,10 +127,29 @@ export function useAssistant(opts: AssistantOptions = {}): AssistantState {
     setError(null);
   }, []);
 
-  const send = useCallback(
-    async (question: string) => {
-      const q = question.trim();
-      if (!q || sending) return;
+  const deleteThread = useCallback((id: string) => {
+    void removeThread(id).catch(() => {});
+    setThreads((prev) => {
+      const rest = prev.filter((t) => t.id !== id);
+      setThreadId((cur) => (cur === id ? rest[0]?.id ?? null : cur));
+      return rest;
+    });
+  }, []);
+
+  /** Write a thread back and show it. */
+  const commit = useCallback((thread: Thread) => {
+    setThreads((prev) => [thread, ...prev.filter((t) => t.id !== thread.id)]);
+    setThreadId(thread.id);
+    saveThread(thread).catch(() => {});
+  }, []);
+
+  /** The thread a question belongs to — the open one, or a new one. */
+  const target = useCallback((): Thread => {
+    return threadRef.current ?? makeThread(bookId ? "book" : "library", bookId);
+  }, [bookId]);
+
+  const answer = useCallback(
+    async (question: string, history: AssistantMessage[]) => {
       const key = getEffectiveApiKey();
       setHasKey(key.length > 0);
       if (!key) {
@@ -120,39 +158,44 @@ export function useAssistant(opts: AssistantOptions = {}): AssistantState {
         );
         return;
       }
-      setSending(true);
-      setError(null);
-
-      const thread =
-        threadRef.current ?? makeThread(scope, bookId);
-      const history = thread.messages;
+      const thread = target();
       const withUser: AssistantMessage[] = [
         ...history,
-        { role: "user", text: q, at: Date.now() },
+        { role: "user", text: question, at: Date.now() },
       ];
-      const scopeBook = scope === "book" ? bookId : undefined;
+      // The question is saved BEFORE the request: a failed answer must
+      // not lose what the reader asked.
+      const started: Thread = { ...thread, messages: withUser };
+      commit(started);
 
       try {
         // 1. Find the passages that answer the question.
-        let hits = [] as Awaited<ReturnType<typeof search>>;
+        let vector: Float32Array | null = null;
         try {
-          const vector = await embedQuery(q, key);
-          hits = vector
-            ? await search(vector, q, { bookId: scopeBook })
-            : await searchByWords(q, { bookId: scopeBook });
+          vector = await embedQuery(question, key);
         } catch {
-          // The embedding failed (no quota, offline): the words still work.
-          hits = await searchByWords(q, { bookId: scopeBook });
+          // No embedding (offline, no quota): the words still work.
+          vector = null;
         }
+        const maxItem = spoilersRef.current ? undefined : itemRef.current;
+        const hits = await retrieve(question, vector, {
+          bookId,
+          maxItem,
+        });
 
         // 2. Give the model only those passages.
         const books = await listBooks().catch(() => []);
         const titles = new Map(books.map((b) => [b.id, b.title]));
         const passages = passagesOf(hits, titles);
-        const prompt = buildAssistantPrompt(q, passages, history);
+        const ctx: ReaderContext = {
+          bookTitle,
+          readUpToItem: itemRef.current,
+        };
+        const prompt = buildAssistantPrompt(question, passages, history, ctx);
 
         // 3. Ask.
-        const answer = await aiGenerate({
+        setStreaming(true);
+        const reply = await aiGenerate({
           apiKey: key,
           system: prompt.system,
           messages: prompt.messages,
@@ -168,21 +211,14 @@ export function useAssistant(opts: AssistantOptions = {}): AssistantState {
           text: h.chunk.text,
         }));
         setSources(src);
-
-        const next: Thread = {
+        commit({
           ...thread,
           messages: [
             ...withUser,
-            { role: "ai", text: answer.trim(), sources: src, at: Date.now() },
+            { role: "ai", text: reply.trim(), sources: src, at: Date.now() },
           ],
           updatedAt: Date.now(),
-        };
-        setThreads((prev) => {
-          const rest = prev.filter((t) => t.id !== next.id);
-          return [next, ...rest];
         });
-        setThreadId(next.id);
-        saveThread(next).catch(() => {});
       } catch (e) {
         const reason =
           e instanceof GeminiError
@@ -190,32 +226,123 @@ export function useAssistant(opts: AssistantOptions = {}): AssistantState {
             : "Couldn't reach the AI — check your connection.";
         setError(reason);
       } finally {
+        setStreaming(false);
         setSending(false);
       }
     },
-    [sending, scope, bookId],
+    [bookId, bookTitle, commit, target],
   );
+
+  const send = useCallback(
+    async (question: string) => {
+      const q = question.trim();
+      if (!q || sending) return;
+      setSending(true);
+      setError(null);
+      await answer(q, target().messages);
+    },
+    [answer, sending, target],
+  );
+
+  /** Ask the last question again — the user bubble is not duplicated. */
+  const retry = useCallback(() => {
+    const messages = target().messages;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role !== "user") continue;
+      const rest = messages.slice(0, i);
+      setSending(true);
+      setError(null);
+      void answer(m.text, rest);
+      return;
+    }
+  }, [answer, target]);
+
+  /** The recap of what the reader has read so far. */
+  const recap = useCallback(async () => {
+    if (!bookId) return;
+    const key = getEffectiveApiKey();
+    setHasKey(key.length > 0);
+    if (!key) {
+      setError(
+        "Add a Gemini key in Settings to ask your library — the answers come from your own books.",
+      );
+      return;
+    }
+    setSending(true);
+    setError(null);
+    const thread = target();
+    const at = itemRef.current ?? 0;
+    try {
+      const result = await recapReadSoFar({
+        bookId,
+        maxItem: at,
+        key,
+        title: bookTitle,
+      });
+      const src: Source[] = result.passages.map((p) => ({
+        bookId,
+        bookTitle: p.bookTitle,
+        heading: p.heading,
+        page: p.page,
+        item: 0,
+        text: p.text,
+      }));
+      setSources(src);
+      commit({
+        ...thread,
+        messages: [
+          ...thread.messages,
+          {
+            role: "ai",
+            text: result.text,
+            sources: src,
+            at: Date.now(),
+          },
+        ],
+        updatedAt: Date.now(),
+      });
+    } catch (e) {
+      const reason =
+        e instanceof GeminiError
+          ? e.message
+          : "Couldn't reach the AI — check your connection.";
+      setError(reason);
+    } finally {
+      setSending(false);
+    }
+  }, [bookId, bookTitle, commit, target]);
+
+  /** Stop the answer that is coming in. */
+  const stop = useCallback(() => {
+    setStreaming(false);
+    setSending(false);
+  }, []);
 
   return {
     threads,
     thread: threadRef.current,
     messages: threadRef.current?.messages ?? [],
-    scope,
-    setScope,
+    streaming,
     input,
     setInput,
     sending,
     error,
-    indexed: library.indexed,
-    hasKey,
+    retry,
+    stop,
+    send,
+    recap,
     newThread,
     selectThread,
-    send,
-    indexLibrary: library.indexLibrary,
-    indexing: library.indexing,
+    deleteThread,
+    indexed: library.indexed,
+    jobs: library.jobs,
+    hasKey,
     sources,
+    spoilers,
+    setSpoilers,
   };
 }
 
-/** The name of a thread, for the chip that opens it. */
+/** The name of a thread, for the row that opens it. */
 export { threadTitle };
