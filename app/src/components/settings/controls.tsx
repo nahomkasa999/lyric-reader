@@ -3,6 +3,7 @@
 // segmented choice, a slider. On/off is always a switch; choices are
 // chips, swatches or segments; nothing else.
 import type { ReactNode } from "react";
+import Slider from "../Slider";
 
 export function Group({
   id,
@@ -104,6 +105,8 @@ export function SliderRow({
   onChange,
   suffix,
   disabled,
+  label,
+  step = 1,
 }: {
   testid: string;
   min: number;
@@ -112,18 +115,22 @@ export function SliderRow({
   onChange: (v: number) => void;
   suffix?: string;
   disabled?: boolean;
+  /** the name a screen reader reads out */
+  label?: string;
+  step?: number;
 }) {
   return (
     <div className="flex items-center gap-3">
-      <input
-        data-testid={testid}
-        type="range"
+      <Slider
+        testid={testid}
+        value={value}
         min={min}
         max={max}
-        value={value}
+        step={step}
+        onChange={onChange}
         disabled={disabled}
-        onChange={(e) => onChange(parseInt(e.target.value, 10))}
-        className="w-full accent-primary"
+        label={label ?? testid}
+        format={(v) => `${v}${suffix ?? ""}`}
       />
       <span className="w-14 shrink-0 text-right text-sm text-foreground tabular-nums">
         {value}

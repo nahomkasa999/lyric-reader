@@ -11,6 +11,7 @@
 // Without a key the sheet says so and points at Settings; the phone's
 // own voice is always there as a fallback.
 import { useEffect, useState } from "react";
+import Slider from "../Slider";
 import VoiceList, { type VoiceCard } from "./VoiceList";
 import {
   DEFAULT_VOICE,
@@ -295,15 +296,14 @@ export default function VoiceSheet({
         <div className="voice-foot">
           <div className="voice-speed">
             <span>Speed</span>
-            <input
-              data-testid="voice-speed"
-              type="range"
+            <Slider
+              testid="voice-speed"
+              value={Math.round(speed * 100)}
               min={70}
               max={150}
-              value={Math.round(speed * 100)}
-              onChange={(e) => onSpeedChange(Number(e.target.value) / 100)}
-              className="w-full accent-primary"
-              aria-label="Reading speed"
+              onChange={(v) => onSpeedChange(v / 100)}
+              label="Reading speed"
+              format={(v) => `${(v / 100).toFixed(2)}×`}
             />
             <span className="voice-speed-value">{speed.toFixed(2)}×</span>
           </div>

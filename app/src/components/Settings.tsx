@@ -34,6 +34,7 @@ import {
   testOpenRouterKey,
 } from "../lib/openrouter";
 import BackgroundPreview from "./BackgroundPreview";
+import Slider from "./Slider";
 import { Group, Row, Segmented, SliderRow, Switch } from "./settings/controls";
 import ReadAloudGroup from "./settings/ReadAloudGroup";
 import "../settings.css";
@@ -433,6 +434,7 @@ export default function Settings({ onBack }: Props) {
               value={settings.bgIntensity}
               onChange={(v) => update({ bgIntensity: v })}
               suffix="%"
+              label="Background intensity"
               disabled={settings.bgStyle !== "gradient"}
             />
             <p className="set-note">
@@ -469,6 +471,7 @@ export default function Settings({ onBack }: Props) {
               value={settings.mainSize}
               onChange={(v) => update({ mainSize: v })}
               suffix="px"
+              label="Main sentence size"
             />
           </Row>
 
@@ -480,6 +483,7 @@ export default function Settings({ onBack }: Props) {
               value={settings.trailSize}
               onChange={(v) => update({ trailSize: v })}
               suffix="px"
+              label="Top and bottom size"
             />
           </Row>
 
@@ -517,16 +521,14 @@ export default function Settings({ onBack }: Props) {
               </button>
             </div>
             <div className="mt-3 flex items-center gap-3">
-              <input
-                data-testid="main-opacity"
-                type="range"
+              <Slider
+                testid="main-opacity"
+                value={settings.mainOpacity}
                 min={20}
                 max={100}
-                value={settings.mainOpacity}
-                onChange={(e) =>
-                  update({ mainOpacity: parseInt(e.target.value, 10) })
-                }
-                className="w-full accent-primary"
+                onChange={(v) => update({ mainOpacity: v })}
+                label="Main text opacity"
+                format={(v) => `${v}%`}
               />
               <span className="w-12 shrink-0 text-right text-sm tabular-nums">
                 {settings.mainOpacity}%
@@ -553,16 +555,14 @@ export default function Settings({ onBack }: Props) {
               </button>
             </div>
             <div className="mt-3 flex items-center gap-3">
-              <input
-                data-testid="trail-opacity"
-                type="range"
+              <Slider
+                testid="trail-opacity"
+                value={settings.trailOpacity}
                 min={10}
                 max={100}
-                value={settings.trailOpacity}
-                onChange={(e) =>
-                  update({ trailOpacity: parseInt(e.target.value, 10) })
-                }
-                className="w-full accent-primary"
+                onChange={(v) => update({ trailOpacity: v })}
+                label="Trail text opacity"
+                format={(v) => `${v}%`}
               />
               <span className="w-12 shrink-0 text-right text-sm tabular-nums">
                 {settings.trailOpacity}%

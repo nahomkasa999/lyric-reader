@@ -129,17 +129,29 @@ describe("settings page", () => {
     expect(stored().bgColor).toBe("#F472B6");
 
     await act(async () => {
-      const slider = q<HTMLInputElement>(container, "bg-intensity");
-      // React tracks the value on the node, so the native setter has to be
-      // used to make the change visible to the onChange handler.
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      )?.set;
-      setter?.call(slider, "20");
-      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      const slider = q<HTMLElement>(container, "bg-intensity");
+      // The slider only moves when it is dragged or a key is pressed —
+      // a plain press changes nothing. It is live while the style is the
+      // gradient, so the style goes back to it first.
+      q<HTMLButtonElement>(container, "bg-style-gradient").click();
     });
-    expect(stored().bgIntensity).toBe(20);
+    expect(stored().bgStyle).toBe("gradient");
+
+    await act(async () => {
+      const slider = q<HTMLElement>(container, "bg-intensity");
+      slider.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Home", bubbles: true }),
+      );
+    });
+    expect(stored().bgIntensity).toBe(0);
+
+    await act(async () => {
+      const slider = q<HTMLElement>(container, "bg-intensity");
+      slider.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "End", bubbles: true }),
+      );
+    });
+    expect(stored().bgIntensity).toBe(100);
 
     await act(async () => root.unmount());
   });
@@ -185,13 +197,10 @@ describe("settings page", () => {
 
     // The speed slider writes a multiplier (the UI shows a percentage).
     await act(async () => {
-      const slider = q<HTMLInputElement>(container, "read-aloud-rate");
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      )?.set;
-      setter?.call(slider, "150");
-      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      const slider = q<HTMLElement>(container, "read-aloud-rate");
+      slider.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "End", bubbles: true }),
+      );
     });
     expect(stored().readAloudRate).toBe(1.5);
 

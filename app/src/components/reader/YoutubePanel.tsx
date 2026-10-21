@@ -5,6 +5,7 @@
 // playlist), and the controls at the bottom — change the audio, pause,
 // next, volume.
 import { shortLink } from "../../lib/youtubePlaylist";
+import Slider from "../Slider";
 import {
   MuteIcon,
   NextIcon,
@@ -188,15 +189,14 @@ export default function YoutubePanel({ audio }: Props) {
           >
             {muted ? <MuteIcon /> : <VolumeIcon />}
           </button>
-          <input
-            data-testid="yt-volume"
-            type="range"
+          <Slider
+            testid="yt-volume"
+            value={muted ? 0 : volume}
             min={0}
             max={100}
-            value={muted ? 0 : volume}
-            onChange={(e) => onVolume(Number(e.target.value))}
-            aria-label="Volume"
-            className="min-w-0 flex-1 accent-primary"
+            onChange={(v) => onVolume(v)}
+            label="Volume"
+            format={(v) => `${v}%`}
           />
         </div>
       </div>

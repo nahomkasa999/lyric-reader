@@ -160,6 +160,7 @@ export default function ReadAloudGroup() {
             value={Math.round(settings.readAloudRate * 100)}
             onChange={(v) => update({ readAloudRate: v / 100 })}
             suffix="%"
+            label="Reading speed"
           />
         </Row>
       </Group>

@@ -1,0 +1,62 @@
+/* The slider (v4.13).
+ *
+ * A thumb you can grab: 26px wide, with a 2px indigo ring, on a 44pt
+ * tall hit area. The native range input is thin — on a phone the
+ * thumb is a few pixels wide and a tap on the track jumps the value to
+ * wherever the finger landed.
+ */
+
+.slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  min-width: 0;
+  flex: 1;
+  touch-action: none;
+  cursor: pointer;
+  outline: none;
+}
+
+.slider:focus-visible .slider-thumb {
+  box-shadow:
+    0 0 0 2px rgb(18 18 20),
+    0 0 0 4px #5b4fe9;
+}
+
+.slider-disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+.slider-track {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.12);
+}
+
+.slider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: #5b4fe9;
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  margin-left: -13px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid #5b4fe9;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
