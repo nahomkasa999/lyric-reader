@@ -11,6 +11,8 @@ import VoiceList, { type VoiceCard } from "./VoiceList";
 import {
   DEFAULT_VOICE,
   ELEVEN_KEYS_URL,
+  STANDARD_VOICES,
+  elevenError,
   listVoices,
   playAudio,
   speakAudio,
@@ -60,7 +62,9 @@ export default function VoiceSheet({
   const [error, setError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<string | null>(null);
 
-  // The account's voices — fetched once, when the sheet opens.
+  // The account's voices — fetched once, when the sheet opens. A key
+  // without the "voices_read" permission cannot list them; the standard
+  // voices are used instead, so reading still works.
   useEffect(() => {
     if (!key) {
       setVoices([]);
@@ -74,9 +78,14 @@ export default function VoiceSheet({
         if (alive) setVoices(v.map(toCard));
       })
       .catch((e) => {
-        if (alive) {
-          setError(e instanceof Error ? e.message : "Could not read the voices.");
-        }
+        if (!alive) return;
+        const err = elevenError(e);
+        setVoices(STANDARD_VOICES);
+        setError(
+          err.missing === "voices_read"
+            ? "This key cannot read your voice list — the Voices permission is off. The standard voices below still work. To pick your own voices, edit the key in ElevenLabs → Profile → API Keys and turn Voices on."
+            : err.message,
+        );
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -137,7 +146,7 @@ export default function VoiceSheet({
                 ? "No key yet — add one in Settings."
                 : loading
                   ? "Reading the voice list…"
-                  : `${voices.length} voices on this account`}
+                  : `${voices.length} voices available`}
             </span>
           </div>
           {!key && (

@@ -4,6 +4,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   DEFAULT_VOICE,
   ELEVEN_KEYS_URL,
+  STANDARD_VOICES,
+  elevenError,
   getEffectiveElevenLabsKey,
   getElevenLabsKey,
   listVoices,
@@ -53,6 +55,59 @@ describe("without a key", () => {
     const r = await testKey("");
     expect(r.ok).toBe(false);
     expect(r.reason).toBe("No key yet.");
+  });
+});
+
+describe("a key without the Voices permission", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setElevenLabsKey("sk_test_123");
+    // The API's own answer when a key may not read the voice list.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              detail: {
+                type: "authentication_error",
+                code: "unauthorized",
+                message:
+                  "The API key you used is missing the permission voices_read to execute this operation.",
+                status: "missing_permissions",
+              },
+            }),
+            { status: 401, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+  });
+
+  it("is understood, not swallowed", () => {
+    const err = elevenError({
+      statusCode: 401,
+      body: {
+        detail: {
+          message:
+            "The API key you used is missing the permission voices_read to execute this operation.",
+        },
+      },
+    });
+    expect(err.status).toBe(401);
+    expect(err.missing).toBe("voices_read");
+  });
+
+  it("still passes the test, with a note", async () => {
+    const r = await testKey("sk_test_123");
+    expect(r.ok).toBe(true);
+    expect(r.reason).toContain("Voices permission");
+  });
+
+  it("leaves the standard voices to read with", () => {
+    expect(STANDARD_VOICES.length).toBeGreaterThan(10);
+    expect(
+      STANDARD_VOICES.some((v) => v.id === DEFAULT_VOICE),
+    ).toBe(true);
   });
 });
 

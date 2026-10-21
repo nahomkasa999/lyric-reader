@@ -85,7 +85,9 @@ export default function ReadAloudGroup() {
                 setTesting(false);
                 setResult(
                   r.ok
-                    ? `✓ Key works — ${r.voices} voices`
+                    ? r.reason
+                      ? `✓ ${r.reason}`
+                      : `✓ Key works — ${r.voices} voices`
                     : `✗ ${r.reason}`,
                 );
               }}

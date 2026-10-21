@@ -13,6 +13,8 @@
 // Without a key the app falls back to the browser's own speech engine
 // (lib/speech.ts) — rougher, but it always works.
 import type { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
+import { STANDARD_VOICES } from "./elevenlabsVoices";
+import { playAudio, stopAudio } from "./audio";
 
 const KEY = "lr-elevenlabs-key";
 
@@ -24,6 +26,9 @@ export const ELEVEN_KEYS_URL = "https://elevenlabs.io/app/settings/api-keys";
 
 /** George — a calm male narrator, and ElevenLabs' most used voice. */
 export const DEFAULT_VOICE = "JBFqnCBsd6RMkjVDRZzb";
+
+export { STANDARD_VOICES };
+export { playAudio, stopAudio };
 
 export function getElevenLabsKey(): string {
   try {
@@ -113,7 +118,11 @@ export async function listVoices(key: string): Promise<ElevenVoice[]> {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Does the key work? */
+/**
+ * Does the key work? A key can be made without the "voices_read"
+ * permission: it still speaks, it just cannot list the account's voices.
+ * That is a pass with a note, not a failure.
+ */
 export async function testKey(
   key: string,
 ): Promise<{ ok: boolean; reason?: string; voices?: number }> {
@@ -122,6 +131,14 @@ export async function testKey(
     const voices = await listVoices(key);
     return { ok: true, voices: voices.length };
   } catch (e) {
+    const err = elevenError(e);
+    if (err.missing === "voices_read") {
+      return {
+        ok: true,
+        reason:
+          "The key speaks, but the Voices permission is off — it cannot read your voice list. The standard voices will be used.",
+      };
+    }
     return { ok: false, reason: errorText(e, "Could not reach ElevenLabs.") };
   }
 }
@@ -161,61 +178,43 @@ export async function speakAudio(
   return out.buffer;
 }
 
-/** What ElevenLabs says went wrong, when it bothers to say it. */
+export interface ElevenError {
+  status?: number;
+  /** what the API said, in its own words */
+  message: string;
+  /** the permission the key is missing, when it is a permission problem */
+  missing?: string;
+}
+
+/** Read the API's own error: its message says what the key may not do. */
+export function elevenError(e: unknown): ElevenError {
+  const anyE = e as {
+    statusCode?: number;
+    status?: number;
+    message?: string;
+    body?: unknown;
+  };
+  const body = anyE?.body as
+    | { detail?: { message?: string; status?: string } }
+    | undefined;
+  const message =
+    body?.detail?.message ?? anyE?.message ?? "Something went wrong.";
+  const missing = /missing the permission ([a-z_]+)/.exec(message)?.[1];
+  return {
+    status: anyE?.statusCode ?? anyE?.status,
+    message,
+    missing,
+  };
+}
+
+/** What ElevenLabs says went wrong, in a sentence a person can act on. */
 function errorText(e: unknown, fallback: string): string {
-  const anyE = e as { status?: number; message?: string; body?: unknown };
-  const status = anyE?.status;
-  if (status === 401) return "That key was not accepted.";
-  if (status === 429) return "Too many requests — the key's quota is used up.";
-  if (status === 422) return "ElevenLabs did not like that request.";
-  return anyE?.message || fallback;
-}
-
-// --- playback -------------------------------------------------------------
-// One AudioContext for the whole app, unlocked by the first tap (phones
-// only let audio start from a user gesture).
-
-let ctx: AudioContext | null = null;
-let current: AudioBufferSourceNode | null = null;
-
-function audioContext(): AudioContext {
-  if (!ctx) {
-    const Ctor =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext })
-        .webkitAudioContext;
-    ctx = new Ctor();
+  const err = elevenError(e);
+  if (err.missing) {
+    return `This key is missing the ${err.missing} permission.`;
   }
-  return ctx;
-}
-
-/** Stop whatever is being read. */
-export function stopAudio(): void {
-  if (current) {
-    try {
-      current.stop();
-    } catch {
-      /* already stopped */
-    }
-    current = null;
-  }
-}
-
-/** Play an mp3 buffer; resolves when the sound ends. */
-export async function playAudio(data: ArrayBuffer): Promise<void> {
-  const ac = audioContext();
-  if (ac.state === "suspended") await ac.resume();
-  const buffer = await ac.decodeAudioData(data);
-  stopAudio();
-  return new Promise<void>((resolve) => {
-    const src = ac.createBufferSource();
-    src.buffer = buffer;
-    src.connect(ac.destination);
-    src.onended = () => {
-      if (current === src) current = null;
-      resolve();
-    };
-    current = src;
-    src.start();
-  });
+  if (err.status === 401) return "That key was not accepted.";
+  if (err.status === 429) return "Too many requests — the key's quota is used up.";
+  if (err.status === 422) return "ElevenLabs did not like that request.";
+  return err.message || fallback;
 }
