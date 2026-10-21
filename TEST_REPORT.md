@@ -698,3 +698,37 @@ its own pieces.
   where they used to be one. The handlers are the same code, but they
   now attach and detach separately, and the keys only work once the
   stage exists — as before.
+
+---
+
+## v4.13c — the reader's notes (Oct 21, 2026)
+
+Nine things were reported after the first push. What each one was, and
+what it turned out to be:
+
+| Reported | Cause | Fix |
+|---|---|---|
+| The composer is invisible at peek | The sheet was `100dvh` tall and pushed down by 38vh, so the composer — at the bottom of the sheet — sat below the screen | The sheet's height follows the drag: it is exactly as tall as the part of the screen it shows |
+| The input grows without limit | The auto-grow measured `scrollHeight` from an expanded box | It is measured from a collapsed box, capped at five lines, and scrolls past that |
+| The meaning card's buttons are off-screen | The card scrolls internally, so the action row fell below the fold | The text scrolls inside the card; the buttons stay put |
+| "Allow spoilers" is in the wrong place | It was a chip in the message list | It is a shadcn switch in the header, next to the new-thread button |
+| The stop button does not work | It only appeared while the tokens arrived, not during the lookup | It is there for the whole request, and the abort now reaches the embedding call too |
+| The messages cannot be copied | The reader's own `user-select: none` reached into the sheet | The messages are selectable, and a message can be copied, edited or taken back |
+| The conversations are indented | The drawer list and the rows both had padding | Everything lines up to the start, and the empty state says "Starting conversations" |
+| The AI is rate-limited and never answers | The batch endpoint counts every passage against the quota, so three batches in a row were 120 units; a 429 also counted as a failed attempt | The batch halves, the requests space out, a 429 waits instead of failing, and the reader's second key is tried |
+| The reading scrolls too fast when the voice reads | The auto-scroll timed the sentences on a guess while the voice was still speaking | The auto-scroll waits for the voice; the voice turns the page when the sentence is said |
+
+Also: shadcn/ui is installed and used (the composer, the buttons, the
+spoiler switch, the source chips), the reader's menu has "Read along"
+next to the voice, and `app/src` has **no** `any`, `unknown` or `never`
+left — the count went from 42 to 0.
+
+**Verified:** `tsc -b` clean · `vitest` 323 passed / 3 skipped ·
+`npm run build` green · `oxlint` no errors.
+
+**Honest gaps:** the fixes were made from the code and the two
+screenshots, not from a phone in the hand — the drag, the composer's
+five lines and the meaning card's buttons still want a look on the
+device. The rate-limit work is a self-tuning back-off, not a promise
+from Google about what a free key may do; the truth is now shown in
+the app instead of hidden.

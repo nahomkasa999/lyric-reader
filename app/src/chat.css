@@ -31,8 +31,8 @@
   top: 0;
   /* The height follows the drag: the sheet is always exactly as tall as
      the part of the screen it shows, so the composer is never pushed
-     below the edge. */
-  height: 100dvh;
+     below the edge. The value here is the first frame — peek. */
+  height: 62dvh;
   display: flex;
   flex-direction: column;
   background: rgb(18 18 20 / 0.9);
