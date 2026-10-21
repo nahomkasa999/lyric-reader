@@ -31,6 +31,7 @@ export function useAssistant(opts: AssistantOptions = {}): AssistantState {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [live, setLive] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
   const [spoilers, setSpoilers] = useState(false);
@@ -48,6 +49,7 @@ export function useAssistant(opts: AssistantOptions = {}): AssistantState {
     setSending,
     setStreaming,
     setSources,
+    setLive,
   });
 
   const send = useCallback(
@@ -64,6 +66,7 @@ export function useAssistant(opts: AssistantOptions = {}): AssistantState {
     thread: threads.thread,
     messages: threads.thread?.messages ?? [],
     streaming,
+    live,
     input,
     setInput,
     sending,

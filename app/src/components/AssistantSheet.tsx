@@ -13,6 +13,7 @@ import ChatSheet from "./assistant/ChatSheet";
 import Composer from "./assistant/Composer";
 import IndexStrip from "./assistant/IndexStrip";
 import Message from "./assistant/Message";
+import Markdown from "./assistant/Markdown";
 import { NewThreadButton, ThreadsButton } from "./assistant/SheetHeader";
 import ThreadDrawer from "./assistant/ThreadDrawer";
 import { useSheetDrag } from "./assistant/useSheetDrag";
@@ -136,6 +137,12 @@ export default function AssistantSheet({
             {a.messages.map((m, i) => (
               <Message key={i} message={m} onJump={onJump} />
             ))}
+            {a.streaming && (
+              <div data-testid="assistant-answer" className="chat-ai">
+                <Markdown text={a.live} />
+                <span className="chat-caret" aria-hidden />
+              </div>
+            )}
             {a.sending && !a.streaming && (
               <div
                 data-testid="assistant-thinking"

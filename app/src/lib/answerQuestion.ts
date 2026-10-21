@@ -8,7 +8,7 @@
 //
 // It is all here, out of the React hook, so the hook only has to hold
 // the state.
-import { aiGenerate } from "./ai";
+import { aiStream } from "./aiStream";
 import { embedQuery } from "./embeddings";
 import { listBooks } from "./db";
 import {
@@ -72,12 +72,14 @@ export async function answerQuestion(
   };
   const prompt = buildAssistantPrompt(req.question, passages, req.history, ctx);
 
-  // 4. The model.
-  const text = await aiGenerate({
+  // 4. The model — the answer arrives in pieces.
+  const text = await aiStream({
     apiKey: req.key,
     system: prompt.system,
     messages: prompt.messages,
     maxTokens: 1500,
+    signal: req.signal,
+    onToken: req.onToken ?? (() => {}),
   });
 
   const sources: Source[] = hits.slice(0, 6).map((h) => ({

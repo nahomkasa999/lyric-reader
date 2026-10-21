@@ -8,6 +8,8 @@ export interface AssistantState {
   messages: AssistantMessage[];
   /** the answer is coming in */
   streaming: boolean;
+  /** the text of the answer that is coming in */
+  live: string;
   input: string;
   setInput: (s: string) => void;
   sending: boolean;

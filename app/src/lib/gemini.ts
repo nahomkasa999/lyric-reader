@@ -2,26 +2,14 @@
 // The key is the user's own, stored on-device (lib/apikey.ts) and sent
 // only to generativelanguage.googleapis.com. It is never logged.
 import { getApiKey } from "./apikey";
+import { GeminiError, type GeminiFailure } from "./errors";
+
+export { GeminiError };
+export type { GeminiFailure };
 
 export interface GeminiMessage {
   role: "user" | "model";
   text: string;
-}
-
-export type GeminiFailure =
-  | "no-key"
-  | "invalid-key"
-  | "quota"
-  | "network"
-  | "blocked"
-  | "unknown";
-
-export class GeminiError extends Error {
-  code: GeminiFailure;
-  constructor(code: GeminiFailure, message: string) {
-    super(message);
-    this.code = code;
-  }
 }
 
 /**
@@ -70,13 +58,17 @@ async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   ms: number = GEMINI_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
+  const onAbort = () => ctrl.abort();
+  signal?.addEventListener("abort", onAbort);
   try {
     return await fetchFn(url, { ...init, signal: ctrl.signal });
   } finally {
     clearTimeout(t);
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 
@@ -85,11 +77,14 @@ export async function fetchTolerant(
   fetchFn: typeof fetch,
   url: string,
   init: RequestInit,
+  signal?: AbortSignal,
 ): Promise<Response> {
   try {
-    return await fetchWithTimeout(fetchFn, url, init);
-  } catch {
-    return await fetchWithTimeout(fetchFn, url, init);
+    return await fetchWithTimeout(fetchFn, url, init, GEMINI_TIMEOUT_MS, signal);
+  } catch (e) {
+    // A request the reader stopped must not be tried again.
+    if (signal?.aborted) throw e;
+    return await fetchWithTimeout(fetchFn, url, init, GEMINI_TIMEOUT_MS, signal);
   }
 }
 
@@ -123,6 +118,33 @@ export function pickModel(names: string[]): string | null {
     (a, b) => tierOf(a) - tierOf(b) || penalty(a) - penalty(b),
   );
   return sorted.length ? sorted[0] : null;
+}
+
+/**
+ * The failure Gemini reported, in the app's own words.
+ *
+ * The same mapping for the streaming and the non-streaming path — and
+ * Google's own words are kept next to ours, so a failure can be
+ * diagnosed from a screenshot alone.
+ */
+export function geminiFailure(code: number, message: string): GeminiError {
+  const raw = String(message ?? "").replace(/\s+/g, " ").trim().slice(0, 140);
+  const suffix = raw ? ` (Google: ${raw})` : "";
+  if (code === 400 || /key/i.test(raw))
+    return new GeminiError(
+      "invalid-key",
+      "That key didn't work — double-check it in Settings, or grab a fresh one from Google AI Studio." +
+        suffix,
+    );
+  if (code === 429 || code === 503)
+    return new GeminiError(
+      "quota",
+      "The AI is rate-limited right now — wait a little and retry." + suffix,
+    );
+  return new GeminiError(
+    "unknown",
+    `The AI call failed (${code}). Try again in a moment.` + suffix,
+  );
 }
 
 /**
@@ -253,19 +275,6 @@ async function generateWithModel(
     const msg = data.error?.message ?? "";
     // v4.2: surface Google's own error text (truncated) next to our mapped
     // messages, so a failure can be diagnosed from a screenshot alone.
-    const raw = String(msg).replace(/\s+/g, " ").trim().slice(0, 140);
-    const suffix = raw ? ` (Google: ${raw})` : "";
-    if (code === 400 || /key/i.test(msg))
-      throw new GeminiError(
-        "invalid-key",
-        "That key didn't work — double-check it in Settings, or grab a fresh one from Google AI Studio." +
-          suffix,
-      );
-    if (code === 429 || code === 503)
-      throw new GeminiError(
-        "quota",
-        "The AI is rate-limited right now — wait a little and retry." + suffix,
-      );
     if (code === 404 && !opts.model && !opts._retried) {
       // v4.1: the stored/hardcoded model name isn't valid for this key —
       // re-discover what the key can actually use, then retry once.
@@ -290,10 +299,7 @@ async function generateWithModel(
         );
       }
     }
-    throw new GeminiError(
-      "unknown",
-      `The AI call failed (${code}). Try again in a moment.` + suffix,
-    );
+    throw geminiFailure(code, msg);
   }
   if (data.promptFeedback?.blockReason) {
     throw new GeminiError(
@@ -323,8 +329,7 @@ async function generateWithModel(
 /**
  * Verify a key AND discover the model it should use. Never logs or persists
  * the key — only the chosen model name is stored.
- */
-export async function testApiKey(
+ */export async function testApiKey(
   key: string,
   fetchFn?: typeof fetch,
 ): Promise<{ ok: true; model: string } | { ok: false; reason: string }> {

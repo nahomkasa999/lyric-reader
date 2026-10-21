@@ -5,12 +5,12 @@
 //
 // The API is OpenAI-compatible, so the request/response shape mirrors the
 // Gemini client — but the wire format is OpenAI's chat completions.
-import { GeminiError } from "./gemini";
+import { GeminiError } from "./errors";
 
 /** The default OpenRouter model: the free, auto-routing "any free model" tier. */
 export const OPENROUTER_MODEL = "openrouter/free";
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_TIMEOUT_MS = 20_000;
 const KEY = "lr-openrouter-key";
 
@@ -47,26 +47,33 @@ async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   ms: number = OPENROUTER_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
+  const onAbort = () => ctrl.abort();
+  signal?.addEventListener("abort", onAbort);
   try {
     return await fetchFn(url, { ...init, signal: ctrl.signal });
   } finally {
     clearTimeout(t);
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 
 /** Fetch with one automatic retry on network failure / timeout. */
-async function fetchTolerant(
+export async function fetchTolerant(
   fetchFn: typeof fetch,
   url: string,
   init: RequestInit,
+  signal?: AbortSignal,
 ): Promise<Response> {
   try {
-    return await fetchWithTimeout(fetchFn, url, init);
-  } catch {
-    return await fetchWithTimeout(fetchFn, url, init);
+    return await fetchWithTimeout(fetchFn, url, init, OPENROUTER_TIMEOUT_MS, signal);
+  } catch (e) {
+    // A request the reader stopped must not be tried again.
+    if (signal?.aborted) throw e;
+    return await fetchWithTimeout(fetchFn, url, init, OPENROUTER_TIMEOUT_MS, signal);
   }
 }
 
@@ -87,6 +94,8 @@ interface OrOpts {
   maxTokens?: number;
   fetchFn?: typeof fetch;
   model?: string;
+  /** the reader stopped the answer */
+  signal?: AbortSignal;
 }
 
 interface OrResponse {
@@ -150,23 +159,7 @@ export async function openRouterGenerate(opts: OrOpts): Promise<string> {
   if (!res.ok) {
     const code = data.error?.code ?? res.status;
     const msg = data.error?.message ?? "";
-    const raw = String(msg).replace(/\s+/g, " ").trim().slice(0, 140);
-    const suffix = raw ? ` (OpenRouter: ${raw})` : "";
-    if (code === 400 || /key/i.test(msg) || /auth/i.test(msg))
-      throw new GeminiError(
-        "invalid-key",
-        "That OpenRouter key didn't work — double-check it in Settings, or grab a fresh one at openrouter.ai." +
-          suffix,
-      );
-    if (code === 429 || code === 503)
-      throw new GeminiError(
-        "quota",
-        "OpenRouter is rate-limited right now — wait a little and retry." + suffix,
-      );
-    throw new GeminiError(
-      "unknown",
-      `The OpenRouter call failed (${code}). Try again in a moment.` + suffix,
-    );
+    throw openRouterFailure(code, msg);
   }
 
   const text = data.choices?.[0]?.message?.content ?? "";
@@ -179,6 +172,31 @@ export async function openRouterGenerate(opts: OrOpts): Promise<string> {
     );
   }
   return text;
+}
+
+/**
+ * The failure OpenRouter reported, in the app's own words.
+ *
+ * The same mapping for the streaming and the non-streaming path.
+ */
+export function openRouterFailure(code: number, message: string): GeminiError {
+  const raw = String(message ?? "").replace(/\s+/g, " ").trim().slice(0, 140);
+  const suffix = raw ? ` (OpenRouter: ${raw})` : "";
+  if (code === 400 || /key/i.test(raw) || /auth/i.test(raw))
+    return new GeminiError(
+      "invalid-key",
+      "That OpenRouter key didn't work — double-check it in Settings, or grab a fresh one at openrouter.ai." +
+        suffix,
+    );
+  if (code === 429 || code === 503)
+    return new GeminiError(
+      "quota",
+      "OpenRouter is rate-limited right now — wait a little and retry." + suffix,
+    );
+  return new GeminiError(
+    "unknown",
+    `The OpenRouter call failed (${code}). Try again in a moment.` + suffix,
+  );
 }
 
 /**

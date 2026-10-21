@@ -4,7 +4,7 @@
 // that holds the state (components/useAssistant.ts) stays small: it
 // owns the screen, this owns the conversation.
 import { useCallback, useRef } from "react";
-import { GeminiError } from "../../lib/ai";
+import { GeminiError } from "../../lib/errors";
 import { getEffectiveApiKey } from "../../lib/apikey";
 import { answerQuestion } from "../../lib/answerQuestion";
 import { recapReadSoFar, recapSources } from "../../lib/recap";
@@ -24,6 +24,8 @@ export interface AnswerOptions {
   setSending: (v: boolean) => void;
   setStreaming: (v: boolean) => void;
   setSources: (v: Source[]) => void;
+  /** the text that is arriving right now */
+  setLive: (v: string) => void;
 }
 
 export interface Answers {
@@ -34,7 +36,7 @@ export interface Answers {
 }
 
 /** Why did the last request fail? */
-function reasonOf(e: unknown): string {
+function reasonOf(e: Error): string {
   return e instanceof GeminiError
     ? e.message
     : "Couldn't reach the AI — check your connection.";
@@ -50,6 +52,10 @@ export function useAnswers(opts: AnswerOptions): Answers {
   itemRef.current = opts.item;
   const spoilersRef = useRef(opts.spoilers);
   spoilersRef.current = opts.spoilers;
+  // The request that is running, so the reader can stop it.
+  const ctrl = useRef<AbortController | null>(null);
+  // The text that has arrived so far.
+  const live = useRef("");
 
   /** Ask the model, and write the answer into the thread. */
   const answer = useCallback(
@@ -69,6 +75,10 @@ export function useAnswers(opts: AnswerOptions): Answers {
       // The question is saved BEFORE the request: a failed answer must
       // not lose what the reader asked.
       threads.commit({ ...base, messages: withUser });
+      const request = new AbortController();
+      ctrl.current = request;
+      live.current = "";
+      opts.setLive("");
       try {
         opts.setStreaming(true);
         const result = await answerQuestion({
@@ -79,6 +89,11 @@ export function useAnswers(opts: AnswerOptions): Answers {
           bookTitle,
           item: itemRef.current,
           spoilers: spoilersRef.current,
+          signal: request.signal,
+          onToken: (token) => {
+            live.current += token;
+            opts.setLive(live.current);
+          },
         });
         opts.setSources(result.sources);
         threads.commit({
@@ -95,10 +110,35 @@ export function useAnswers(opts: AnswerOptions): Answers {
           updatedAt: Date.now(),
         });
       } catch (e) {
-        opts.setError(reasonOf(e));
+        if (request.signal.aborted) {
+          // The reader stopped it: what was said stays.
+          const said = live.current.trim();
+          if (said) {
+            threads.commit({
+              ...base,
+              messages: [
+                ...withUser,
+                {
+                  role: "ai",
+                  text: `${said} (stopped)`,
+                  sources: [],
+                  at: Date.now(),
+                },
+              ],
+              updatedAt: Date.now(),
+            });
+          }
+        } else {
+          opts.setError(
+          reasonOf(e instanceof Error ? e : new Error("The AI call failed.")),
+        );
+        }
       } finally {
+        live.current = "";
+        opts.setLive("");
         opts.setStreaming(false);
         opts.setSending(false);
+        ctrl.current = null;
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -159,7 +199,9 @@ export function useAnswers(opts: AnswerOptions): Answers {
         updatedAt: Date.now(),
       });
     } catch (e) {
-      opts.setError(reasonOf(e));
+      opts.setError(
+          reasonOf(e instanceof Error ? e : new Error("The AI call failed.")),
+        );
     } finally {
       opts.setSending(false);
     }
@@ -167,8 +209,7 @@ export function useAnswers(opts: AnswerOptions): Answers {
 
   /** Stop the answer that is coming in. */
   const stop = useCallback(() => {
-    opts.setStreaming(false);
-    opts.setSending(false);
+    ctrl.current?.abort();
   }, []);
 
   return { send, retry, recap, stop };
