@@ -174,3 +174,12 @@ export function MuteIcon() {
     </svg>
   );
 }
+
+/** v4.12: the assistant — a chat bubble. */
+export function ChatIcon() {
+  return (
+    <svg {...base} width="18" height="18">
+      <path d="M20 12.5a7.5 7.5 0 0 1-10.9 6.7L4 20.5l1.4-4.6A7.5 7.5 0 1 1 20 12.5z" />
+    </svg>
+  );
+}

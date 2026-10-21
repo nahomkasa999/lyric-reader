@@ -31,9 +31,10 @@ export default function YoutubeAudio({ visible, interrupt = false }: Props) {
   const audio = useYoutubeAudio(interrupt);
   const { mode, draft, setDraft, error, embedSrc, reload, player } = audio;
 
-  // The control keeps its place once it has something to play: it is the
-  // only way to stop the sound without digging for it.
-  const shown = visible || mode !== "circle" || !!audio.now;
+  // The control hides with the chrome, exactly like the "?" and the
+  // speaker: nothing sits on the reading screen. An open bar or panel
+  // keeps it where it is — you cannot close what you cannot see.
+  const shown = visible || mode !== "circle";
 
   return (
     <div

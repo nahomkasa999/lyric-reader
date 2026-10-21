@@ -7,8 +7,9 @@ import type { Block, BookDoc, Item } from "./types";
 import { flattenBlocks, nextId, paginateBlocks } from "./types";
 import { splitSentences } from "./segment";
 import { parseTextBlocks } from "./structure";
+import { transcribeMedia } from "./transcribe";
 
-export type Source = "upload" | "paste" | "sample";
+export type Source = "upload" | "paste" | "sample" | "media";
 
 function makeBook(title: string, items: Item[], source: Source): BookDoc {
   return {
@@ -212,4 +213,18 @@ export async function extractFile(file: File): Promise<BookDoc> {
     return extractTxt(await file.text(), name, "upload");
   }
   throw new Error(`Unsupported file type: ${file.name} (PDF, EPUB, TXT only)`);
+}
+
+/**
+ * A video or an audio file (v4.12): the speech becomes text, and the
+ * text becomes a book — read like any other, and searchable by the
+ * assistant like any other.
+ */
+export async function extractMedia(
+  file: File,
+  key: string,
+): Promise<BookDoc> {
+  const name = file.name.replace(/\.[^.]+$/, "") || "Untitled";
+  const text = await transcribeMedia(file, key);
+  return extractTxt(text, name, "media");
 }

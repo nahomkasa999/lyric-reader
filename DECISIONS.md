@@ -925,6 +925,86 @@ added three small resilience items in the same pass:
   Tailwind, like the rest of the app; only its entrance is declared in
   `index.css` (`--animate-yt-in`).
 
+## v4.12 — the assistant: ask your own library (Oct 21, 2026)
+
+Nahom's problem, in his words: *"the AI only explains what the page is
+doing — it says we don't have a clear section for 30th Street, the chart
+is going really really large, and I can't start a new thread."* Three
+separate failures, three answers.
+
+- **"It doesn't have that section" → the whole library is indexed.**
+  Every book is cut into passages (`lib/chunks.ts`: a heading opens a
+  passage, passages stay under 800 characters, the last sentence of one
+  passage is repeated at the start of the next so a fact that straddles
+  the cut is still findable) and each passage is embedded with Gemini's
+  `gemini-embedding-001` at **768 dimensions** (Google's own Matryoshka
+  recommendation: a quarter of the size and four times faster to scan
+  than the full 3072, for almost no quality loss). The embeddings use
+  **two different task types** — `RETRIEVAL_DOCUMENT` for the passages,
+  `RETRIEVAL_QUERY` for the question — and that difference is what makes
+  a search feel right.
+  → Change: `lib/chunks.ts`, `lib/embeddings.ts`, `lib/indexBook.ts`.
+
+- **"The answer is the wrong one" → hybrid search.** The semantic half
+  (cosine over the embeddings) finds passages that MEAN the same thing;
+  the keyword half finds the passages that use the same WORDS — which
+  is how "30th Street" is found at all. The two scores are combined
+  0.75 / 0.25: meaning first, words second. Pure vector search misses
+  exact names; pure keyword search misses paraphrase. Both together beat
+  either alone.
+  → Change: `lib/vectorScore.ts` (the scoring), `lib/vectorIndex.ts`
+  (the search).
+
+- **"The chart is going really large" → threads.** A thread is a short,
+  independent conversation with its own scope (**this book** or **all my
+  books**). "New thread" starts an empty one — a question that has
+  nothing to do with the last one gets its own thread, and the old one
+  is still there, still readable, never in the way. Inside a thread the
+  prompt is bounded: the last 10 messages verbatim plus a digest of the
+  older ones (the reader's own earlier questions, listed — no extra
+  model call, no summary that can invent something). **The prompt can
+  never grow without bound.**
+  → Change: `lib/assistantStore.ts`, `lib/assistantContext.ts`,
+  `components/useAssistant.ts`.
+
+- **Where the vectors live: IndexedDB, not SQLite — and why.** SQLite
+  has **no vector type**: it would need the `sqlite-vec` extension
+  compiled into a WASM build (sql.js does not ship it), and the whole
+  book/progress/marks layer would have to move off IndexedDB to get
+  there. The maths would be identical JavaScript either way, and for a
+  personal library (a few thousand passages) a cosine scan is
+  milliseconds. So the vectors are Float32Array blobs in IndexedDB and
+  the search is a scan in JS — and the index sits behind
+  `lib/vectorIndex.ts`, so it can be swapped for a real vector store
+  later without touching the assistant. If a library ever grows past
+  ~50k passages, that is when the store changes, not now.
+  → Change: `lib/vectorIndex.ts`.
+
+- **The answers say where they came from.** Every answer carries a
+  **sources strip** — book, section, page — and tapping one opens the
+  reader at that exact sentence. The model is told to answer ONLY from
+  the passages it was given and to say plainly when the library does not
+  contain the answer.
+  → Change: `components/AssistantSheet.tsx`, `components/AssistantSources.tsx`.
+
+- **Videos and audio are books too.** A video or an audio file is
+  transcribed by ElevenLabs' Scribe v2 (the reader's own key, their own
+  quota) and the transcript becomes a book: read like any other, and
+  searchable by the assistant like any other.
+  → Change: `lib/transcribe.ts`, `lib/extract.ts` (`extractMedia`).
+
+- **Two smaller things, both asked for:**
+  · the **YouTube button now hides with the chrome**, exactly like the
+    "?" and the speaker — Nahom's correction: the circle was the one
+    button that stayed on the reading screen while everything else went
+    away. An open bar or panel keeps it where it is (you cannot close
+    what you cannot see);
+  · **looking a word up is half hearing it** — the word says itself
+    when its meaning arrives, with the phone's own voice (instant, free,
+    offline; ElevenLabs would cost a network round trip per lookup),
+    and the meaning card carries a button to hear it again.
+  → Change: `components/reader/YoutubeAudio.tsx`, `lib/wordSound.ts`.
+
 ## v4.10 — the model that reads: v2 for the speed, v4 for Amharic (Oct 21, 2026)
 
 - From the ElevenLabs text-to-speech skill: `eleven_multilingual_v2` is the

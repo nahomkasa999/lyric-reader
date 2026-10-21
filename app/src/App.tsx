@@ -3,6 +3,7 @@ import Library from "./components/Library";
 import Reader from "./components/Reader";
 import Saved from "./components/Saved";
 import Settings from "./components/Settings";
+import AssistantSheet from "./components/AssistantSheet";
 import GlassNav, { type NavKey } from "./components/GlassNav";
 import { SettingsProvider } from "./lib/settings";
 import { extractKeyFromHash, setApiKey } from "./lib/apikey";
@@ -17,6 +18,7 @@ import {
   saveProgress,
 } from "./lib/db";
 import { SAMPLE_TEXT, SAMPLE_TITLE } from "./lib/sample";
+import { startIndexing } from "./lib/indexBook";
 import AmbientBackground from "./components/AmbientBackground";
 
 const LAST_BOOK_KEY = "lyric-reader.last-book";
@@ -47,6 +49,11 @@ function Shell() {
   /** The book the bottom nav opens Saved/Words for. */
   const [navBookId, setNavBookId] = useState<string | null>(readLastBook);
   const [seeded, setSeeded] = useState(false);
+  /** v4.12: the assistant — open over whatever is on screen. */
+  const [assistant, setAssistant] = useState<{
+    bookId?: string;
+    bookTitle?: string;
+  } | null>(null);
 
   // The whole app is dark-only (the reader mockup is pure black).
   useEffect(() => {
@@ -84,7 +91,12 @@ function Shell() {
         const already = existing.some(
           (b) => b.source === "sample" && b.title === SAMPLE_TITLE,
         );
-        if (!already) await saveBook(book);
+        if (!already) {
+          await saveBook(book);
+          // v4.12: index the sample too, so the assistant has something
+          // to answer from the moment the app opens.
+          startIndexing(book);
+        }
         markSampleSeeded();
         setSeeded(true);
       })
@@ -177,8 +189,10 @@ function Shell() {
     );
   }
 
+  /** The view on screen — the assistant opens over whichever it is. */
+  let content: React.ReactNode;
   if (view === "settings") {
-    return (
+    content = (
       <>
         <AmbientBackground />
         <Settings
@@ -193,10 +207,8 @@ function Shell() {
         />
       </>
     );
-  }
-
-  if (view === "saved" && savedBookId) {
-    return (
+  } else if (view === "saved" && savedBookId) {
+    content = (
       <>
         <AmbientBackground />
         <Saved
@@ -215,10 +227,8 @@ function Shell() {
         />
       </>
     );
-  }
-
-  if (view === "reader" && openBookId) {
-    return (
+  } else if (view === "reader" && openBookId) {
+    content = (
       <>
         <AmbientBackground />
         <Reader
@@ -226,6 +236,27 @@ function Shell() {
           onBack={closeBook}
           onOpenSettings={() => openSettingsFrom("reader")}
           onOpenSaved={() => openSaved(openBookId, "reader")}
+          onOpenAssistant={(bookTitle) =>
+            setAssistant({ bookId: openBookId, bookTitle })
+          }
+        />
+      </>
+    );
+  } else {
+    content = (
+      <>
+        <AmbientBackground />
+        <Library
+          onOpen={openBook}
+          onOpenSettings={() => openSettingsFrom("library")}
+          onOpenSaved={(bookId) => openSaved(bookId, "library")}
+          onActiveBook={setNavBookId}
+          onOpenAssistant={() => setAssistant({})}
+        />
+        <GlassNav
+          active="home"
+          onNavigate={navTo}
+          canOpenBook={!!navBookId}
         />
       </>
     );
@@ -233,18 +264,22 @@ function Shell() {
 
   return (
     <>
-      <AmbientBackground />
-      <Library
-        onOpen={openBook}
-        onOpenSettings={() => openSettingsFrom("library")}
-        onOpenSaved={(bookId) => openSaved(bookId, "library")}
-        onActiveBook={setNavBookId}
-      />
-      <GlassNav
-        active="home"
-        onNavigate={navTo}
-        canOpenBook={!!navBookId}
-      />
+      {content}
+      {assistant && (
+        <AssistantSheet
+          bookId={assistant.bookId}
+          bookTitle={assistant.bookTitle}
+          onClose={() => setAssistant(null)}
+          onJump={(bookId, item) => {
+            setAssistant(null);
+            jumpToSaved(bookId, item, 0);
+          }}
+          onOpenSettings={() => {
+            setAssistant(null);
+            openSettingsFrom(view === "reader" ? "reader" : "library");
+          }}
+        />
+      )}
     </>
   );
 }

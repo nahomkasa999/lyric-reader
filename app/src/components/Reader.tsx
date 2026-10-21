@@ -40,6 +40,7 @@ import {
   type MeaningModel,
 } from "../lib/meaning";
 import { decorateText } from "../lib/vocab";
+import { sayWord } from "../lib/wordSound";
 import {
   nextAutoStep,
   nextSpeed,
@@ -57,6 +58,7 @@ import {
   CopyIcon,
   HighlightIcon,
   NoteIcon,
+  SpeakerIcon,
 } from "./reader/icons";
 
 interface Props {
@@ -64,6 +66,8 @@ interface Props {
   onBack: () => void;
   onOpenSettings: () => void;
   onOpenSaved: () => void;
+  /** v4.12: the assistant — ask the whole library, not just this page */
+  onOpenAssistant: (bookTitle: string) => void;
 }
 
 const clamp = (v: number, lo: number, hi: number) =>
@@ -97,7 +101,13 @@ interface MeaningState {
 // Cache of AI "as used in this sentence" lines: norm + sentence head -> line.
 const contextCache = new Map<string, string>();
 
-export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: Props) {
+export default function Reader({
+  bookId,
+  onBack,
+  onOpenSettings,
+  onOpenSaved,
+  onOpenAssistant,
+}: Props) {
   const [book, setBook] = useState<BookDoc | null>(null);
   const [pos, setPos] = useState<Position>({ item: 0, part: 0 });
   const [marks, setMarks] = useState<Record<string, Mark>>({});
@@ -841,6 +851,22 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     return () => cancelAnimationFrame(raf);
   }, [meaningStatus, anchorCard]);
 
+  // v4.12: looking a word up is half hearing it — the word says itself
+  // when its meaning arrives (once per word, not on every re-render).
+  const spokenWord = useRef<string | null>(null);
+  useEffect(() => {
+    if (meaning?.status !== "ready") return;
+    const word = meaning.model?.word || meaning.text;
+    if (!word || spokenWord.current === word) return;
+    spokenWord.current = word;
+    sayWord(word, { voiceURI: settings.readAloudSystemVoice });
+  }, [
+    meaning?.status,
+    meaning?.model?.word,
+    meaning?.text,
+    settings.readAloudSystemVoice,
+  ]);
+
   // FIX 3: cards can also grow AFTER anchoring — webfonts arriving late
   // reflow the text and widen the card past the clamped position (this is
   // exactly what pushed the note editor off the right edge). A
@@ -1488,6 +1514,13 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           onOpenSettings();
         }}
         onOpenVoice={openVoice}
+        onOpenAssistant={() => {
+          if (Date.now() < suppressUntil.current) return;
+          // Leaving the page for a sheet stays paused — no resume later.
+          stopAutoHard();
+          voiceRef.current?.stop();
+          onOpenAssistant(book?.title ?? "");
+        }}
         onTextSize={(delta) => {
           if (Date.now() < suppressUntil.current) return;
           adjustMainSize(delta);
@@ -1678,7 +1711,22 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
             )}
             {meaning.status === "ready" && meaning.model && (
               <>
-                <div className="meaning-word">{meaning.model.word}</div>
+                <div className="meaning-word">
+                  {meaning.model.word}
+                  {/* v4.12: hear the word again. */}
+                  <button
+                    data-testid="meaning-say"
+                    aria-label={`Say ${meaning.model.word}`}
+                    className="ml-2 inline-grid h-7 w-7 place-items-center align-middle rounded-full border border-border align-middle"
+                    onClick={() =>
+                      sayWord(meaning.model?.word || meaning.text, {
+                        voiceURI: settings.readAloudSystemVoice,
+                      })
+                    }
+                  >
+                    <SpeakerIcon />
+                  </button>
+                </div>
                 {meaning.model.phonetic && (
                   <div className="meaning-phonetic">
                     {meaning.model.phonetic}

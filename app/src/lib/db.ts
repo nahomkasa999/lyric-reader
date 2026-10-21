@@ -4,9 +4,11 @@ import { migrateBook, resegmentItems } from "./types";
 import { splitSentences } from "./segment";
 
 const DB_NAME = "lyric-reader";
-const DB_VERSION = 3;
+// v4: the knowledge base (chunks + their vectors) and the assistant's
+// threads joined the library.
+const DB_VERSION = 4;
 
-function openDb(): Promise<IDBDatabase> {
+export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
@@ -21,6 +23,15 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore("vocab", { keyPath: "id" });
       if (!db.objectStoreNames.contains("ask"))
         db.createObjectStore("ask", { keyPath: "bookId" });
+      // The knowledge base: the passages of every book, and their
+      // embeddings (lib/vectorIndex.ts).
+      if (!db.objectStoreNames.contains("chunks"))
+        db.createObjectStore("chunks", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("vectors"))
+        db.createObjectStore("vectors", { keyPath: "id" });
+      // The assistant's conversations (lib/assistantStore.ts).
+      if (!db.objectStoreNames.contains("threads"))
+        db.createObjectStore("threads", { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

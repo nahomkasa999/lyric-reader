@@ -32,7 +32,7 @@ export interface BookDoc {
   /** total items (kept name for DB/library compatibility) */
   totalSentences: number;
   createdAt: number;
-  source: "sample" | "upload" | "paste";
+  source: "sample" | "upload" | "paste" | "media";
 }
 
 export interface Position {

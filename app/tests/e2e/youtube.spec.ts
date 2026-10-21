@@ -106,7 +106,9 @@ test.describe("Lyric Reader — YouTube to audio", () => {
       .fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     await page.getByTestId("yt-play").click();
 
-    // The circle again → the panel opens.
+    // The circle again → the panel opens. (The button hides with the
+    // chrome, so the chrome is revealed first — same as the "?".)
+    await revealChrome(page);
     await page.getByTestId("yt-btn").click();
     await expect(page.getByTestId("yt-panel")).toBeVisible();
     await expect(page.getByTestId("yt-row-dQw4w9WgXcQ")).toBeVisible();
@@ -140,6 +142,7 @@ test.describe("Lyric Reader — YouTube to audio", () => {
       .getByTestId("yt-input")
       .fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     await page.getByTestId("yt-play").click();
+    await revealChrome(page);
     await page.getByTestId("yt-btn").click();
 
     await expect(page.getByTestId("yt-toggle")).toBeVisible();

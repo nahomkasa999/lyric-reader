@@ -121,12 +121,13 @@ export default function AddBookSheet({
               {busy ? "Working…" : "Choose a file"}
             </span>
             <span className="mt-1 block text-xs text-muted-foreground">
-              PDF, EPUB, TXT or Markdown
+              PDF, EPUB, TXT, Markdown — or a video or audio file, which
+              is transcribed
             </span>
             <input
               ref={fileRef}
               type="file"
-              accept=".pdf,.epub,.txt,.md"
+              accept=".pdf,.epub,.txt,.md,.mp4,.m4a,.mp3,.wav,.webm,.mov,.ogg,.aac,.flac,.mkv"
               className="hidden"
               onChange={(e) => {
                 onFiles(e.target.files);

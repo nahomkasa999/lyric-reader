@@ -88,6 +88,12 @@ a circle at rest; tapped, it opens sideways into a field for a link;
 once something plays it folds back into the circle and opens into a
 panel (the links you played before on top, the controls below).
 
+The **assistant** is a sheet over whatever is on screen (Home, the
+reader): a thread bar at the top (a new thread starts empty), the
+conversation in the middle, the field at the bottom. Every answer
+carries its sources — book, section, page — and tapping one opens the
+reader there. It answers from the reader's own books only.
+
 ## Elevation & Depth
 
 One glass recipe, used for header, hero, bottom nav, sheets, settings groups:

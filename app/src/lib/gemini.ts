@@ -81,7 +81,7 @@ async function fetchWithTimeout(
 }
 
 /** Fetch with one automatic retry on network failure / timeout. */
-async function fetchTolerant(
+export async function fetchTolerant(
   fetchFn: typeof fetch,
   url: string,
   init: RequestInit,

@@ -10,9 +10,12 @@ previous page returns exactly as you left it. Bullets keep a thin hairline
 linking them to their parent point.
 
 100% local: no accounts, no servers, no uploads. Works fully offline.
-(One optional extra: ask the AI questions about a passage — that needs
-your own free Gemini key in Settings, stored on your phone only and never
-sent anywhere but Google's Gemini API.)
+(Two optional extras: ask the AI questions — about the page, or about
+**your whole library** — and play music from YouTube behind the page.
+Both need your own free Gemini key in Settings, stored on your phone
+only and never sent anywhere but Google's Gemini API. A video or an
+audio file can be imported too — it is transcribed by ElevenLabs with
+your own key.)
 
 ## Run it
 
@@ -63,7 +66,10 @@ offline afterwards.
   (*Sample — The Midnight Staircase*, 60 sentences) is preloaded so you can
   try the reader instantly. Amharic text works too: the reader splits on
   the Ethiopic full stop ፡ (including the four-dot ending ፡፡፡፡), on ። and
-  on ፧, and keeps the marks exactly as you wrote them.
+  on ፧, and keeps the marks exactly as you wrote them. A **video or an
+  audio file** can be imported as well: it is transcribed by ElevenLabs
+  (your own key) and the transcript becomes a book you can read and ask
+  about.
 - **Reader:** the book is an item stream on a scrolling track — the
   current sentence stays centred and bright, the trail sits above in muted
   colour, the next below. Long sentences split into parts: each gesture
@@ -97,7 +103,24 @@ offline afterwards.
   section heading) to Gemini and answers only from that text. Quoted
   sentences in an answer are tappable: tap one and the reader jumps to it.
   Bring your own free Gemini key (Settings → AI) — plain-word definitions
-  always work keyless via the free dictionary API.
+  always work keyless via the free dictionary API. Looking a word up is
+  half hearing it: the word says itself when its meaning arrives (the
+  phone's own voice — instant and free), and the card has a button to
+  hear it again.
+- **The assistant (the chat bubble on Home, ⋯ → Assistant in the reader):**
+  ask **your own library**. Every book is cut into passages and embedded in
+  the background, so "what is the story so far?" or "why did he leave?"
+  finds the passage it is in — in any book, not only the page you have
+  open. The answer comes with its sources (book · section · page); tap one
+  and the reader opens right there. A **thread** is a short, independent
+  conversation: **New thread** starts an empty one, so a question that has
+  nothing to do with the last one never has to carry it.
+- **Music behind the page (the ♪ button, bottom-left of the reader):** tap
+  it, paste a YouTube link, and it plays — **audio only**, the video is
+  never shown. Tap it again for a panel: the links you played before (they
+  can be played all at once, as a playlist), the controls (pause, next,
+  volume) and a field to change the audio. A YouTube playlist link works
+  too. The button hides with the rest of the chrome, like the "?" does.
 - **Auto-scroll:** a ▶/❚❚ ghost button beside the "?", in the same
   auto-hiding chrome cluster. Tap to play/pause (Space works too); it
   advances part by part at a reading pace computed per part
@@ -141,25 +164,42 @@ app/src/
     extract.ts    PDF (pdfjs-dist) / EPUB (jszip + OPF walker) / TXT -> BookDoc
     types.ts      item stream model, per-part stepping, his page rule
     parts.ts      splitS: long sentences -> parts (his exact algorithm)
-    db.ts         IndexedDB: books, progress, per-part marks + notes, vocab, ask threads
+    db.ts         IndexedDB: books, progress, per-part marks + notes, vocab,
+                  ask threads, the knowledge base (chunks + vectors), the
+                  assistant's threads
     settings.tsx  reader settings (persisted) as CSS custom properties
     sample.ts     the bundled sample book
     apikey.ts     Gemini key in localStorage (never logged, never shipped)
     gemini.ts     Gemini 2.5 Flash client (chat + JSON mode, calm errors)
     meaning.ts    dictionary lookup + lemmatizer retry + Gemini phrase/in-context
     askContext.ts passage context builder + «quote» matching for the Ask sheet
+    chunks.ts     a book -> passages (heading, page, item range)
+    embeddings.ts Gemini embeddings (gemini-embedding-001, 768 dims)
+    vectorIndex.ts the knowledge base: passages + vectors, the hybrid search
+    vectorScore.ts the scoring of a search (cosine + words), pure
+    indexBook.ts  the background job that indexes a book
+    assistantContext.ts what the model is shown: passages + bounded thread
+    assistantStore.ts the assistant's threads (IndexedDB)
+    transcribe.ts a video or audio file -> text (ElevenLabs Scribe v2)
+    wordSound.ts  the word says itself
     vocab.ts      day grouping + saved-word text decoration
     speech.ts     the browser's speech engine (the fallback voice)
     elevenlabs.ts the ElevenLabs client: key, voices, text-to-speech
+    youtube.ts    YouTube links + the embed URLs
+    youtubeWire.ts the postMessage wire to the embedded player
+    youtubePlaylist.ts the links you played before
   components/
     AskSheet.tsx  bottom-sheet Q&A about the passage (thread per book)
+    AssistantSheet.tsx  the assistant: threads, answers, sources
+    useAssistant.ts     the assistant's state and actions
     Words.tsx     saved words grouped by day, tap-to-jump, delete
   components/
     Library.tsx   upload / paste / book list with progress
     Reader.tsx    his track reader: items, parts, clicks, popup, page field
     Saved.tsx     saved bookmarks / highlights / notes for a book
     Settings.tsx  the settings page (font, sizes, colours, preview)
-    reader/       the reader's parts: TopBar, ReaderControls, VoiceSheet
+    reader/       the reader's parts: TopBar, ReaderControls, VoiceSheet,
+                  YoutubeAudio (the music control) + its hooks
     settings/     the settings groups (controls, Read aloud)
 
 Read aloud needs a key, and it is **the reader's own**: paste it in

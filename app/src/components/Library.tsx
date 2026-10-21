@@ -3,7 +3,15 @@
 // Your Library → (the glass bottom nav lives in App, it is shared by every
 // non-reader view).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { extractFile, extractTxt } from "../lib/extract";
+import { extractFile, extractMedia, extractTxt } from "../lib/extract";
+import { getElevenLabsKey } from "../lib/elevenlabs";
+import { isMediaFile } from "../lib/transcribe";
+import {
+  indexLabel,
+  onIndexProgress,
+  startIndexing,
+} from "../lib/indexBook";
+import { deleteIndex } from "../lib/vectorIndex";
 import {
   deleteBook,
   getBook,
@@ -31,6 +39,8 @@ interface Props {
   onOpen: (bookId: string) => void;
   onOpenSettings: () => void;
   onOpenSaved: (bookId: string) => void;
+  /** v4.12: the assistant — ask the whole library */
+  onOpenAssistant: () => void;
   /**
    * Reports which book the Continue Reading card points at (null when the
    * library is empty) so the bottom nav can open Saved/Words for it.
@@ -42,6 +52,7 @@ export default function Library({
   onOpen,
   onOpenSettings,
   onOpenSaved,
+  onOpenAssistant,
   onActiveBook,
 }: Props) {
   const [books, setBooks] = useState<BookMeta[]>([]);
@@ -49,6 +60,16 @@ export default function Library({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  /** v4.12: how the indexing of each book is going. */
+  const [indexing, setIndexing] = useState<Record<string, string>>({});
+
+  useEffect(
+    () =>
+      onIndexProgress((p) => {
+        setIndexing((prev) => ({ ...prev, [p.bookId]: indexLabel(p) }));
+      }),
+    [],
+  );
 
   const refresh = useCallback(async () => {
     const list = await listBooks();
@@ -77,6 +98,9 @@ export default function Library({
         if (book.totalSentences === 0)
           throw new Error("No readable text found in that file.");
         await saveBook(book);
+        // v4.12: the passages of the book are embedded in the background,
+        // so the assistant can find them later.
+        startIndexing(book);
         await refresh();
         onOpen(book.id);
       } catch (e) {
@@ -92,6 +116,14 @@ export default function Library({
     async (files: FileList | null) => {
       const f = files?.[0];
       if (!f) return;
+      // v4.12: a video or an audio file is transcribed, and the
+      // transcript becomes a book like any other.
+      if (isMediaFile(f)) {
+        await addBook(f.name, () =>
+          extractMedia(f, getElevenLabsKey()),
+        );
+        return;
+      }
       await addBook(f.name, () => extractFile(f));
     },
     [addBook],
@@ -110,6 +142,8 @@ export default function Library({
   const onDelete = useCallback(
     async (id: string) => {
       await deleteBook(id);
+      // v4.12: the passages of a deleted book go with it.
+      await deleteIndex(id).catch(() => {});
       // The hero must not point at a book that is gone.
       if (readLastBook() === id) {
         try {
@@ -158,6 +192,26 @@ export default function Library({
               Read one sentence at a time.
             </p>
           </div>
+          <button
+            data-testid="library-assistant-btn"
+            onClick={onOpenAssistant}
+            aria-label="Ask your library"
+            className="glass-pill press"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M20 12.5a7.5 7.5 0 0 1-10.9 6.7L4 20.5l1.4-4.6A7.5 7.5 0 1 1 20 12.5z" />
+            </svg>
+          </button>
           {active && (
             <button
               data-testid="library-saved-btn"
@@ -257,6 +311,7 @@ export default function Library({
                     </p>
                     <p className="mt-0.5 text-[13px] text-muted-foreground">
                       {b.totalSentences} sentences · {pct}% read
+                      {indexing[b.id] ? ` · ${indexing[b.id]}` : ""}
                     </p>
                     <span className="home-bar mt-2">
                       <i style={{ width: `${pct}%` }} />
