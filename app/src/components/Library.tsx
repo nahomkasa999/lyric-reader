@@ -40,8 +40,6 @@ interface Props {
   onOpen: (bookId: string) => void;
   onOpenSettings: () => void;
   onOpenSaved: (bookId: string) => void;
-  /** v4.12: the assistant — ask the whole library */
-  onOpenAssistant: () => void;
   /**
    * Reports which book the Continue Reading card points at (null when the
    * library is empty) so the bottom nav can open Saved/Words for it.
@@ -53,7 +51,6 @@ export default function Library({
   onOpen,
   onOpenSettings,
   onOpenSaved,
-  onOpenAssistant,
   onActiveBook,
 }: Props) {
   const [books, setBooks] = useState<BookMeta[]>([]);
@@ -195,26 +192,6 @@ export default function Library({
               Read one sentence at a time.
             </p>
           </div>
-          <button
-            data-testid="library-assistant-btn"
-            onClick={onOpenAssistant}
-            aria-label="Ask your library"
-            className="glass-pill press"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M20 12.5a7.5 7.5 0 0 1-10.9 6.7L4 20.5l1.4-4.6A7.5 7.5 0 1 1 20 12.5z" />
-            </svg>
-          </button>
           {active && (
             <button
               data-testid="library-saved-btn"

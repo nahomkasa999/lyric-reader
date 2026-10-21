@@ -49,10 +49,11 @@ function Shell() {
   /** The book the bottom nav opens Saved/Words for. */
   const [navBookId, setNavBookId] = useState<string | null>(readLastBook);
   const [seeded, setSeeded] = useState(false);
-  /** v4.12: the assistant — open over whatever is on screen. */
+  /** v4.13: the assistant — open over whatever is on screen. */
   const [assistant, setAssistant] = useState<{
     bookId?: string;
     bookTitle?: string;
+    item?: number;
   } | null>(null);
 
   // The whole app is dark-only (the reader mockup is pure black).
@@ -243,9 +244,10 @@ function Shell() {
           onBack={closeBook}
           onOpenSettings={() => openSettingsFrom("reader")}
           onOpenSaved={() => openSaved(openBookId, "reader")}
-          onOpenAssistant={(bookTitle) =>
-            setAssistant({ bookId: openBookId, bookTitle })
+          onOpenAssistant={(title, item) =>
+            setAssistant({ bookId: openBookId, bookTitle: title, item })
           }
+          assistantOpen={!!assistant}
         />
       </>
     );
@@ -258,7 +260,6 @@ function Shell() {
           onOpenSettings={() => openSettingsFrom("library")}
           onOpenSaved={(bookId) => openSaved(bookId, "library")}
           onActiveBook={setNavBookId}
-          onOpenAssistant={() => setAssistant({})}
         />
         <GlassNav
           active="home"
@@ -276,6 +277,7 @@ function Shell() {
         <AssistantSheet
           bookId={assistant.bookId}
           bookTitle={assistant.bookTitle}
+          item={assistant.item}
           onClose={() => setAssistant(null)}
           onJump={(bookId, item) => {
             setAssistant(null);

@@ -46,7 +46,6 @@ import {
   nextSpeed,
   paceMs,
 } from "../lib/autoscroll";
-import AskSheet from "./AskSheet";
 import TopBar from "./reader/TopBar";
 import VoiceSheet from "./reader/VoiceSheet";
 import ReaderControls from "./reader/ReaderControls";
@@ -68,8 +67,10 @@ interface Props {
   onBack: () => void;
   onOpenSettings: () => void;
   onOpenSaved: () => void;
-  /** v4.12: the assistant — ask the whole library, not just this page */
-  onOpenAssistant: (bookTitle: string) => void;
+  /** v4.13: the assistant — the whole library, in a sheet */
+  onOpenAssistant: (bookTitle: string, item: number) => void;
+  /** the assistant sheet is open over the reader */
+  assistantOpen: boolean;
 }
 
 const clamp = (v: number, lo: number, hi: number) =>
@@ -109,6 +110,7 @@ export default function Reader({
   onOpenSettings,
   onOpenSaved,
   onOpenAssistant,
+  assistantOpen,
 }: Props) {
   const [book, setBook] = useState<BookDoc | null>(null);
   const [pos, setPos] = useState<Position>({ item: 0, part: 0 });
@@ -122,7 +124,7 @@ export default function Reader({
   const [chromeVisible, setChromeVisible] = useState(false);
   const [noteEditing, setNoteEditing] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
-  // v4: text selection (pill) + meaning card + saved words + Ask.
+  // v4: text selection (pill) + meaning card + saved words.
   const [sel, setSel] = useState<{
     text: string;
     top: number;
@@ -130,7 +132,6 @@ export default function Reader({
   } | null>(null);
   const [meaning, setMeaning] = useState<MeaningState | null>(null);
   const [vocab, setVocab] = useState<VocabRecord[]>([]);
-  const [askOpen, setAskOpen] = useState(false);
   // v4.4: auto-scroll (auto-advance) + speed flash label.
   const [autoPlaying, setAutoPlaying] = useState(false);
   const [speedFlash, setSpeedFlash] = useState<string | null>(null);
@@ -158,7 +159,6 @@ export default function Reader({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const pillRef = useRef<HTMLDivElement | null>(null);
   const meaningCardRef = useRef<HTMLDivElement | null>(null);
-  const askLayerRef = useRef<HTMLDivElement | null>(null);
   // v4.9: the voice sheet's layer — a press on the page behind it must
   // not step the sentence while the picker is open.
   const voiceLayerRef = useRef<HTMLDivElement | null>(null);
@@ -179,8 +179,8 @@ export default function Reader({
   meaningRef.current = meaning;
   const vocabRef = useRef(vocab);
   vocabRef.current = vocab;
-  const askOpenRef = useRef(askOpen);
-  askOpenRef.current = askOpen;
+  const assistantOpenRef = useRef(assistantOpen);
+  assistantOpenRef.current = assistantOpen;
   // v4.13: the outline sheet + the saved-word preview.
   const outlineOpenRef = useRef(outlineOpen);
   outlineOpenRef.current = outlineOpen;
@@ -197,7 +197,7 @@ export default function Reader({
   autoPlayingRef.current = autoPlaying;
   const autoTimer = useRef<number | null>(null);
   // True when playback was paused for a transient overlay (popup,
-  // selection, meaning card, Ask sheet) and should resume on close.
+  // selection, meaning card, assistant sheet) and should resume on close.
   // Leaving the reader / Settings / tab-hide clears it (stay paused).
   const autoResumeRef = useRef(false);
   const speedRef = useRef(settings.autoScrollSpeed);
@@ -404,7 +404,7 @@ export default function Reader({
   }, []);
 
   /** Anything that moves the reading position closes the reading overlays:
-      popup, selection, meaning card (the Ask sheet manages itself). */
+      popup, selection, meaning card (the sheet manages itself). */
   const closeReadingOverlays = useCallback(() => {
     closePop();
     collapseSelection();
@@ -477,7 +477,7 @@ export default function Reader({
       popRef.current ||
       selRef.current ||
       meaningRef.current ||
-      askOpenRef.current ||
+      assistantOpenRef.current ||
       outlineOpenRef.current ||
       vocabPreviewRef.current
     )
@@ -536,7 +536,7 @@ export default function Reader({
   const toggleAutoRef = useRef(toggleAuto);
   toggleAutoRef.current = toggleAuto;
 
-  /** Transient pause for popup/selection/meaning/Ask: resume on close. */
+  /** Transient pause for popup/selection/meaning/sheet: resume on close. */
   const pauseAutoTransient = useCallback(() => {
     if (!autoPlayingRef.current) return;
     clearAutoTimer();
@@ -551,15 +551,6 @@ export default function Reader({
     armAuto();
   }, [armAuto]);
 
-  /** Ask sheet close (tap-outside, Esc, ✕, quote jump): resume if transient. */
-  const closeAsk = useCallback(() => {
-    setAskOpen(false);
-    maybeResumeAuto();
-    // v4.7: the voice picks the sentence up again.
-    voiceRef.current?.resume();
-  }, [maybeResumeAuto]);
-  const closeAskRef = useRef(closeAsk);
-  closeAskRef.current = closeAsk;
   // Ref mirrors for callbacks defined before this block in source order.
   const pauseAutoTransientRef = useRef(pauseAutoTransient);
   pauseAutoTransientRef.current = pauseAutoTransient;
@@ -673,7 +664,7 @@ export default function Reader({
       !!popRef.current ||
       !!selRef.current ||
       !!meaningRef.current ||
-      !!askOpenRef.current ||
+      !!assistantOpenRef.current ||
       !!voiceSheetRef.current ||
       !!outlineOpenRef.current ||
       !!vocabPreviewRef.current,
@@ -1036,14 +1027,14 @@ export default function Reader({
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      // v4: while a selection is active, a meaning card open, or the Ask
-      // sheet open, every stepping input is suppressed. v4.1: also while a
+      // v4: while a selection is active, a meaning card open, or the
+      // assistant sheet open, every stepping input is suppressed. v4.1: also while a
       // long-press is pending or a selection drag is in progress.
       // v4.13: the outline and the saved-word preview suppress it too.
       if (
         selRef.current ||
         meaningRef.current ||
-        askOpenRef.current ||
+        assistantOpenRef.current ||
         outlineOpenRef.current ||
         vocabPreviewRef.current ||
         lpRef.current ||
@@ -1072,7 +1063,7 @@ export default function Reader({
       if (
         selRef.current ||
         meaningRef.current ||
-        askOpenRef.current ||
+        assistantOpenRef.current ||
         outlineOpenRef.current ||
         vocabPreviewRef.current ||
         lpRef.current ||
@@ -1162,7 +1153,7 @@ export default function Reader({
     const onKey = (e: KeyboardEvent) => {
       // v4: overlays own their keys. Escape unwinds topmost-first;
       // any other key is swallowed while a selection, meaning card,
-      // or the Ask sheet is open (stepping stays suppressed).
+      // or the assistant sheet is open (stepping stays suppressed).
       if (selRef.current) {
         if (e.key === "Escape") collapseSelection();
         return;
@@ -1180,10 +1171,8 @@ export default function Reader({
         if (e.key === "Escape") closeOutlineRef.current();
         return;
       }
-      if (askOpenRef.current) {
-        if (e.key === "Escape") closeAskRef.current();
-        return;
-      }
+      // v4.13: the assistant sheet is over the reader and owns its keys.
+      if (assistantOpenRef.current) return;
       if (popRef.current) {
         if (e.key === "Escape") closePop();
         return;
@@ -1244,7 +1233,7 @@ export default function Reader({
     };
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
-      if (popRef.current || meaningRef.current || askOpenRef.current) return;
+      if (popRef.current || meaningRef.current || assistantOpenRef.current) return;
       if (selRef.current) {
         // Re-drag: a press starting inside the painted selection extends
         // it (the capture dismissal let it through). Anchor the far end.
@@ -1365,7 +1354,6 @@ export default function Reader({
     openVocabPreview,
     raiseCustomSelection,
     toggleAuto,
-    closeAsk,
   ]);
 
   // v4.1: nothing to watch — selection is fully custom (long-press +
@@ -1451,11 +1439,10 @@ export default function Reader({
     return out;
   }, [items, curPage, parts]);
 
-  /** v4: jump the reader to an exact item+part (Ask quote taps, Words rows). */
+  /** Jump the reader to an exact item+part (a source chip, a Words row). */
   const jumpToPart = useCallback(
     (item: number, part: number) => {
       closeReadingOverlays();
-      closeAskRef.current();
       const pl = partsRef.current[item];
       setPos({
         item: clamp(item, 0, itemsRef.current.length - 1),
@@ -1547,7 +1534,9 @@ export default function Reader({
     <div
       data-testid="reader-root"
       className={`reader-root fixed inset-0 flex flex-col overflow-hidden${
-        pop || meaning || askOpen || outlineOpen || vocabPreview ? " fx" : ""
+        pop || meaning || assistantOpen || outlineOpen || vocabPreview
+          ? " fx"
+          : ""
       }`}
       // One dismissal mechanism for every floating card (v3.2, extended in
       // v4): while an overlay is open, a press ANYWHERE outside it (capture
@@ -1560,7 +1549,6 @@ export default function Reader({
           menuRef.current?.contains(t) ||
           pillRef.current?.contains(t) ||
           meaningCardRef.current?.contains(t) ||
-          askLayerRef.current?.contains(t) ||
           voiceLayerRef.current?.contains(t) ||
           outlineLayerRef.current?.contains(t) ||
           vocabCardRef.current?.contains(t)
@@ -1599,10 +1587,6 @@ export default function Reader({
             collapseSelection();
             closed = true;
           }
-        }
-        if (askOpenRef.current) {
-          closeAskRef.current();
-          closed = true;
         }
         // v4.13: a press outside the outline sheet closes it — the
         // reader stays exactly where it was.
@@ -1667,7 +1651,7 @@ export default function Reader({
           // Leaving the page for a sheet stays paused — no resume later.
           stopAutoHard();
           voiceRef.current?.stop();
-          onOpenAssistant(book?.title ?? "");
+          onOpenAssistant(book?.title ?? "", I);
         }}
         onTextSize={(delta) => {
           if (Date.now() < suppressUntil.current) return;
@@ -1749,7 +1733,7 @@ export default function Reader({
         </div>
       </div>
 
-      {/* The bottom chrome: page rail + the Ask / auto-scroll / voice
+      {/* The bottom chrome: page rail + the ask / auto-scroll / voice
           cluster, all hidden with the rest of the chrome. */}
       <ReaderControls
         visible={chromeVisible}
@@ -1773,10 +1757,10 @@ export default function Reader({
         onAsk={() => {
           if (Date.now() < suppressUntil.current) return;
           showChrome();
-          // v4.4: the Ask sheet pauses playback transiently.
+          // v4.4: the sheet pauses playback transiently.
           pauseAutoTransientRef.current();
           voiceRef.current?.stop();
-          setAskOpen(true);
+          onOpenAssistant(book?.title ?? "", I);
         }}
         autoPlaying={autoPlaying}
         onToggleAuto={() => {
@@ -2069,20 +2053,6 @@ export default function Reader({
           />
         </div>
       )}
-
-      {/* v4: the Ask sheet. */}
-      <div ref={askLayerRef}>
-        {askOpen && book && (
-          <AskSheet
-            bookId={bookId}
-            book={book}
-            itemIndex={I}
-            onClose={closeAsk}
-            onJump={jumpToPart}
-            onOpenSettings={onOpenSettings}
-          />
-        )}
-      </div>
 
       {/* Action popup: one card anchored at the sentence, staggered rows. */}
       {pop && (
