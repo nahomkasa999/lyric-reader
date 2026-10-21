@@ -1,4 +1,4 @@
-// Embeddings (v4.12): the vectors behind the knowledge base.
+// Embeddings (v4.13): the vectors behind the knowledge base.
 //
 // Gemini's own embedding model, with the same key the app already uses
 // (lib/apikey.ts) and the same failure mapping as lib/gemini.ts.
@@ -11,13 +11,20 @@
 //   RETRIEVAL_DOCUMENT for the passages, RETRIEVAL_QUERY for the
 //   question. Embedding a question the way you embed a document is the
 //   classic way to make a search feel wrong.
+//
+// The BATCH endpoint is the one to use for passages: one request per
+// passage, all of them in one call. The old code put twenty passages
+// into ONE `content.parts` — Google answered with a single vector for
+// twenty passages, and the library was silently unsearchable.
 import { GeminiError, fetchTolerant } from "./gemini";
+import { EMBED_BATCH } from "./indexPlan";
 
 export const EMBED_MODEL = "gemini-embedding-001";
 export const EMBED_DIM = 768;
 
-/** How many passages go into one request. */
-const BATCH = 20;
+const API = "https://generativelanguage.googleapis.com/v1beta/models";
+const EMBED_URL = `${API}/${EMBED_MODEL}:embedContent`;
+const BATCH_URL = `${API}/${EMBED_MODEL}:batchEmbedContents`;
 
 export type EmbedTask = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY";
 
@@ -27,8 +34,8 @@ interface EmbedResponse {
   error?: { code?: number; message?: string };
 }
 
-function isAbort(e: unknown): boolean {
-  return e instanceof DOMException && e.name === "AbortError";
+function isAbortName(name: string): boolean {
+  return name === "AbortError";
 }
 
 /**
@@ -49,11 +56,11 @@ export function normalize(v: Float32Array): Float32Array {
 }
 
 async function post(
-  body: unknown,
+  url: string,
+  body: object,
   key: string,
   fetchFn: typeof fetch,
 ): Promise<EmbedResponse> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent`;
   let res: Response;
   try {
     res = await fetchTolerant(fetchFn, url, {
@@ -67,7 +74,7 @@ async function post(
   } catch (e) {
     throw new GeminiError(
       "network",
-      isAbort(e)
+      isAbortName(e instanceof Error ? e.name : "")
         ? "The embedding request took too long — check your connection."
         : "Couldn't reach Google's servers — check your connection.",
     );
@@ -103,21 +110,79 @@ async function post(
 /** Read the vectors out of a reply, whichever shape it came in. */
 function vectorsOf(data: EmbedResponse): number[][] {
   if (Array.isArray(data.embeddings))
-    return data.embeddings
-      .map((e) => e?.values ?? [])
-      .filter((v) => v.length > 0);
+    return data.embeddings.map((e) => e?.values ?? []).filter((v) => v.length > 0);
   const one = data.embedding?.values;
   return one && one.length ? [one] : [];
+}
+
+/** The body of ONE embedding request — never two texts in one. */
+function singleBody(text: string, task: EmbedTask): object {
+  return {
+    content: { parts: [{ text }] },
+    taskType: task,
+    outputDimensionality: EMBED_DIM,
+  };
+}
+
+/**
+ * Embed a list of texts, one request per text.
+ *
+ * The safe path: one passage, one request. It is slower than the batch
+ * endpoint, but it can never come back with the wrong number of
+ * vectors.
+ */
+async function embedOneByOne(
+  texts: string[],
+  task: EmbedTask,
+  key: string,
+  fetchFn: typeof fetch,
+): Promise<Float32Array[]> {
+  const out: Float32Array[] = [];
+  for (const text of texts) {
+    const data = await post(EMBED_URL, singleBody(text, task), key, fetchFn);
+    const one = vectorsOf(data);
+    if (!one.length)
+      throw new GeminiError("unknown", "The AI sent back an empty vector.");
+    out.push(normalize(new Float32Array(one[0])));
+  }
+  return out;
+}
+
+/**
+ * Embed a list of texts with the batch endpoint.
+ *
+ * One `requests[]` entry per text — that is the shape Google expects.
+ * If the answer does not hold exactly one vector per request, the batch
+ * is retried one text at a time: not a guess.
+ */
+async function embedInBatch(
+  texts: string[],
+  task: EmbedTask,
+  key: string,
+  fetchFn: typeof fetch,
+): Promise<Float32Array[]> {
+  const body = {
+    requests: texts.map((text) => ({
+      model: `models/${EMBED_MODEL}`,
+      content: { parts: [{ text }] },
+      taskType: task,
+      outputDimensionality: EMBED_DIM,
+    })),
+  };
+  const data = await post(BATCH_URL, body, key, fetchFn);
+  const vectors = vectorsOf(data);
+  if (vectors.length !== texts.length) {
+    return embedOneByOne(texts, task, key, fetchFn);
+  }
+  return vectors.map((v) => normalize(new Float32Array(v)));
 }
 
 /**
  * Embed a list of texts.
  *
- * One request carries a batch of passages; if the API answers with a
- * single vector for a batch of texts (the shape differs between
- * embedding models), the batch is split and asked again, one text at a
- * time. That has happened before; it must not silently return one
- * vector for twenty passages.
+ * A question is one text: it goes to the single endpoint. Passages go
+ * in batches, and fall back to one request each when the batch comes
+ * back with the wrong shape.
  */
 export async function embedTexts(
   texts: string[],
@@ -126,39 +191,14 @@ export async function embedTexts(
   fetchFn: typeof fetch = fetch,
 ): Promise<Float32Array[]> {
   if (!texts.length) return [];
+  if (task === "RETRIEVAL_QUERY") {
+    return embedOneByOne(texts, task, key, fetchFn);
+  }
   const out: Float32Array[] = [];
-  for (let i = 0; i < texts.length; i += BATCH) {
-    const slice = texts.slice(i, i + BATCH);
-    const data = await post(
-      {
-        content: { parts: slice.map((text) => ({ text })) },
-        taskType: task,
-        outputDimensionality: EMBED_DIM,
-      },
-      key,
-      fetchFn,
-    );
-    const vectors = vectorsOf(data);
-    if (vectors.length === slice.length) {
-      for (const v of vectors) out.push(normalize(new Float32Array(v)));
-      continue;
-    }
-    // The shape did not match: one text per request, no guessing.
-    for (const text of slice) {
-      const single = await post(
-        {
-          content: { parts: [{ text }] },
-          taskType: task,
-          outputDimensionality: EMBED_DIM,
-        },
-        key,
-        fetchFn,
-      );
-      const one = vectorsOf(single);
-      if (!one.length)
-        throw new GeminiError("unknown", "The AI sent back an empty vector.");
-      out.push(normalize(new Float32Array(one[0])));
-    }
+  for (let i = 0; i < texts.length; i += EMBED_BATCH) {
+    const slice = texts.slice(i, i + EMBED_BATCH);
+    const batch = await embedInBatch(slice, task, key, fetchFn);
+    out.push(...batch);
   }
   return out;
 }

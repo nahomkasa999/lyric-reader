@@ -1,4 +1,4 @@
-// The knowledge base (v4.12): the passages of every book and the vectors
+// The knowledge base (v4.13): the passages of every book and the vectors
 // that find them.
 //
 // Storage is IndexedDB (the app's own layer — lib/db.ts): a `chunks` store
@@ -11,31 +11,25 @@
 // identical JS either way, and for a personal library (a few thousand
 // passages) the scan takes milliseconds. The index sits behind this
 // module, so it can be swapped later without touching the assistant.
+//
+// The SEARCH itself lives in lib/retrieval.ts — this file is the storage
+// half and the thin wrappers the rest of the app still calls.
 import type { Chunk } from "./chunks";
-import { cosine, combinedScore, lexicalScore, wordsOf } from "./vectorScore";
+import { combinedScore, cosine, lexicalScore, wordsOf } from "./vectorScore";
 import {
   allVectors,
   chunksById,
+  deleteByPrefix,
+  forgetAll,
   forgetVectors,
   putAll,
   type StoredChunk,
   type StoredVector,
 } from "./vectorStore";
-import { openDb } from "./db";
+import { retrieve, type SearchHit } from "./retrieval";
 
 export { cosine, combinedScore, lexicalScore, wordsOf };
-export type { StoredChunk, StoredVector };
-
-/** One passage the search found. */
-export interface SearchHit {
-  chunk: StoredChunk;
-  /** the combined score */
-  score: number;
-  /** the semantic part */
-  semantic: number;
-  /** the keyword part */
-  lexical: number;
-}
+export type { StoredChunk, StoredVector, SearchHit };
 
 /** Store a book's passages and their vectors (one write, one transaction each). */
 export async function saveIndex(
@@ -52,52 +46,31 @@ export async function saveIndex(
     page: c.page,
     from: c.from,
     to: c.to,
+    w: wordsOf(c.text),
   }));
   const vecs: StoredVector[] = vectors.map((v, i) => ({
     id: chunks[i]?.id ?? `${bookId}:${i}`,
     v,
-    w: wordsOf(chunks[i]?.text ?? ""),
   }));
   await putAll("chunks", stored);
   await putAll("vectors", vecs);
-  // The cache is stale now.
-  forgetVectors();
+  forgetAll();
 }
 
 /** Forget a book: its passages and its vectors. */
 export async function deleteIndex(bookId: string): Promise<void> {
-  const db = await openDb();
-  await new Promise<void>((resolve) => {
-    const t = db.transaction(["chunks", "vectors"], "readwrite");
-    for (const name of ["chunks", "vectors"]) {
-      const store = t.objectStore(name);
-      const req = store.getAllKeys();
-      req.onsuccess = () => {
-        for (const k of req.result as string[]) {
-          if (typeof k === "string" && k.startsWith(`${bookId}:`))
-            store.delete(k);
-        }
-      };
-    }
-    t.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-    t.onerror = () => {
-      db.close();
-      resolve();
-    };
-  });
-  forgetVectors();
+  await deleteByPrefix("chunks", bookId);
+  await deleteByPrefix("vectors", bookId);
+  forgetAll();
 }
 
-/** How many passages the knowledge base holds. */
+/** How many embeddings the knowledge base holds. */
 export async function indexSize(): Promise<number> {
   const all = await allVectors();
   return all.length;
 }
 
-/** The books the knowledge base knows about. */
+/** The books the knowledge base has embeddings for. */
 export async function indexedBooks(): Promise<string[]> {
   const all = await allVectors();
   return [...new Set(all.map((v) => v.id.split(":")[0]))];
@@ -114,23 +87,9 @@ export async function indexedBooks(): Promise<string[]> {
 export async function search(
   query: Float32Array,
   question: string,
-  opts: { bookId?: string; topK?: number } = {},
+  opts: { bookId?: string; maxItem?: number; topK?: number } = {},
 ): Promise<SearchHit[]> {
-  const topK = opts.topK ?? 8;
-  const all = await allVectors();
-  if (!all.length) return [];
-  const scope = opts.bookId
-    ? all.filter((v) => v.id.startsWith(`${opts.bookId}:`))
-    : all;
-  if (!scope.length) return [];
-
-  const scored = scope.map((v) => {
-    const semantic = cosine(query, v.v);
-    const lexical = lexicalScore(question, v.w);
-    return { v, semantic, lexical, score: combinedScore(semantic, lexical) };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return hitsOf(scored.slice(0, topK));
+  return retrieve(question, query, opts);
 }
 
 /**
@@ -142,40 +101,10 @@ export async function search(
  */
 export async function searchByWords(
   question: string,
-  opts: { bookId?: string; topK?: number } = {},
+  opts: { bookId?: string; maxItem?: number; topK?: number } = {},
 ): Promise<SearchHit[]> {
-  const topK = opts.topK ?? 8;
-  const all = await allVectors();
-  const scope = opts.bookId
-    ? all.filter((v) => v.id.startsWith(`${opts.bookId}:`))
-    : all;
-  if (!scope.length) return [];
-  const scored = scope
-    .map((v) => {
-      const lexical = lexicalScore(question, v.w);
-      return { v, semantic: 0, lexical, score: lexical };
-    })
-    .filter((t) => t.lexical > 0)
-    .sort((a, b) => b.score - a.score);
-  return hitsOf(scored.slice(0, topK));
+  return retrieve(question, null, opts);
 }
 
-/** Turn the scored vectors into hits, with the passages they belong to. */
-async function hitsOf(
-  top: Array<{
-    v: StoredVector;
-    semantic: number;
-    lexical: number;
-    score: number;
-  }>,
-): Promise<SearchHit[]> {
-  if (!top.length) return [];
-  const byId = await chunksById(top.map((t) => t.v.id));
-  return top
-    .map((t) => {
-      const chunk = byId.get(t.v.id);
-      if (!chunk) return null;
-      return { chunk, score: t.score, semantic: t.semantic, lexical: t.lexical };
-    })
-    .filter((h): h is SearchHit => !!h);
-}
+/** The passages of the ids, read one by one. */
+export { chunksById, forgetVectors };

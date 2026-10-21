@@ -70,19 +70,68 @@ describe("the vectors", () => {
     let seen: { taskType?: string; outputDimensionality?: number } = {};
     const fetchFn = (async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as {
-        taskType?: string;
-        outputDimensionality?: number;
+        requests?: Array<{
+          taskType?: string;
+          outputDimensionality?: number;
+        }>;
       };
-      seen = body;
+      seen = body.requests?.[0] ?? {};
       return {
         ok: true,
         status: 200,
         json: async () => ({ embeddings: [{ values: [1, 0] }] }),
       } as unknown as Response;
     }) as unknown as typeof fetch;
-    await embedTexts(["passage"], "RETRIEVAL_QUERY", "key", fetchFn);
-    expect(seen.taskType).toBe("RETRIEVAL_QUERY");
+    await embedTexts(["passage"], "RETRIEVAL_DOCUMENT", "key", fetchFn);
+    expect(seen.taskType).toBe("RETRIEVAL_DOCUMENT");
     expect(seen.outputDimensionality).toBe(EMBED_DIM);
+  });
+
+  it("asks the batch endpoint, one request per passage", async () => {
+    let url = "";
+    let requests = 0;
+    const fetchFn = (async (u: string, init: RequestInit) => {
+      url = u;
+      const body = JSON.parse(String(init.body)) as {
+        requests?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      requests = body.requests?.length ?? 0;
+      // No passage may share a request with another one.
+      for (const r of body.requests ?? []) {
+        expect(r.content?.parts?.length).toBe(1);
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          embeddings: body.requests?.map(() => ({ values: [1, 0, 0] })),
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const vectors = await embedTexts(
+      ["one", "two", "three"],
+      "RETRIEVAL_DOCUMENT",
+      "key",
+      fetchFn,
+    );
+    expect(url).toContain(":batchEmbedContents");
+    expect(requests).toBe(3);
+    expect(vectors).toHaveLength(3);
+  });
+
+  it("asks a question on its own, never in a batch", async () => {
+    let url = "";
+    const fetchFn = (async (u: string) => {
+      url = u;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ embedding: { values: [1, 0, 0] } }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await embedTexts(["a question"], "RETRIEVAL_QUERY", "key", fetchFn);
+    expect(url).toContain(":embedContent");
+    expect(url).not.toContain("batch");
   });
 
   it("says what went wrong when the API says no", async () => {
