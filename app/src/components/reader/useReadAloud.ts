@@ -1,25 +1,25 @@
-// Read aloud (v4.8): the voice, and the reading session.
+// Read aloud (v4.9): the voice, and the reading session.
 //
 // The speaker button in the reader is a play/pause, exactly like the
 // auto-scroll button: tap it and the book reads itself, sentence by
 // sentence, the page turning as it goes. Tap it again and it stops.
 //
-// Two engines:
-//  · HD  — Kokoro-82M on the phone (lib/kokoro.ts). Needs the one-time
-//          download; the sheet asks for it before anything happens.
-//  · system — the phone's own speech engine. Always available, always
-//          a bit rough.
+// The voice comes from ElevenLabs (lib/elevenlabs.ts) — the phone only
+// downloads the sound, so nothing heavy runs on it. Without a key (or
+// with the phone's voice chosen) the browser's own speech engine takes
+// over, which always works.
+//
+// While one sentence is being read, the next one is already on its way
+// from the network, so the reading never stutters.
 //
 // Overlays (the action popup, a selection, the meaning card, the Ask
 // sheet) hold the voice until they close.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  kokoroInstalled,
-  kokoroSupported,
-  speakKokoro,
-  stopKokoroAudio,
-  type LoadProgress,
-} from "../../lib/kokoro";
+  playAudio,
+  speakAudio,
+  stopAudio,
+} from "../../lib/elevenlabs";
 import {
   speak as speakSystem,
   speechSupported,
@@ -33,16 +33,20 @@ export interface ReadAloudOptions {
   positionKey: string;
   /** the text on screen right now */
   currentText: () => string;
+  /** the sentence after this one — fetched while this one is read */
+  nextText: () => string;
   /** true while an overlay owns the screen */
   blocked: () => boolean;
   /** move to the next sentence; false at the end of the book */
   advance: () => boolean;
-  /** the chosen HD voice */
+  /** the ElevenLabs voice id */
   voice: string;
-  /** speaking speed, 0.5 – 2 */
+  /** speaking speed, 0.7 – 1.5 */
   speed: number;
-  /** which engine to use */
-  engine: "hd" | "system";
+  /** which engine reads */
+  engine: "eleven" | "system";
+  /** the ElevenLabs key (empty = no ElevenLabs) */
+  key: string;
 }
 
 export interface ReadAloud {
@@ -50,53 +54,34 @@ export interface ReadAloud {
   speaking: boolean;
   /** the reading session runs */
   session: boolean;
-  /** the HD engine is on the phone */
-  hdInstalled: boolean;
-  /** this device can speak at all (either engine) */
+  /** this device can speak at all */
   supported: boolean;
-  /** the HD engine is loading or downloading */
-  loading: LoadProgress | null;
   /** start or stop the reading session */
   toggle: () => void;
   /** stop the voice, no resume */
   stop: () => void;
   /** say the current sentence again (after an overlay closed) */
   resume: () => void;
-  /** ask the phone whether the HD engine is on it (after an install) */
-  refresh: () => Promise<boolean>;
 }
 
 export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   const [speaking, setSpeaking] = useState(false);
   const [session, setSession] = useState(false);
-  const [hdInstalled, setHdInstalled] = useState(false);
-  const [supported, setSupported] = useState(false);
-  const [loading, setLoading] = useState<LoadProgress | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
   // A token, so a cancelled utterance can never switch the button back.
   const token = useRef(0);
+  // Audio already on its way from ElevenLabs, keyed by the text.
+  const ready = useRef(new Map<string, ArrayBuffer>());
 
-  const { follow, positionKey, currentText, blocked, advance, voice, speed, engine } =
+  const { follow, positionKey, currentText, nextText, blocked, advance, voice, speed, engine, key } =
     opts;
 
-  /** The engine may have been installed while the reader was open. */
-  const refresh = useCallback(async () => {
-    const on = await kokoroInstalled();
-    setHdInstalled(on);
-    return on;
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    setSupported(speechSupported() || kokoroSupported());
-    void kokoroInstalled().then((v) => {
-      if (alive) setHdInstalled(v);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // The phone can speak if it has a key for ElevenLabs, or its own voice.
+  const supported = useMemo(
+    () => speechSupported() || !!key,
+    [key],
+  );
 
   /** Stop everything — both engines. */
   const stop = useCallback(() => {
@@ -104,42 +89,63 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
     sessionRef.current = false;
     setSession(false);
     setSpeaking(false);
-    setLoading(null);
     stopSpeech();
-    stopKokoroAudio();
+    stopAudio();
   }, []);
+
+  /** The audio for a text: from the cache if it is already here. */
+  const fetchAudio = useCallback(
+    async (text: string): Promise<ArrayBuffer> => {
+      const hit = ready.current.get(text);
+      if (hit) {
+        ready.current.delete(text);
+        return hit;
+      }
+      return speakAudio(text, voice, key, speed);
+    },
+    [voice, key, speed],
+  );
+
+  /** Start the next sentence while this one is being read. */
+  const prefetch = useCallback(
+    (text: string) => {
+      if (!text || ready.current.has(text)) return;
+      void fetchAudio(text)
+        .then((buf) => ready.current.set(text, buf))
+        .catch(() => {
+          /* it will be fetched again when it is needed */
+        });
+    },
+    [fetchAudio],
+  );
 
   /** Say a text with the engine the user picked. */
   const play = useCallback(
     async (text: string): Promise<void> => {
       const mine = ++token.current;
       setSpeaking(true);
-      try {
-        // The engine may have been installed a moment ago (the sheet just
-        // finished downloading it) — ask the phone, not the old state.
-        const onDevice =
-          engine === "hd" && (hdInstalled || (await refresh()));
-        if (onDevice) {
-          try {
-            await speakKokoro(text, voice, speed, (p) => setLoading(p));
-            if (token.current !== mine) return;
-            setLoading(null);
-            return;
-          } catch {
-            // The HD engine gave up — the phone's voice takes over.
-            stopKokoroAudio();
-          }
+      let played = false;
+      if (engine === "eleven" && key) {
+        try {
+          const data = await fetchAudio(text);
+          if (token.current !== mine) return;
+          await playAudio(data);
+          played = true;
+        } catch {
+          // ElevenLabs could not do it — the phone's voice takes over.
+          played = false;
         }
-        await speakSystem(text, { rate: speed });
-      } catch {
-        /* this device has no speech at all */
       }
-      if (token.current === mine) {
-        setLoading(null);
-        setSpeaking(false);
+      if (!played) {
+        try {
+          await speakSystem(text, { rate: speed });
+        } catch {
+          /* this device has no speech at all */
+        }
       }
+      if (token.current === mine) setSpeaking(false);
     },
-    [engine, hdInstalled, voice, speed, refresh],
+    [engine, key, fetchAudio, speed],
   );
 
   /** Say the current sentence; when it ends, turn the page and go on. */
@@ -150,11 +156,14 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
       stop();
       return;
     }
-    await play(text);
+    const spoken = play(text);
+    // The next sentence is on its way while this one is read.
+    if (engine === "eleven" && key) prefetch(nextText());
+    await spoken;
     if (!sessionRef.current) return;
     // The end of the book stops the session.
     if (!advance()) stop();
-  }, [blocked, currentText, play, advance, stop]);
+  }, [blocked, currentText, play, prefetch, nextText, engine, key, advance, stop]);
 
   /** The speaker button: start the session, or stop it. */
   const toggle = useCallback(() => {
@@ -189,15 +198,5 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   // Never talk to nobody: leaving the reader stops the voice.
   useEffect(() => () => stopSpeech(), []);
 
-  return {
-    speaking,
-    session,
-    hdInstalled,
-    supported,
-    loading,
-    toggle,
-    stop,
-    resume,
-    refresh,
-  };
+  return { speaking, session, supported, toggle, stop, resume };
 }

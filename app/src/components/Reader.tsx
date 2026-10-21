@@ -50,6 +50,7 @@ import TopBar from "./reader/TopBar";
 import VoiceSheet from "./reader/VoiceSheet";
 import ReaderControls from "./reader/ReaderControls";
 import { useReadAloud } from "./reader/useReadAloud";
+import { getEffectiveElevenLabsKey } from "../lib/elevenlabs";
 import {
   BookmarkIcon,
   CopyIcon,
@@ -564,15 +565,24 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     setPos(next);
     return true;
   }, []);
+  /** The sentence after this one — fetched while this one is read. */
+  const nextText = useCallback(() => {
+    const { item, part } = posRef.current;
+    const next = stepParts(partsRef.current, { item, part }, 1);
+    if (next.item === item && next.part === part) return "";
+    return partsRef.current[next.item]?.[next.part] ?? "";
+  }, []);
   const voice = useReadAloud({
     follow: settings.readAloud,
     positionKey: `${I}:${P}`,
     currentText,
+    nextText,
     blocked: speechBlocked,
     advance: advanceRead,
     voice: settings.readAloudVoice,
     speed: settings.readAloudRate,
     engine: settings.readAloudEngine,
+    key: getEffectiveElevenLabsKey(),
   });
   voiceRef.current = voice;
 
@@ -1558,21 +1568,10 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         speedFlash={speedFlash}
         speaking={voice.speaking}
         session={voice.session}
-        canSpeak={voice.supported || voice.hdInstalled}
+        canSpeak={voice.supported}
         onToggleSpeak={() => {
           if (Date.now() < suppressUntil.current) return;
-          void (async () => {
-            // The HD engine has to be on the phone first — the sheet asks
-            // for the one-time download instead of starting a weak voice.
-            if (settings.readAloudEngine === "hd") {
-              const on = await (voiceRef.current?.refresh() ?? false);
-              if (!on) {
-                setVoiceSheet(true);
-                return;
-              }
-            }
-            voiceRef.current?.toggle();
-          })();
+          voiceRef.current?.toggle();
         }}
       />
 
@@ -1764,6 +1763,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
           onSpeedChange={(v) => updateSettings({ readAloudRate: v })}
           engine={settings.readAloudEngine}
           onEngineChange={(v) => updateSettings({ readAloudEngine: v })}
+          key={getEffectiveElevenLabsKey()}
         />
       )}
 

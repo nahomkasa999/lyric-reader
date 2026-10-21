@@ -1,44 +1,37 @@
-// Settings → Read aloud (v4.8).
+// Settings → Read aloud (v4.9).
 //
-// Two engines, one page:
-//  · HD — Kokoro-82M running on the phone. The sheet asks for the
-//    one-time download (≈86 MB); after that it works offline.
-//  · The phone's own voice — always there, never great.
+// The voice comes from ElevenLabs. The app ships with a key of its own
+// (so it works out of the box, on the app's shared quota); a user can
+// paste their own key here instead — it stays on their phone and is
+// used for their own quota.
 //
-// The voice itself is picked in the sheet, the way ChatGPT lets you
-// audition a voice before you commit to it.
+// Without any key the reader falls back to the phone's own voice.
 import { useEffect, useState } from "react";
 import VoiceSheet from "../reader/VoiceSheet";
 import { Group, Row, SliderRow, Switch } from "./controls";
 import { useSettings } from "../../lib/settings";
 import {
-  KOKORO_VOICES,
-  kokoroInstalled,
-  kokoroSupported,
-  webgpuAvailable,
-} from "../../lib/kokoro";
+  ELEVEN_KEYS_URL,
+  getEffectiveElevenLabsKey,
+  getElevenLabsKey,
+  removeElevenLabsKey,
+  setElevenLabsKey,
+  testKey,
+} from "../../lib/elevenlabs";
 
 export default function ReadAloudGroup() {
   const { settings, update } = useSettings();
-  const [installed, setInstalled] = useState(false);
-  const [gpu, setGpu] = useState(false);
+  const [key, setKey] = useState(() => getElevenLabsKey());
   const [sheet, setSheet] = useState(false);
-  const supported = kokoroSupported();
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const appKey = getEffectiveElevenLabsKey();
 
   useEffect(() => {
-    let alive = true;
-    void kokoroInstalled().then((v) => {
-      if (alive) setInstalled(v);
-    });
-    void webgpuAvailable().then((v) => {
-      if (alive) setGpu(v);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+    if (key) setElevenLabsKey(key);
+  }, [key]);
 
-  const voice = KOKORO_VOICES.find((v) => v.id === settings.readAloudVoice);
+  const personal = key.trim().length > 0;
 
   return (
     <>
@@ -64,28 +57,104 @@ export default function ReadAloudGroup() {
           </p>
         </Row>
 
+        <Row label="ElevenLabs key">
+          <div className="flex items-center gap-2">
+            <input
+              data-testid="elevenlabs-key"
+              type="password"
+              value={key}
+              onChange={(e) => {
+                setKey(e.target.value);
+                setResult(null);
+              }}
+              placeholder={appKey ? "Using the app's key" : "sk_…"}
+              autoComplete="off"
+              spellCheck={false}
+              className="set-field mono min-w-0 flex-1"
+              aria-label="ElevenLabs API key"
+            />
+            <button
+              data-testid="elevenlabs-test"
+              disabled={testing}
+              onClick={async () => {
+                setTesting(true);
+                setResult(null);
+                const r = await testKey(
+                  key.trim() || getEffectiveElevenLabsKey(),
+                );
+                setTesting(false);
+                setResult(
+                  r.ok
+                    ? `✓ Key works — ${r.voices} voices`
+                    : `✗ ${r.reason}`,
+                );
+              }}
+              className="set-chip shrink-0"
+            >
+              {testing ? "Testing…" : "Test key"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Free key from{" "}
+            <a
+              href={ELEVEN_KEYS_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              ElevenLabs
+            </a>{" "}
+            — stays on this phone only, sent only to ElevenLabs.{" "}
+            {personal
+              ? "Your own key is in use."
+              : appKey
+                ? "The app's shared key is in use."
+                : "Without a key the phone's own voice reads instead."}
+          </p>
+          {personal && (
+            <button
+              data-testid="elevenlabs-remove-key"
+              onClick={() => {
+                removeElevenLabsKey();
+                setKey("");
+                setResult(null);
+              }}
+              className="set-chip mt-2"
+            >
+              Remove my key
+            </button>
+          )}
+          {result && (
+            <span
+              data-testid="elevenlabs-test-result"
+              className="mt-2 block text-sm"
+            >
+              {result}
+            </span>
+          )}
+        </Row>
+
         <Row label="Voice">
           <button
             data-testid="read-aloud-voice"
             className="set-chip"
             onClick={() => setSheet(true)}
           >
-            {voice ? `${voice.traits ?? ""} ${voice.name}`.trim() : "Choose…"}
+            {settings.readAloudVoice
+              ? `${settings.readAloudVoice.slice(0, 8)}…`
+              : "Choose…"}
           </button>
           <p className="set-note">
-            {!supported
-              ? "This phone cannot run the HD engine — the phone's own voice will be used."
-              : installed
-                ? `HD voice installed · ${gpu ? "WebGPU" : "WASM"} · on this phone.`
-                : "HD voice not installed yet — the sheet will ask (≈86 MB, once)."}
+            The voices on your ElevenLabs account — hear one before you pick
+            it.
           </p>
         </Row>
 
         <Row label="Speed">
           <SliderRow
             testid="read-aloud-rate"
-            min={50}
-            max={200}
+            min={70}
+            max={150}
             value={Math.round(settings.readAloudRate * 100)}
             onChange={(v) => update({ readAloudRate: v / 100 })}
             suffix="%"
@@ -102,6 +171,7 @@ export default function ReadAloudGroup() {
           onSpeedChange={(v) => update({ readAloudRate: v })}
           engine={settings.readAloudEngine}
           onEngineChange={(v) => update({ readAloudEngine: v })}
+          key={getEffectiveElevenLabsKey()}
         />
       )}
     </>

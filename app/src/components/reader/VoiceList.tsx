@@ -1,9 +1,15 @@
-// The voices (v4.8) — 28 cards you can audition, the way ChatGPT lets
-// you hear a voice before you commit to it. The card you pick is the
-// voice the reader uses.
-import { KOKORO_VOICES } from "../../lib/kokoro";
+// The voices (v4.9) — the account's ElevenLabs voices, each with a ▶ you
+// can press to hear it before you commit to it, the way ChatGPT lets you
+// audition a voice. The card you pick is the voice the reader uses.
+export interface VoiceCard {
+  id: string;
+  name: string;
+  /** the small note beside the name: accent, gender, category */
+  meta: string;
+}
 
 interface Props {
+  voices: VoiceCard[];
   /** the voice in use */
   voice: string;
   /** the voice being previewed right now */
@@ -13,14 +19,23 @@ interface Props {
 }
 
 export default function VoiceList({
+  voices,
   voice,
   previewing,
   onPick,
   onPreview,
 }: Props) {
+  if (!voices.length) {
+    return (
+      <p className="voice-empty" data-testid="voice-list-empty">
+        No voices yet — add an ElevenLabs key in Settings, or pick the
+        phone&apos;s own voice.
+      </p>
+    );
+  }
   return (
     <div className="voice-list" data-testid="voice-list">
-      {KOKORO_VOICES.map((v) => {
+      {voices.map((v) => {
         const on = v.id === voice;
         const playing = previewing === v.id;
         return (
@@ -42,13 +57,8 @@ export default function VoiceList({
             >
               {playing ? "❙❙" : "▶"}
             </span>
-            <span className="voice-name">
-              {v.traits ? `${v.traits} ` : ""}
-              {v.name}
-            </span>
-            <span className="voice-meta">
-              {v.lang.toUpperCase()} · {v.gender[0]} · {v.grade}
-            </span>
+            <span className="voice-name">{v.name}</span>
+            <span className="voice-meta">{v.meta}</span>
           </button>
         );
       })}

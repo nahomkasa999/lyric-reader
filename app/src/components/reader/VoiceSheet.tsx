@@ -1,43 +1,49 @@
-// The voice sheet (v4.8): pick the voice, and install the HD engine.
+// The voice sheet (v4.9): pick the voice, hear it, change the engine.
 //
-// Two things live here:
-//  1. The HD engine (Kokoro-82M) — ~86 MB, downloaded once, then it runs
-//     on the phone, offline, forever. The app asks before it downloads
-//     anything; it never downloads behind the user's back.
-//  2. The voice list — 28 voices, each with a preview button, the way
-//     ChatGPT lets you audition a voice before you commit to it.
+// The voices come from ElevenLabs — the account's own library, including
+// anything the user cloned. Each one has a ▶ to audition it before you
+// commit, the way ChatGPT lets you hear a voice first.
 //
-// If the phone can't run the HD engine (or the download fails), the
-// sheet says so plainly and the phone's own voice takes over.
+// Without a key the sheet says so and points at Settings; the phone's
+// own voice is always there as a fallback.
 import { useEffect, useState } from "react";
+import VoiceList, { type VoiceCard } from "./VoiceList";
 import {
   DEFAULT_VOICE,
-  kokoroInstalled,
-  kokoroSupported,
-  loadKokoro,
-  removeKokoro,
-  speakKokoro,
-  stopKokoroAudio,
-  webgpuAvailable,
-  type LoadProgress,
-} from "../../lib/kokoro";
+  ELEVEN_KEYS_URL,
+  listVoices,
+  playAudio,
+  speakAudio,
+  stopAudio,
+  type ElevenVoice,
+} from "../../lib/elevenlabs";
 import { speak as speakSystem } from "../../lib/speech";
-import VoiceList from "./VoiceList";
 
 interface Props {
   onClose: () => void;
-  /** the chosen HD voice */
+  /** the chosen voice */
   voice: string;
   onVoiceChange: (v: string) => void;
-  /** 0.5 – 2 */
+  /** 0.7 – 1.5 */
   speed: number;
   onSpeedChange: (s: number) => void;
-  /** "hd" = Kokoro, "system" = the phone's own voice */
-  engine: "hd" | "system";
-  onEngineChange: (e: "hd" | "system") => void;
+  /** which engine reads */
+  engine: "eleven" | "system";
+  onEngineChange: (e: "eleven" | "system") => void;
+  /** the ElevenLabs key (empty = none) */
+  key: string;
 }
 
 const SAMPLE = "This is how the page will sound when it reads to you.";
+
+function toCard(v: ElevenVoice): VoiceCard {
+  const bits = [
+    v.accent,
+    v.gender,
+    v.category && v.category !== "premade" ? v.category : "",
+  ].filter(Boolean);
+  return { id: v.id, name: v.name, meta: bits.join(" · ") || "voice" };
+}
 
 export default function VoiceSheet({
   onClose,
@@ -47,69 +53,57 @@ export default function VoiceSheet({
   onSpeedChange,
   engine,
   onEngineChange,
+  key,
 }: Props) {
-  const [installed, setInstalled] = useState(false);
-  const [progress, setProgress] = useState<LoadProgress | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [voices, setVoices] = useState<VoiceCard[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [gpu, setGpu] = useState(false);
-  const supported = kokoroSupported();
 
+  // The account's voices — fetched once, when the sheet opens.
   useEffect(() => {
+    if (!key) {
+      setVoices([]);
+      return;
+    }
     let alive = true;
-    void kokoroInstalled().then((v) => {
-      if (alive) setInstalled(v);
-    });
-    void webgpuAvailable().then((v) => {
-      if (alive) setGpu(v);
-    });
+    setLoading(true);
+    setError(null);
+    void listVoices(key)
+      .then((v) => {
+        if (alive) setVoices(v.map(toCard));
+      })
+      .catch((e) => {
+        if (alive) {
+          setError(e instanceof Error ? e.message : "Could not read the voices.");
+        }
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
     return () => {
       alive = false;
-      stopKokoroAudio();
+      stopAudio();
     };
-  }, []);
-
-  /** The one-time download. Everything after this comes from the cache. */
-  const install = async () => {
-    setBusy(true);
-    setFailed(false);
-    try {
-      await loadKokoro((p) => setProgress(p));
-      setInstalled(true);
-      setProgress(null);
-    } catch (e) {
-      console.error("voice engine install failed", e);
-      setFailed(true);
-      setProgress(null);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const uninstall = async () => {
-    setBusy(true);
-    await removeKokoro();
-    setInstalled(false);
-    setBusy(false);
-  };
+  }, [key]);
 
   /** Audition a voice — the thing you actually want from a picker. */
   const preview = async (id: string) => {
     if (previewing) {
-      stopKokoroAudio();
+      stopAudio();
       setPreviewing(null);
       return;
     }
     setPreviewing(id);
     try {
-      if (engine === "hd" && installed) {
-        await speakKokoro(SAMPLE, id, speed);
+      if (engine === "eleven" && key) {
+        const data = await speakAudio(SAMPLE, id, key, speed);
+        await playAudio(data);
       } else {
         await speakSystem(SAMPLE, { rate: speed });
       }
-    } catch {
-      /* the phone refused to talk */
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not play that voice.");
     }
     setPreviewing(null);
   };
@@ -134,58 +128,40 @@ export default function VoiceSheet({
           </button>
         </div>
 
-        {/* ---- the HD engine ---- */}
+        {/* ---- the engine ---- */}
         <div className="voice-engine" data-testid="voice-engine">
           <div className="voice-engine-copy">
-            <b>HD voice</b>
+            <b>ElevenLabs</b>
             <span>
-              {!supported
-                ? "This phone cannot run the HD engine."
-                : installed
-                  ? `Installed · ${gpu ? "WebGPU" : "WASM"} · on this phone`
-                  : "Kokoro 82M · about 86 MB · downloaded once, then offline"}
+              {!key
+                ? "No key yet — add one in Settings."
+                : loading
+                  ? "Reading the voice list…"
+                  : `${voices.length} voices on this account`}
             </span>
           </div>
-          {supported &&
-            (installed ? (
-              <button
-                data-testid="voice-remove"
-                className="set-chip shrink-0"
-                disabled={busy}
-                onClick={() => void uninstall()}
-              >
-                Remove
-              </button>
-            ) : (
-              <button
-                data-testid="voice-download"
-                className="set-chip shrink-0"
-                disabled={busy}
-                onClick={() => void install()}
-              >
-                {busy ? "…" : "Download"}
-              </button>
-            ))}
+          {!key && (
+            <a
+              data-testid="voice-key-link"
+              className="set-chip shrink-0"
+              href={ELEVEN_KEYS_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Get a key
+            </a>
+          )}
         </div>
 
-        {progress && (
-          <div className="voice-progress" data-testid="voice-progress">
-            <div className="voice-progress-bar">
-              <i style={{ width: `${progress.percent}%` }} />
-            </div>
-            <span>
-              {progress.label} {progress.percent}% · {progress.mb} MB
-            </span>
-          </div>
-        )}
-        {failed && (
-          <p className="voice-note" data-testid="voice-download-failed">
-            The download did not finish. Check the connection and try again —
-            the phone's own voice works in the meantime.
+        {error && (
+          <p className="voice-note" data-testid="voice-error">
+            {error}
           </p>
         )}
 
+        {/* ---- the voices ---- */}
         <VoiceList
+          voices={voices}
           voice={voice}
           previewing={previewing}
           onPick={onVoiceChange}
@@ -199,8 +175,8 @@ export default function VoiceSheet({
             <input
               data-testid="voice-speed"
               type="range"
-              min={50}
-              max={200}
+              min={70}
+              max={150}
               value={Math.round(speed * 100)}
               onChange={(e) => onSpeedChange(Number(e.target.value) / 100)}
               className="w-full accent-primary"
@@ -208,17 +184,26 @@ export default function VoiceSheet({
             />
             <span className="voice-speed-value">{speed.toFixed(2)}×</span>
           </div>
-          <button
-            data-testid="voice-engine-toggle"
-            className="set-chip"
-            onClick={() => onEngineChange(engine === "hd" ? "system" : "hd")}
-          >
-            {engine === "hd" ? "Using the HD voice" : "Using the phone's voice"}
-          </button>
+          <div className="voice-foot-row">
+            <button
+              data-testid="voice-engine-toggle"
+              className="set-chip"
+              onClick={() => onEngineChange(engine === "eleven" ? "system" : "eleven")}
+            >
+              {engine === "eleven" ? "Using ElevenLabs" : "Using the phone's voice"}
+            </button>
+            {voice !== DEFAULT_VOICE && engine === "eleven" && (
+              <button
+                data-testid="voice-default"
+                className="set-chip"
+                onClick={() => onVoiceChange(DEFAULT_VOICE)}
+              >
+                Default voice
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
-export { DEFAULT_VOICE };

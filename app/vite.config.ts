@@ -2,12 +2,21 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { config as loadEnvFile } from "dotenv";
+
+// The ElevenLabs key lives in the repo's .env.local (never in the code,
+// never in git). Vite only hands VITE_-prefixed vars to the browser, so
+// the key is passed across under that name here.
+loadEnvFile({ path: "../.env.local" });
 
 export default defineConfig({
   // Build identifier stamped into the bundle so a screenshot of the
   // Settings page always tells which build is actually running on a
   // device (v4.6: ended the "which build is on the phone" guessing).
   define: {
+    "import.meta.env.VITE_ELEVENLABS_API_KEY": JSON.stringify(
+      process.env.ELEVENLABS_API_KEY ?? "",
+    ),
     __BUILD_ID__: JSON.stringify(
       process.env.LR_BUILD_ID ??
         new Date().toISOString().slice(0, 16).replace("T", " "),
@@ -47,10 +56,10 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,woff2,png,svg,ico}"],
         // pdf.js worker is large; still fine to precache for a local install
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
-        // The HD voice engine is 2 MB of JS + 20 MB of runtime, and it is
-        // only needed once the user asks for it — so it stays out of the
-        // install. The browser caches it after the first use.
-        globIgnores: ["**/kokoro-*.js", "**/ort-wasm-*.wasm"],
+        // The ElevenLabs SDK is 4.6 MB and only needed once somebody uses
+        // the voice — so it stays out of the install. The browser keeps it
+        // after the first use.
+        globIgnores: ["**/elevenlabs-js-*.js"],
       },
     }),
   ],
