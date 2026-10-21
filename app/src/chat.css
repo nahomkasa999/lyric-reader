@@ -1,0 +1,127 @@
+/* The assistant sheet (v4.13) — the shell.
+ *
+ * One glass surface over the reader. The message area is flat — no
+ * second glass inside the sheet — so the screen stays calm and the
+ * three-blur budget is not blown.
+ *
+ * The colours are the design's: indigo only for what acts (the send
+ * button, the streaming caret, an active chip), hairlines at white/8,
+ * text at white/92, muted at white/55.
+ */
+
+.chat-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.chat-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.9);
+  opacity: 0.35;
+  pointer-events: auto;
+}
+
+.chat-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: rgb(18 18 20 / 0.9);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 28px 28px 0 0;
+  box-shadow: 0 -12px 40px rgb(0 0 0 / 0.5);
+  transform: translate3d(0, 38vh, 0);
+  transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.chat-sheet.dragging {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-sheet {
+    transition: none;
+  }
+}
+
+/* --- The grabber and the header ------------------------------------- */
+
+.chat-grab {
+  flex-shrink: 0;
+  padding: 8px 16px 0;
+  cursor: grab;
+}
+
+.chat-grabber {
+  display: block;
+  width: 36px;
+  height: 5px;
+  margin: 0 auto 10px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.25);
+  border: 0;
+  padding: 0;
+}
+
+.chat-grabber:focus-visible {
+  outline: 2px solid #5b4fe9;
+  outline-offset: 3px;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.chat-header-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-header-right {
+  margin-left: auto;
+}
+
+.chat-iconbtn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(255 255 255 / 0.06);
+  color: rgb(255 255 255 / 0.92);
+}
+
+.chat-iconbtn:active {
+  transform: scale(0.96);
+}
+
+.chat-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgb(255 255 255 / 0.92);
+}
+
+/* --- The body -------------------------------------------------------- */
+
+.chat-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@import "./chat.css";
+@import "./chat-answers.css";
+@import "./chat-composer.css";
 
 @custom-variant dark (&:is(.dark *));
 
