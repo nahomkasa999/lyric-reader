@@ -9,8 +9,17 @@ import {
   type ReadAloud,
 } from "../src/components/reader/useReadAloud";
 import { DEFAULT_VOICE } from "../src/lib/elevenlabs";
+import { isNetworkError, isOnline } from "../src/lib/online";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+/** The phone's connection — a fake, so the test can take it away. */
+function setOnline(value: boolean): void {
+  Object.defineProperty(window.navigator, "onLine", {
+    configurable: true,
+    get: () => value,
+  });
+}
 
 /** What ElevenLabs was asked to say, and with which voice. */
 const asked: { text: string; voice: string; speed: number }[] = [];
@@ -29,8 +38,8 @@ vi.mock("../src/lib/elevenlabs", () => ({
     _key: string,
     speed: number,
   ) => {
-    if (failWith) throw failWith;
     asked.push({ text, voice, speed });
+    if (failWith) throw failWith;
     return new ArrayBuffer(8);
   },
   speakError: () => "ElevenLabs could not read that — the phone's voice is reading instead.",
@@ -105,6 +114,7 @@ describe("the read-aloud session", () => {
     spoken.length = 0;
     failWith = null;
     api = null;
+    setOnline(true);
   });
 
   it("reads with the voice that was picked", async () => {
@@ -196,6 +206,70 @@ describe("the read-aloud session", () => {
     });
     expect(request("Hello there.")?.voice).toBe(DEFAULT_VOICE);
     expect(api!.error).toContain("default voice");
+    await act(async () => root.unmount());
+  });
+});
+
+describe("the phone is offline", () => {
+  beforeEach(() => {
+    asked.length = 0;
+    spoken.length = 0;
+    failWith = null;
+    api = null;
+  });
+
+  it("knows a network failure from a server's answer", () => {
+    expect(isNetworkError(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isNetworkError(new Error("network error"))).toBe(true);
+    expect(isNetworkError(new Error("quota exceeded"))).toBe(false);
+  });
+
+  it("knows whether the phone is online", () => {
+    setOnline(false);
+    expect(isOnline()).toBe(false);
+    setOnline(true);
+    expect(isOnline()).toBe(true);
+  });
+
+  it("reads with the phone's voice and says so once", async () => {
+    failWith = new TypeError("Failed to fetch");
+    setOnline(false);
+    const { root } = await mount({ apiKey: "sk_test" });
+    await act(async () => {
+      api!.toggle();
+    });
+    expect(api!.error).toContain("You're offline");
+    expect(api!.actual).toBe("system");
+    // The phone's own voice took over.
+    expect(spoken.length).toBe(1);
+    const first = asked.length;
+
+    // The next sentence does not try the network again, and the reader
+    // is not told again.
+    await act(async () => {
+      api!.resume();
+    });
+    expect(asked.length).toBe(first);
+    expect(api!.error).toContain("You're offline");
+    await act(async () => root.unmount());
+  });
+
+  it("goes back to ElevenLabs when the connection returns", async () => {
+    failWith = new TypeError("Failed to fetch");
+    setOnline(false);
+    const { root } = await mount({ apiKey: "sk_test" });
+    await act(async () => {
+      api!.toggle();
+    });
+    expect(api!.actual).toBe("system");
+
+    setOnline(true);
+    failWith = null;
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(api!.error).toContain("Back online");
+    expect(api!.actual).toBe("eleven");
     await act(async () => root.unmount());
   });
 });

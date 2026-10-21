@@ -2,6 +2,7 @@
 @import "./chat.css";
 @import "./chat-answers.css";
 @import "./chat-composer.css";
+@import "./chat-drawer.css";
 @import "./slider.css";
 
 @custom-variant dark (&:is(.dark *));

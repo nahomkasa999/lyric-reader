@@ -28,6 +28,8 @@ import {
   speechSupported,
   stopSpeech,
 } from "../../lib/speech";
+import { isNetworkError, isOnline } from "../../lib/online";
+import { useOnline } from "./useOnline";
 
 export interface ReadAloudOptions {
   /** follow-along: speak every sentence the reader moves to */
@@ -86,6 +88,8 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   // Audio already on its way from ElevenLabs. The key carries the voice
   // and the speed, so a voice change can never serve yesterday's audio.
   const ready = useRef(new Map<string, Promise<ArrayBuffer>>());
+  // The phone is offline: its own voice reads until the network is back.
+  const forcedSystem = useRef(false);
 
   const {
     follow,
@@ -164,6 +168,7 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   const prefetch = useCallback(
     (text: string) => {
       if (!text) return;
+      if (forcedSystem.current) return;
       void fetchAudio(text).catch(() => {
         /* it will be fetched again when it is needed */
       });
@@ -177,7 +182,7 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
       const mine = ++token.current;
       setSpeaking(true);
       let played = false;
-      if (canUseEleven) {
+      if (canUseEleven && !forcedSystem.current) {
         try {
           const data = await fetchAudio(text);
           if (token.current !== mine) return;
@@ -192,9 +197,16 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
           );
         } catch (e) {
           // ElevenLabs could not do it — say so, and let the phone's
-          // voice take over. Silently swapping engines is what made the
-          // reader sound like "the default thing" with no explanation.
-          note(speakError(e));
+          // voice take over, instead of swapping engines silently.
+          const err = e instanceof Error ? e : new Error("The voice failed.");
+          // Out of reach: the phone's own voice reads from here on, and
+          // the reader is told once — not once per sentence.
+          if (isNetworkError(err) && (!isOnline() || err instanceof TypeError)) {
+            forcedSystem.current = true;
+            note("You're offline — the phone's voice is reading instead.");
+          } else {
+            note(speakError(err));
+          }
           played = false;
         }
       } else if (engine === "eleven") {
@@ -262,6 +274,19 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
     if (!follow && !sessionRef.current) stop();
   }, [follow, stop]);
 
+  // A new key or engine lets the phone's voice read again.
+  useEffect(() => void (forcedSystem.current = false), [key, engine]);
+
+  // The connection came back: ElevenLabs reads again, and the reader is
+  // told once.
+  useOnline(() => {
+    if (!forcedSystem.current) return;
+    forcedSystem.current = false;
+    if (engine !== "eleven") return;
+    note("Back online — ElevenLabs is reading again.");
+    if (sessionRef.current) void readCurrent();
+  });
+
   // Never talk to nobody: leaving the reader stops the voice.
   useEffect(() => () => stopSpeech(), []);
 
@@ -269,7 +294,7 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
     speaking,
     session,
     supported,
-    actual: canUseEleven ? "eleven" : "system",
+    actual: canUseEleven && !forcedSystem.current ? "eleven" : "system",
     error,
     clearError: () => note(null),
     toggle,
