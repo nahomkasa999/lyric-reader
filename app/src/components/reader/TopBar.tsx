@@ -9,6 +9,7 @@
 // The page number stays editable (tap it, type a page). Everything else —
 // text size, saved marks, settings — lives behind the overflow menu.
 import { useEffect, useRef, useState } from "react";
+import { Switch } from "@/components/ui/switch";
 import {
   ArrowIcon,
   ChatIcon,
@@ -35,6 +36,9 @@ interface Props {
   onOpenOutline: () => void;
   /** open the voice picker (choose the voice that reads) */
   onOpenVoice: () => void;
+  /** read along: every sentence the reader moves to is read out */
+  readAloud: boolean;
+  onToggleReadAloud: () => void;
   /** −2 / +2 px on the reading size */
   onTextSize: (delta: number) => void;
   /** keep the chrome awake (the bar auto-hides) */
@@ -61,6 +65,8 @@ export default function TopBar({
   onOpenAssistant,
   onOpenOutline,
   onOpenVoice,
+  readAloud,
+  onToggleReadAloud,
   onTextSize,
   onReveal,
   onEditingChange,
@@ -188,6 +194,19 @@ export default function TopBar({
             <SpeakerIcon />
             <span>Voice</span>
           </button>
+          {/* Read along: the phone reads every sentence the reader
+              reaches. It is here, next to the reading, because it is
+              used every day. */}
+          <div className="menu-row menu-row-static">
+            <span className="menu-label">Read along</span>
+            <Switch
+              data-testid="read-aloud-toggle"
+              checked={readAloud}
+              onCheckedChange={onToggleReadAloud}
+              aria-label="Read along with the book"
+              size="sm"
+            />
+          </div>
           <button
             className="menu-row"
             data-testid="assistant-btn"

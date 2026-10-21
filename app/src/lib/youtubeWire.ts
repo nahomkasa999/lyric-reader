@@ -33,10 +33,13 @@ export function youtubeListening(id: string = YT_ID): string {
   return JSON.stringify({ event: "listening", id, channel: "widget" });
 }
 
+/** One argument of a player command — a number, a string, a boolean. */
+export type PlayerArg = number | string | boolean | null;
+
 /** One command for the embedded player. */
 export function youtubeCommand(
   func: string,
-  args: unknown[] = [],
+  args: PlayerArg[] = [],
   id: string = YT_ID,
 ): string {
   return JSON.stringify({ event: "command", func, args, id });
@@ -53,7 +56,15 @@ export interface YouTubeInfo {
   videoData?: { video_id?: string; title?: string; author?: string };
   playlist?: string[];
   playlistIndex?: number;
-  [key: string]: unknown;
+  /** the player's own error code, when it refuses to play */
+  errorCode?: number;
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | { video_id?: string; title?: string; author?: string }
+    | string[]
+    | undefined;
 }
 
 /** One message from the embedded player. */
@@ -73,11 +84,13 @@ export interface YouTubeMessage {
  * the changes as they happen (`infoDelivery`). Anything else on the
  * page — our own commands, another script — is ignored.
  */
-export function parseYouTubeMessage(raw: unknown): YouTubeMessage | null {
-  let data: unknown = raw;
+export function parseYouTubeMessage(
+  raw: string | YouTubeMessage | null,
+): YouTubeMessage | null {
+  let data: string | YouTubeMessage | null = raw;
   if (typeof raw === "string") {
     try {
-      data = JSON.parse(raw);
+      data = JSON.parse(raw) as YouTubeMessage;
     } catch {
       return null;
     }
@@ -94,12 +107,10 @@ export function parseYouTubeMessage(raw: unknown): YouTubeMessage | null {
 }
 
 /** What the player says when it refuses to play (its own error codes). */
-export function youtubeErrorText(info: unknown): string {
+export function youtubeErrorText(info: YouTubeInfo | null): string {
   const code =
-    info &&
-    typeof info === "object" &&
-    typeof (info as { errorCode?: unknown }).errorCode === "number"
-      ? (info as { errorCode: number }).errorCode
+    info && typeof info === "object" && typeof info.errorCode === "number"
+      ? info.errorCode
       : null;
   switch (code) {
     case 2:

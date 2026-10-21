@@ -1,6 +1,6 @@
 // Minimal IndexedDB storage (no dependency): books + reading progress + marks.
-import type { BookDoc, Item, Position } from "./types";
-import { migrateBook, resegmentItems } from "./types";
+import type { BookDoc, Position } from "./types";
+import { migrateBook, resegmentItems, type StoredBookRow } from "./types";
 import { splitSentences } from "./segment";
 
 const DB_NAME = "lyric-reader";
@@ -16,17 +16,7 @@ const DB_VERSION = 5;
  * old book has `pages` instead of `items`. A named interface keeps the
  * casts honest (and keeps `unknown` out of this file).
  */
-interface StoredBook {
-  id?: string;
-  title?: string;
-  items?: Item[];
-  pages?: Array<{
-    sentences?: Array<{ text?: string; kind?: string; level?: number }>;
-  }>;
-  totalSentences?: number;
-  createdAt?: number;
-  source?: string;
-}
+type StoredBook = StoredBookRow;
 
 export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

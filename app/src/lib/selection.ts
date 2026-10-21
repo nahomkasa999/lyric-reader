@@ -13,9 +13,8 @@ export function highlightsSupported(): boolean {
   try {
     return (
       typeof CSS !== "undefined" &&
-      !!(CSS as unknown as { highlights?: unknown }).highlights &&
-      typeof (window as unknown as { Highlight?: unknown }).Highlight !==
-        "undefined"
+      !!CSS.highlights &&
+      typeof window.Highlight !== "undefined"
     );
   } catch {
     return false;
@@ -144,10 +143,8 @@ export function extendSelection(
 /** Paint (or clear) our custom selection. Returns whether it painted. */
 export function paintSelection(range: Range | null): boolean {
   try {
-    const HL = (CSS as unknown as { highlights?: Map<string, unknown> })
-      .highlights;
-    const H = (window as unknown as { Highlight?: new (r: Range) => unknown })
-      .Highlight;
+    const HL = CSS.highlights;
+    const H = window.Highlight;
     if (!HL || !H) return false;
     HL.delete("lr-sel");
     if (range) HL.set("lr-sel", new H(range));
@@ -160,9 +157,7 @@ export function paintSelection(range: Range | null): boolean {
 /** Whether our custom selection is currently painted. */
 export function selectionPainted(): boolean {
   try {
-    const HL = (CSS as unknown as { highlights?: Map<string, unknown> })
-      .highlights;
-    return !!HL?.has("lr-sel");
+    return !!CSS.highlights?.has("lr-sel");
   } catch {
     return false;
   }
@@ -171,12 +166,13 @@ export function selectionPainted(): boolean {
 /** Text of the painted selection (for tests). */
 export function paintedText(): string | null {
   try {
-    const HL = (CSS as unknown as { highlights?: Map<string, unknown> })
-      .highlights;
-    const v = HL?.get("lr-sel") as Set<Range> | undefined;
+    const v = CSS.highlights?.get("lr-sel");
     if (!v) return null;
-    for (const r of v) return r.toString();
-    return null;
+    let out: string | null = null;
+    v.forEach((r) => {
+      if (out === null) out = r.toString();
+    });
+    return out;
   } catch {
     return null;
   }

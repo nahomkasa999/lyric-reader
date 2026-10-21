@@ -142,7 +142,7 @@ export async function testKey(
     const voices = await listVoices(key);
     return { ok: true, voices: voices.length };
   } catch (e) {
-    const err = elevenError(e);
+    const err = elevenError(e instanceof Error ? e : new Error(""));
     if (err.missing === "voices_read") {
       return {
         ok: true,
@@ -150,7 +150,13 @@ export async function testKey(
           "The key speaks, but the Voices permission is off — it cannot read your voice list. The standard voices will be used.",
       };
     }
-    return { ok: false, reason: errorText(e, "Could not reach ElevenLabs.") };
+    return {
+      ok: false,
+      reason: errorText(
+        e instanceof Error ? e : new Error(""),
+        "Could not reach ElevenLabs.",
+      ),
+    };
   }
 }
 
@@ -202,29 +208,30 @@ export interface ElevenError {
   missing?: string;
 }
 
+/** The shape the ElevenLabs SDK throws. */
+interface ElevenFailure {
+  statusCode?: number;
+  status?: number;
+  message?: string;
+  body?: { detail?: { message?: string; status?: string } };
+}
+
 /** Read the API's own error: its message says what the key may not do. */
-export function elevenError(e: unknown): ElevenError {
-  const anyE = e as {
-    statusCode?: number;
-    status?: number;
-    message?: string;
-    body?: unknown;
-  };
-  const body = anyE?.body as
-    | { detail?: { message?: string; status?: string } }
-    | undefined;
+export function elevenError(e: Error): ElevenError {
+  const err = e as Error & ElevenFailure;
+  const body = err?.body;
   const message =
-    body?.detail?.message ?? anyE?.message ?? "Something went wrong.";
+    body?.detail?.message ?? err?.message ?? "Something went wrong.";
   const missing = /missing the permission ([a-z_]+)/.exec(message)?.[1];
   return {
-    status: anyE?.statusCode ?? anyE?.status,
+    status: err?.statusCode ?? err?.status,
     message,
     missing,
   };
 }
 
 /** What ElevenLabs says went wrong, in a sentence a person can act on. */
-export function errorText(e: unknown, fallback = "Something went wrong."): string {
+export function errorText(e: Error, fallback = "Something went wrong."): string {
   const err = elevenError(e);
   if (err.missing) {
     return `This key is missing the ${err.missing} permission.`;
@@ -240,7 +247,7 @@ export function errorText(e: unknown, fallback = "Something went wrong."): strin
  * the phone's own voice is reading instead — the user must never wonder
  * why the voice they picked is not the voice they hear.
  */
-export function speakError(e: unknown): string {
+export function speakError(e: Error): string {
   const err = elevenError(e);
   const why = errorText(e, "ElevenLabs could not read that.");
   if (err.status === 401) {

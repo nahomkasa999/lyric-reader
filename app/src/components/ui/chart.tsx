@@ -17,8 +17,8 @@ export type ChartConfig = Record<
     label?: React.ReactNode
     icon?: React.ComponentType
   } & (
-    | { color?: string; theme?: never }
-    | { color?: never; theme: Record<keyof typeof THEMES, string> }
+    | { color?: string; theme?: undefined }
+    | { color?: undefined; theme: Record<keyof typeof THEMES, string> }
   )
 >
 
@@ -326,37 +326,43 @@ function ChartLegendContent({
   )
 }
 
+/** What a chart's data entry may hold. */
+type PayloadValue = object | string | number | boolean | undefined
+
+/** The string a key holds in a payload, if it holds one. */
+function stringAt(
+  source: object,
+  key: string
+): string | undefined {
+  const value = (source as Record<string, PayloadValue>)[key]
+  return typeof value === "string" ? value : undefined
+}
+
 function getPayloadConfigFromPayload(
   config: ChartConfig,
-  payload: unknown,
+  payload: object | null,
   key: string
 ) {
   if (typeof payload !== "object" || payload === null) {
     return undefined
   }
 
+  const record = payload as Record<string, PayloadValue>
   const payloadPayload =
-    "payload" in payload &&
-    typeof payload.payload === "object" &&
-    payload.payload !== null
-      ? payload.payload
+    "payload" in record &&
+    typeof record.payload === "object" &&
+    record.payload !== null
+      ? record.payload
       : undefined
 
   let configLabelKey: string = key
 
-  if (
-    key in payload &&
-    typeof payload[key as keyof typeof payload] === "string"
-  ) {
-    configLabelKey = payload[key as keyof typeof payload] as string
-  } else if (
-    payloadPayload &&
-    key in payloadPayload &&
-    typeof payloadPayload[key as keyof typeof payloadPayload] === "string"
-  ) {
-    configLabelKey = payloadPayload[
-      key as keyof typeof payloadPayload
-    ] as string
+  const own = stringAt(record, key)
+  if (own !== undefined) {
+    configLabelKey = own
+  } else if (payloadPayload) {
+    const inner = stringAt(payloadPayload, key)
+    if (inner !== undefined) configLabelKey = inner
   }
 
   return configLabelKey in config ? config[configLabelKey] : config[key]

@@ -20,6 +20,7 @@ import {
   parseYouTubeMessage,
   youtubeErrorText,
   type YouTubeInfo,
+  type PlayerArg,
 } from "../../lib/youtubeWire";
 
 export interface YoutubePlayer {
@@ -81,7 +82,7 @@ export function useYoutubePlayer(id: string = YT_ID): YoutubePlayer {
   }, []);
 
   const command = useCallback(
-    (func: string, args: unknown[] = []) => {
+    (func: string, args: PlayerArg[] = []) => {
       post({ event: "command", func, args, id });
     },
     [post, id],
@@ -132,7 +133,7 @@ export function useYoutubePlayer(id: string = YT_ID): YoutubePlayer {
         setReady(true);
       }
       if (msg.event === "onError") {
-        setError(youtubeErrorText(msg.info));
+        setError(youtubeErrorText(msg.info ?? null));
         return;
       }
       if (msg.info) {

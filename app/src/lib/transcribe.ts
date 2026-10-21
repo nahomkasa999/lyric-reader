@@ -64,6 +64,11 @@ export async function transcribeMedia(
     return text;
   } catch (e) {
     if (e instanceof Error && e.message.startsWith("No speech")) throw e;
-    throw new Error(errorText(e, "ElevenLabs could not transcribe that."));
+    throw new Error(
+      errorText(
+        e instanceof Error ? e : new Error(""),
+        "ElevenLabs could not transcribe that.",
+      ),
+    );
   }
 }

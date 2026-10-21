@@ -177,9 +177,7 @@ export default function Reader({
       lpRef.current = null;
     }
     try {
-      (
-        CSS as unknown as { highlights?: Map<string, unknown> }
-      ).highlights?.delete("lr-sel");
+      CSS.highlights?.delete("lr-sel");
     } catch {
       /* ignore */
     }
@@ -372,7 +370,7 @@ export default function Reader({
       item: number,
       part: number,
     ) => {
-      // The card owns the pause while it is open: any transient pause the
+      // The card owns the pause while it is open: the transient pause the
       // overlays were holding is dropped, so closing them must not resume.
       closePop();
       collapseSelection(false);
@@ -816,6 +814,11 @@ export default function Reader({
           onOpenSettings();
         }}
         onOpenVoice={openVoice}
+        readAloud={settings.readAloud}
+        onToggleReadAloud={() => {
+          if (Date.now() < suppressUntil.current) return;
+          updateSettings({ readAloud: !settings.readAloud });
+        }}
         onOpenOutline={openOutline}
         onOpenAssistant={() => {
           if (Date.now() < suppressUntil.current) return;

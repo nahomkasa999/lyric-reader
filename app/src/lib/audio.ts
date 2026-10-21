@@ -7,12 +7,17 @@
 let ctx: AudioContext | null = null;
 let current: AudioBufferSourceNode | null = null;
 
+/** Safari's name for the same thing. */
+interface WebkitWindow extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
 function audioContext(): AudioContext {
   if (!ctx) {
     const Ctor =
       window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext })
-        .webkitAudioContext;
+      (window as WebkitWindow).webkitAudioContext;
+    if (!Ctor) throw new Error("This browser has no audio.");
     ctx = new Ctor();
   }
   return ctx;

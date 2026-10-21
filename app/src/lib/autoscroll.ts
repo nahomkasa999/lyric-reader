@@ -33,7 +33,9 @@ export function nextSpeed(speed: number): number {
   return AUTO_SPEEDS[(i + 1) % AUTO_SPEEDS.length];
 }
 
-export function isAutoSpeed(s: unknown): s is number {
+export function isAutoSpeed(
+  s: string | number | boolean | null | undefined,
+): s is number {
   return typeof s === "number" && (AUTO_SPEEDS as readonly number[]).includes(s);
 }
 

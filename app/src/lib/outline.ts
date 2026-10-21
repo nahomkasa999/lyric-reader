@@ -41,7 +41,7 @@ function hint(text: string): string {
 /**
  * The outline of a book.
  *
- * Headings win when the book has any — they are what the reader means by
+ * Headings win when the book has them — they are what the reader means by
  * "chapter". Otherwise the pages stand in for them, so the sheet still
  * works on a PDF that carries no structure.
  */

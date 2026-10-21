@@ -115,15 +115,15 @@ const LEGACY_SCALE_KEY = "lyric-reader.font-scale";
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, v));
 
-function isHex(s: unknown): s is string {
+function isHex(s: string | null | undefined): s is string {
   return typeof s === "string" && /^#[0-9a-fA-F]{6}$/.test(s);
 }
 
-function isBgStyle(s: unknown): s is BgStyle {
+function isBgStyle(s: string | null | undefined): s is BgStyle {
   return s === "gradient" || s === "solid" || s === "off";
 }
 
-function isBgColourMode(s: unknown): s is BgColourMode {
+function isBgColourMode(s: string | null | undefined): s is BgColourMode {
   return s === "alternate" || s === "single";
 }
 

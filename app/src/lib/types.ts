@@ -146,17 +146,28 @@ export function progressOf(book: BookDoc, pos: Position): number {
   );
 }
 
+/** A book as it sits in IndexedDB — old shape or new. */
+export interface StoredBookRow {
+  id?: string;
+  title?: string;
+  items?: Item[];
+  pages?: Array<{
+    sentences?: Array<{ text?: string; kind?: BlockKind; level?: number }>;
+  }>;
+  totalSentences?: number;
+  createdAt?: number;
+  source?: string;
+}
+
 /**
  * Migrate a stored book from the old shape (pages of sentences, v1/v2)
  * to the item stream. Lossless for the text; v2's sentence-id marks
  * simply won't match the new part keys (noted in DECISIONS.md).
  */
-export function migrateBook(stored: unknown): BookDoc {
-  const b = stored as Record<string, unknown>;
-  if (Array.isArray(b.items)) return b as unknown as BookDoc;
-  const pages = (b.pages ?? []) as Array<{
-    sentences?: Array<{ text?: string; kind?: BlockKind; level?: number }>;
-  }>;
+export function migrateBook(stored: StoredBookRow): BookDoc {
+  const b = stored;
+  if (Array.isArray(b.items)) return b as BookDoc;
+  const pages = b.pages ?? [];
   const items: Item[] = [];
   pages.forEach((p, pi) => {
     for (const s of p.sentences ?? []) {

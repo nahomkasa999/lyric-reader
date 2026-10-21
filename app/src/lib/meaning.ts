@@ -57,9 +57,9 @@ interface FreeDictPayload {
  * parsed Wiktionary data with IPA and clean strings, served with CORS.
  */
 export function parseFreeDictionaryEntry(
-  json: unknown,
+  json: FreeDictPayload,
 ): MeaningModel | null {
-  const p = json as FreeDictPayload;
+  const p = json;
   if (!p || !Array.isArray(p.entries)) return null;
   const entries = p.entries.filter(
     (e) => !e.language?.code || e.language.code === "en",
@@ -126,10 +126,10 @@ export function stripHtml(html: string): string {
 
 /** Wiktionary REST definition shape (fallback when the free API is down). */
 export function parseWiktionaryEntry(
-  json: unknown,
+  json: WiktPayload,
   word = "",
 ): MeaningModel | null {
-  const p = json as { en?: WiktEntry[] };
+  const p = json;
   if (!p || !Array.isArray(p.en) || !p.en.length) return null;
   const groups: DictPos[] = [];
   for (const e of p.en) {
@@ -193,17 +193,22 @@ function cleanText(t: string): string {
     .trim();
 }
 
-interface JsonResult {
-  ok: boolean;
-  status: number;
-  json?: unknown;
+/** The Wiktionary payload shape. */
+export interface WiktPayload {
+  en?: WiktEntry[];
 }
 
-async function fetchJson(
+interface JsonResult<T> {
+  ok: boolean;
+  status: number;
+  json?: T;
+}
+
+async function fetchJson<T>(
   url: string,
   fetchFn: typeof fetch,
   timeoutMs = 6000,
-): Promise<JsonResult> {
+): Promise<JsonResult<T>> {
   // A timeout so a hanging dictionary can't stall the lookup forever.
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
@@ -227,9 +232,13 @@ async function fetchFreeWord(
   fetchFn: typeof fetch,
   timeoutMs = 6000,
 ): Promise<MeaningModel | "not-found" | "offline"> {
-  const r = await fetchJson(FREE_DICT_URL + encodeURIComponent(word), fetchFn, timeoutMs);
+  const r = await fetchJson<FreeDictPayload>(
+    FREE_DICT_URL + encodeURIComponent(word),
+    fetchFn,
+    timeoutMs,
+  );
   if (!r.ok) return r.status === 404 ? "not-found" : "offline";
-  return parseFreeDictionaryEntry(r.json) ?? "not-found";
+  return parseFreeDictionaryEntry(r.json ?? {}) ?? "not-found";
 }
 
 async function fetchWiktionaryWord(
@@ -237,9 +246,13 @@ async function fetchWiktionaryWord(
   fetchFn: typeof fetch,
   timeoutMs = 6000,
 ): Promise<MeaningModel | "not-found" | "offline"> {
-  const r = await fetchJson(WIKT_URL + encodeURIComponent(word), fetchFn, timeoutMs);
+  const r = await fetchJson<WiktPayload>(
+    WIKT_URL + encodeURIComponent(word),
+    fetchFn,
+    timeoutMs,
+  );
   if (!r.ok) return r.status === 404 ? "not-found" : "offline";
-  return parseWiktionaryEntry(r.json, word) ?? "not-found";
+  return parseWiktionaryEntry(r.json ?? {}, word) ?? "not-found";
 }
 
 /** Free dictionary first; direct Wiktionary only if that host failed. */

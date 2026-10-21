@@ -76,13 +76,37 @@ function levelsBySize(sizes: number[]): Map<number, number> {
   return map;
 }
 
+/** One item of a PDF page's text content. */
+interface PdfTextItem {
+  str?: string;
+  transform?: number[];
+  height?: number;
+}
+
+/**
+ * A PDF page, as far as this reader needs it.
+ *
+ * The page proxy carries a union of text items and marked content; only
+ * the ones with a string are lines of text.
+ */
+interface PdfPage {
+  getTextContent: () => Promise<{
+    items: ReadonlyArray<PdfTextItem | { type?: string }>;
+  }>;
+}
+
+/** The document, with the destroy() the bundled types omit. */
+interface PdfDocument {
+  destroy?: () => Promise<void>;
+}
+
 /** Rebuild reading-order lines from a PDF page's text items. */
-async function pageLines(page: any): Promise<PdfLine[]> {
+async function pageLines(page: PdfPage): Promise<PdfLine[]> {
   const tc = await page.getTextContent();
   const items: TextItem[] = [];
-  for (const it of tc.items as any[]) {
-    if (!("str" in it) || !it.str.trim()) continue;
-    const t = it.transform as number[];
+  for (const it of tc.items) {
+    if (!("str" in it) || !it.str || !it.str.trim()) continue;
+    const t = it.transform ?? [];
     const height = typeof it.height === "number" ? it.height : 0;
     items.push({
       str: it.str,
@@ -134,7 +158,7 @@ export async function extractPdf(
   }
   // pdf.destroy() exists at runtime in pdfjs-dist v4/v5; the bundled
   // types omit it, so call it defensively.
-  await (pdf as unknown as { destroy?: () => Promise<void> }).destroy?.().catch(() => {});
+  await (pdf as PdfDocument).destroy?.().catch(() => {});
 
   // The body text: the size most of the book is set in.
   const body = median(allSizes);

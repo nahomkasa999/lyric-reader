@@ -88,7 +88,7 @@ export async function fetchTolerant(
   }
 }
 
-function isAbort(e: unknown): boolean {
+function isAbort(e: Error): boolean {
   return e instanceof DOMException && e.name === "AbortError";
 }
 
@@ -259,7 +259,7 @@ async function generateWithModel(
   } catch (e) {
     throw new GeminiError(
       "network",
-      isAbort(e)
+      isAbort(e instanceof Error ? e : new Error(""))
         ? "The AI took too long to answer — check your connection and try again."
         : "Couldn't reach Google's servers — check your connection and try again.",
     );

@@ -83,12 +83,12 @@ export function loadHistory(): YtTrack[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
-    const data: unknown = JSON.parse(raw);
+    const data = JSON.parse(raw) as YtTrack[];
     if (!Array.isArray(data)) return [];
     return data
       .filter(
         (t): t is YtTrack =>
-          !!t && typeof t === "object" && typeof (t as YtTrack).id === "string",
+          !!t && typeof t === "object" && typeof t.id === "string",
       )
       .filter((t) => ID_RE.test(t.id))
       .map((t) => ({

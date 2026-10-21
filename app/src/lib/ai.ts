@@ -35,7 +35,7 @@ export interface AiOpts {
 }
 
 /** Is this failure worth trying somewhere else? */
-function isThrottle(e: unknown): boolean {
+function isThrottle(e: Error): boolean {
   return e instanceof GeminiError && e.code === "quota";
 }
 
@@ -53,7 +53,7 @@ export async function aiGenerate(opts: AiOpts): Promise<string> {
         firstError = e instanceof Error ? e : new Error("The AI did not answer.");
       // A bad key or a broken request fails the same way with the next
       // key — only a RATE LIMIT is worth trying with the spare.
-      if (!isThrottle(e)) break;
+      if (!isThrottle(e instanceof Error ? e : new Error(""))) break;
     }
   }
 
