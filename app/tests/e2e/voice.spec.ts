@@ -85,7 +85,7 @@ test.describe("Lyric Reader — the voice picker", () => {
     await expect(page.getByTestId("voice-section-phone")).toBeVisible();
 
     // The phone's own voice is the first card, and it is the one in use.
-    const cards = page.locator('[data-testid^="voice-"]');
+    const cards = page.locator(".voice-card");
     await expect(cards.first()).toHaveClass(/on/);
 
     // The choice is written to the settings.
