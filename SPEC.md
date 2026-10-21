@@ -15,7 +15,7 @@ Nahom's idea: make dense textbooks feel like scrolling a feed, not reading a wal
    - Headings become section markers.
    - Bullets / nested points get a **thin hairline connector** on the left linking each point back to its parent (thread-line style, like Reddit/X), indent deepening with nesting level.
    - Paragraph breaks get breathing room, not a wall.
-
+  
 ## Formats (v1)
 
 | Format | Extraction | Notes |
