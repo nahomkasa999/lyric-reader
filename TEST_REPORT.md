@@ -625,7 +625,7 @@ rewritten:
 |---|---|
 | `: any` / `<any>` / `as any` / `: unknown` / `<unknown>` / `as unknown` / `: never` in `app/src` | **37** (baseline 42, limit ≤ 37) |
 | New files over 230 lines | none — the largest new file is `components/assistant/useAnswers.ts` at 216 |
-| `Reader.tsx` | 2 100 lines, −45 net: the Ask sheet is out of it |
+| `Reader.tsx` | 2 125 lines, −30 net: the Ask sheet is out of it |
 | New dependencies | none |
 | `dangerouslySetInnerHTML` | never used — the answers are React text nodes |
 
@@ -648,3 +648,53 @@ rewritten:
   that touched types), not exactly twice as the brief asked.
 - The e2e suite as a whole is now red until the five specs above are
   rewritten against the new sheet.
+
+---
+
+## v4.13b — the reader becomes a module (Oct 21, 2026)
+
+`components/Reader.tsx` was 2 125 lines: the page, the popup, the
+selection, the meaning card, the auto-scroll, the voice and every
+gesture in one file. It is now `components/reader/` — a module with
+its own pieces.
+
+| File | Lines | What it owns |
+|---|---|---|
+| `reader/Reader.tsx` | 1 009 | the orchestrator: the state, the moves, the render |
+| `reader/readerTypes.ts` | 88 | the shapes the pieces share (`Mark`, `MeaningState`, `PopupRow`, `ReaderProps`, …) |
+| `reader/readerGestures.ts` | 95 | what the gesture halves share |
+| `reader/ReaderStage.tsx` | 97 | the page of the book |
+| `reader/ReaderPopup.tsx` | 98 | the action card and the note editor |
+| `reader/ReaderOverlays.tsx` | 98 | the pill, the meaning card, the saved-word card |
+| `reader/MeaningCard.tsx` | 182 | what a word means |
+| `reader/useReaderBook.ts` | 115 | the book, the place, the marks, the saved words |
+| `reader/useReaderChrome.ts` | 67 | the top bar, the progress hairline, the bottom nav |
+| `reader/useReaderAutoScroll.ts` | 217 | the book reading itself |
+| `reader/useReaderMeaning.ts` | 173 | the lookup and the saving of a word |
+| `reader/useReaderVoice.ts` | 144 | the voice and the picker |
+| `reader/useReaderStepping.ts` | 181 | the wheel, the swipe, the click |
+| `reader/useReaderKeys.ts` | 80 | the keyboard |
+| `reader/useReaderSelectionGestures.ts` | 138 | the long-press and the drag |
+| `reader/useReaderMarks.ts` | 103 | highlight, bookmark, note, copy |
+
+**What was verified**
+
+- `npx tsc -b` — clean.
+- `npx vitest run` — 323 passed / 3 skipped (the live ElevenLabs tests).
+- `npm run build` — green.
+- The DOM contract is unchanged: every `data-testid` the reader used
+  before is still there (`diff` of the old and the new test-id lists is
+  empty), and every `className` is the same except one duplicated
+  `align-middle` that is now written once.
+- The `: any` / `unknown` budget is unchanged at 37.
+
+**Honest gaps**
+
+- The reader has no unit tests of its own (the e2e suite is the only
+  coverage it ever had, and it was not run this round), so the
+  refactor was verified by typecheck, by the DOM diff above and by
+  reading — not by watching a reader step through a book.
+- The gestures were split into two effects (stepping and selecting)
+  where they used to be one. The handlers are the same code, but they
+  now attach and detach separately, and the keys only work once the
+  stage exists — as before.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Library from "./components/Library";
-import Reader from "./components/Reader";
+import Reader from "./components/reader/Reader";
 import Saved from "./components/Saved";
 import Settings from "./components/Settings";
 import AssistantSheet from "./components/AssistantSheet";
