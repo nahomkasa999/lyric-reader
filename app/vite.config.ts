@@ -47,6 +47,10 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,woff2,png,svg,ico}"],
         // pdf.js worker is large; still fine to precache for a local install
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
+        // The HD voice engine is 2 MB of JS + 20 MB of runtime, and it is
+        // only needed once the user asks for it — so it stays out of the
+        // install. The browser caches it after the first use.
+        globIgnores: ["**/kokoro-*.js", "**/ort-wasm-*.wasm"],
       },
     }),
   ],

@@ -1059,6 +1059,144 @@
   background: var(--accent);
 }
 
+/* v4.8: the voice sheet — the HD engine, the voices, the speed. */
+.voice-sheet {
+  max-height: 88%;
+}
+.voice-title {
+  flex: 1;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+/* The engine card: what it is, and the one-time download. */
+.voice-engine {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 16px 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--background);
+}
+.voice-engine-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.voice-engine-copy b {
+  font-size: 14px;
+  color: var(--foreground);
+}
+.voice-engine-copy span {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.voice-progress {
+  margin: 0 16px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.voice-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in oklch, #fff 12%, transparent);
+  overflow: hidden;
+}
+.voice-progress-bar i {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.3s ease;
+}
+.voice-note {
+  margin: 0 16px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+/* The voices — a list of cards you can audition. */
+.voice-list {
+  flex: 1;
+  overflow-y: auto;
+  touch-action: pan-y;
+  padding: 0 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.voice-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: var(--background);
+  color: var(--foreground);
+  text-align: left;
+}
+.voice-card.on {
+  border-color: var(--primary);
+}
+.voice-play {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--foreground);
+}
+.voice-play:active {
+  background: var(--accent);
+}
+.voice-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-meta {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  letter-spacing: 0.03em;
+}
+.voice-foot {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.voice-speed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.voice-speed-value {
+  width: 46px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
 /* v4.4: transient speed label after a long-press speed cycle. */
 .auto-speed {
   position: absolute;

@@ -10,7 +10,7 @@
 //   same fill + border (max 3 blurred surfaces per screen)
 // · motion: under 300ms, ease-out only, scale(0.97) on press
 // · every data-testid from the old page still works
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FONT_CHOICES,
   FONT_STACKS,
@@ -32,8 +32,9 @@ import {
   setOpenRouterKey,
   testOpenRouterKey,
 } from "../lib/openrouter";
-import { loadVoices, speak, speechSupported, type VoiceInfo } from "../lib/speech";
 import BackgroundPreview from "./BackgroundPreview";
+import { Group, Row, Segmented, SliderRow, Switch } from "./settings/controls";
+import ReadAloudGroup from "./settings/ReadAloudGroup";
 import "../settings.css";
 import "../ambient.css";
 
@@ -74,135 +75,6 @@ function usePrefersReducedMotion(): boolean {
     return () => mq.removeEventListener?.("change", onChange);
   }, []);
   return reduced;
-}
-
-function Group({
-  id,
-  title,
-  hint,
-  children,
-}: {
-  id: string;
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section data-testid={`settings-group-${id}`} className="set-group">
-      <div className="set-group-head">
-        <h2 className="set-group-label">{title}</h2>
-      </div>
-      {hint && <p className="set-note">{hint}</p>}
-      {children}
-    </section>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="set-row">
-      <span className="set-row-label">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-/** On/off control — a switch, never a chip (DESIGN.md, components). */
-function Switch({
-  testid,
-  checked,
-  onChange,
-  disabled,
-  label,
-}: {
-  testid: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      data-testid={testid}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className="set-switch"
-    >
-      <span aria-hidden="true" />
-    </button>
-  );
-}
-
-/** Single choice — a segmented control. */
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-  label,
-  testid,
-}: {
-  options: { id: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-  label: string;
-  testid: string;
-}) {
-  return (
-    <div className="set-seg" role="group" aria-label={label} data-testid={testid}>
-      {options.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          data-testid={`${testid}-${o.id}`}
-          aria-pressed={value === o.id}
-          onClick={() => onChange(o.id)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SliderRow({
-  testid,
-  min,
-  max,
-  value,
-  onChange,
-  suffix,
-  disabled,
-}: {
-  testid: string;
-  min: number;
-  max: number;
-  value: number;
-  onChange: (v: number) => void;
-  suffix?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <input
-        data-testid={testid}
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(parseInt(e.target.value, 10))}
-        className="w-full accent-primary"
-      />
-      <span className="w-14 shrink-0 text-right text-sm text-foreground tabular-nums">
-        {value}
-        {suffix}
-      </span>
-    </div>
-  );
 }
 
 function AiKeySection() {
@@ -406,29 +278,6 @@ export default function Settings({ onBack }: Props) {
   const live = settings.bgMotion && !reduced && settings.bgStyle === "gradient";
   const colourOff = settings.bgStyle === "off";
 
-  // Read aloud: the voices this phone has, and a way to hear them.
-  const [canSpeak, setCanSpeak] = useState(() => speechSupported());
-  const [voices, setVoices] = useState<VoiceInfo[]>([]);
-  useEffect(() => {
-    let alive = true;
-    setCanSpeak(speechSupported());
-    void loadVoices().then((v) => {
-      if (alive) setVoices(v);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const testVoice = useCallback(async () => {
-    try {
-      await speak("This is how the page will sound.", {
-        rate: settings.readAloudRate,
-        voiceURI: settings.readAloudVoice,
-      });
-    } catch {
-      /* no speech engine — the switch is disabled anyway */
-    }
-  }, [settings.readAloudRate, settings.readAloudVoice]);
 
   return (
     <div
@@ -741,76 +590,7 @@ export default function Settings({ onBack }: Props) {
         </Group>
 
         {/* ---------------- Read aloud ---------------- */}
-        <Group
-          id="read-aloud"
-          title="Read aloud"
-          hint="Hear the page spoken out loud while you follow along."
-        >
-          <Row label="Read aloud">
-            <div className="set-switch-row">
-              <span className="set-switch-copy">Speak the sentences</span>
-              <Switch
-                testid="read-aloud-toggle"
-                checked={settings.readAloud}
-                onChange={(v) => update({ readAloud: v })}
-                disabled={!canSpeak}
-                label="Speak the sentences"
-              />
-            </div>
-            <p className="set-note">
-              {!canSpeak
-                ? "This device has no speech engine — nothing can be spoken."
-                : settings.readAloud
-                  ? "On — every sentence you move to is spoken out loud."
-                  : "Off — tap the speaker in the reader to hear a sentence."}
-            </p>
-          </Row>
-
-          <Row label="Voice">
-            <div className="flex items-center gap-2">
-              <select
-                data-testid="read-aloud-voice"
-                value={settings.readAloudVoice}
-                disabled={!canSpeak || !voices.length}
-                onChange={(e) => update({ readAloudVoice: e.target.value })}
-                className="set-field min-w-0 flex-1"
-                aria-label="Read aloud voice"
-              >
-                <option value="">System default</option>
-                {voices.map((v) => (
-                  <option key={v.uri} value={v.uri}>
-                    {v.name} — {v.lang}
-                  </option>
-                ))}
-              </select>
-              <button
-                data-testid="read-aloud-test"
-                disabled={!canSpeak}
-                onClick={() => void testVoice()}
-                className="set-chip shrink-0"
-              >
-                Test
-              </button>
-            </div>
-            <p className="set-note">
-              {voices.length
-                ? "The voices this phone has installed."
-                : "No voices found on this device."}
-            </p>
-          </Row>
-
-          <Row label="Speed">
-            <SliderRow
-              testid="read-aloud-rate"
-              min={50}
-              max={200}
-              value={Math.round(settings.readAloudRate * 100)}
-              onChange={(v) => update({ readAloudRate: v / 100 })}
-              suffix="%"
-              disabled={!canSpeak}
-            />
-          </Row>
-        </Group>
+        <ReadAloudGroup />
 
         {/* ---------------- Quiz ---------------- */}
         <Group

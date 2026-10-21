@@ -20,7 +20,10 @@ interface Props {
   /** long-press on the auto button cycles the speed */
   onCycleSpeed: () => void;
   speedFlash: string | null;
+  /** the voice is talking right now */
   speaking: boolean;
+  /** the reading session runs */
+  session: boolean;
   canSpeak: boolean;
   onToggleSpeak: () => void;
 }
@@ -38,6 +41,7 @@ export default function ReaderControls({
   onCycleSpeed,
   speedFlash,
   speaking,
+  session,
   canSpeak,
   onToggleSpeak,
 }: Props) {
@@ -102,15 +106,17 @@ export default function ReaderControls({
         ?
       </button>
 
-      {/* The voice: tap to hear this sentence, tap again to stop it. */}
+      {/* The voice: tap to start the reading session, tap again to stop. */}
       {canSpeak && (
         <button
           data-testid="speak-btn"
-          aria-label={speaking ? "Stop reading" : "Read this sentence aloud"}
-          className={`speak-btn${visible ? " show" : ""}${speaking ? " on" : ""}`}
+          aria-label={session ? "Stop reading" : "Read aloud"}
+          className={`speak-btn${visible ? " show" : ""}${
+            session || speaking ? " on" : ""
+          }`}
           onClick={onToggleSpeak}
         >
-          {speaking ? <StopIcon /> : <SpeakerIcon />}
+          {session || speaking ? <StopIcon /> : <SpeakerIcon />}
         </button>
       )}
 

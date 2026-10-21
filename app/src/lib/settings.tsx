@@ -51,10 +51,12 @@ export interface ReaderSettings {
   bgIntensity: number;
   /** read aloud: every sentence you move to is spoken out loud */
   readAloud: boolean;
-  /** the chosen voice (voiceURI); "" = the browser default */
+  /** the chosen voice — a Kokoro voice id, or a system voiceURI */
   readAloudVoice: string;
   /** speaking speed, 0.5 – 2 */
   readAloudRate: number;
+  /** which engine reads: "hd" = Kokoro on the phone, "system" = the phone's voice */
+  readAloudEngine: "hd" | "system";
 }
 
 export const FONT_STACKS: Record<FontChoice, string> = {
@@ -98,8 +100,9 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   bgMotion: true,
   bgIntensity: 60,
   readAloud: false,
-  readAloudVoice: "",
+  readAloudVoice: "af_heart",
   readAloudRate: 1,
+  readAloudEngine: "hd",
 };
 
 const KEY = "lyric-reader.settings-v1";
@@ -161,6 +164,9 @@ export function load(): ReaderSettings {
     if (typeof s.readAloudVoice === "string") d.readAloudVoice = s.readAloudVoice;
     if (typeof s.readAloudRate === "number" && Number.isFinite(s.readAloudRate)) {
       d.readAloudRate = Math.min(2, Math.max(0.5, s.readAloudRate));
+    }
+    if (s.readAloudEngine === "hd" || s.readAloudEngine === "system") {
+      d.readAloudEngine = s.readAloudEngine;
     }
   } catch {
     /* corrupt prefs -> defaults */

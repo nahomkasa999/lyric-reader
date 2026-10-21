@@ -97,6 +97,14 @@ offline afterwards.
   end. Long-press the button to cycle speed 1× → 1.25× → 1.5× → 0.75×
   (persisted). Opening the popup, a selection, or the Ask sheet pauses it
   and closing resumes; Settings/leaving/tab-switch stops it.
+- **Read aloud:** the speaker button in the reader starts a reading
+    session — the book reads itself, sentence by sentence, and the page
+    turns as it goes. The voice is Kokoro-82M running **on the phone**
+    (WebGPU where it exists, WASM everywhere else): the app asks before
+    it downloads the engine (≈86 MB, once), and after that it speaks
+    offline with no server and no cost. 28 voices, each with a preview
+    button, the way ChatGPT lets you audition one. If the phone cannot
+    run it, the phone's own speech engine takes over.
 - **Settings:** the gear opens a dedicated settings page — font (Geist /
     Serif / Mono / Lexend / System), sentence sizes, text colours and
     opacity, highlight colour, with a live preview. Settings persist
@@ -122,6 +130,9 @@ app/src/
     meaning.ts    dictionary lookup + lemmatizer retry + Gemini phrase/in-context
     askContext.ts passage context builder + «quote» matching for the Ask sheet
     vocab.ts      day grouping + saved-word text decoration
+    speech.ts     the browser's speech engine (the fallback voice)
+    kokoro.ts     Kokoro-82M on the phone: the HD engine (download once)
+    kokoroVoices.ts the 28 voices the model ships with
   components/
     AskSheet.tsx  bottom-sheet Q&A about the passage (thread per book)
     Words.tsx     saved words grouped by day, tap-to-jump, delete
@@ -130,6 +141,8 @@ app/src/
     Reader.tsx    his track reader: items, parts, clicks, popup, page field
     Saved.tsx     saved bookmarks / highlights / notes for a book
     Settings.tsx  the settings page (font, sizes, colours, preview)
+    reader/       the reader's parts: TopBar, ReaderControls, VoiceSheet
+    settings/     the settings groups (controls, Read aloud)
     App.tsx       shell, dark mode, sample seeding, last-book resume
 ```
 

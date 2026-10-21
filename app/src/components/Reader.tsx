@@ -47,6 +47,7 @@ import {
 } from "../lib/autoscroll";
 import AskSheet from "./AskSheet";
 import TopBar from "./reader/TopBar";
+import VoiceSheet from "./reader/VoiceSheet";
 import ReaderControls from "./reader/ReaderControls";
 import { useReadAloud } from "./reader/useReadAloud";
 import {
@@ -121,6 +122,8 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
   const [speedFlash, setSpeedFlash] = useState<string | null>(null);
   // v4.7: the header overflow menu (text size, saved, settings).
   const [menuOpen, setMenuOpen] = useState(false);
+  // v4.8: the voice sheet (choose a voice, install the HD engine).
+  const [voiceSheet, setVoiceSheet] = useState(false);
   // v4.7: the voice — the read-aloud hook fills this in below.
   const voiceRef = useRef<ReturnType<typeof useReadAloud> | null>(null);
 
@@ -538,8 +541,9 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     );
   }, [updateSettings]);
 
-  // --- v4.7: read aloud ---
-  // The hook owns the voice; the reader only tells it what is on screen.
+  // --- v4.8: read aloud ---
+  // The hook owns the voice and the reading session; the reader tells it
+  // what is on screen and lets it turn the page.
   const currentText = useCallback(() => {
     const { item, part } = posRef.current;
     return partsRef.current[item]?.[part] ?? "";
@@ -552,13 +556,23 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
       !!askOpenRef.current,
     [],
   );
+  /** The session turns the page itself: forward one part, or stop at the end. */
+  const advanceRead = useCallback(() => {
+    const before = posRef.current;
+    const next = stepParts(partsRef.current, before, 1);
+    if (next.item === before.item && next.part === before.part) return false;
+    setPos(next);
+    return true;
+  }, []);
   const voice = useReadAloud({
-    enabled: settings.readAloud,
+    follow: settings.readAloud,
     positionKey: `${I}:${P}`,
     currentText,
     blocked: speechBlocked,
-    rate: settings.readAloudRate,
-    voiceURI: settings.readAloudVoice,
+    advance: advanceRead,
+    voice: settings.readAloudVoice,
+    speed: settings.readAloudRate,
+    engine: settings.readAloudEngine,
   });
   voiceRef.current = voice;
 
@@ -1543,10 +1557,22 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
         }}
         speedFlash={speedFlash}
         speaking={voice.speaking}
-        canSpeak={voice.supported}
+        session={voice.session}
+        canSpeak={voice.supported || voice.hdInstalled}
         onToggleSpeak={() => {
           if (Date.now() < suppressUntil.current) return;
-          voiceRef.current?.toggle();
+          void (async () => {
+            // The HD engine has to be on the phone first — the sheet asks
+            // for the one-time download instead of starting a weak voice.
+            if (settings.readAloudEngine === "hd") {
+              const on = await (voiceRef.current?.refresh() ?? false);
+              if (!on) {
+                setVoiceSheet(true);
+                return;
+              }
+            }
+            voiceRef.current?.toggle();
+          })();
         }}
       />
 
@@ -1726,6 +1752,19 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
             )}
           </div>
         </div>
+      )}
+
+      {/* v4.8: the voice sheet — pick a voice, install the HD engine. */}
+      {voiceSheet && (
+        <VoiceSheet
+          onClose={() => setVoiceSheet(false)}
+          voice={settings.readAloudVoice}
+          onVoiceChange={(v) => updateSettings({ readAloudVoice: v })}
+          speed={settings.readAloudRate}
+          onSpeedChange={(v) => updateSettings({ readAloudRate: v })}
+          engine={settings.readAloudEngine}
+          onEngineChange={(v) => updateSettings({ readAloudEngine: v })}
+        />
       )}
 
       {/* v4: the Ask sheet. */}

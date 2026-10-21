@@ -8,3 +8,7 @@ test-results/
 # copies fonts from npm packages; scripts/make-icons.mjs draws the icons).
 app/public/fonts/*.woff2
 app/public/icons/*.png
+
+# The ONNX runtime for the HD voice (scripts/copy-ort.mjs copies it from
+# npm at build time — the repo never carries the 30 MB of binaries).
+app/public/ort/
