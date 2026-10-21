@@ -55,7 +55,9 @@ offline afterwards.
 
 - **Library:** upload a PDF, EPUB or TXT, or paste text. A sample book
   (*Sample — The Midnight Staircase*, 60 sentences) is preloaded so you can
-  try the reader instantly.
+  try the reader instantly. Amharic text works too: the reader splits on
+  the Ethiopic full stop ፡ (including the four-dot ending ፡፡፡፡), on ። and
+  on ፧, and keeps the marks exactly as you wrote them.
 - **Reader:** the book is an item stream on a scrolling track — the
   current sentence stays centred and bright, the trail sits above in muted
   colour, the next below. Long sentences split into parts: each gesture

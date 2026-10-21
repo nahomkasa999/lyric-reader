@@ -793,3 +793,25 @@ added three small resilience items in the same pass:
   `.env.local` (gitignored); the build bakes it in like the Gemini key.
   The live tests (`tests/elevenlabs.live.test.ts`) read it from the
   environment and are skipped when it is absent — they cost quota.
+
+## v4.10 — Amharic: the Ethiopic full stop ends a sentence (Oct 21, 2026)
+
+- **Finding**: ICU's `Intl.Segmenter` does **not** break on the Ethiopic
+  full stop ፡ (U+1361) — in any locale, "am" included. It breaks on ።
+  (U+1362, the semicolon) and ፧ (U+1367, the question mark), but on ፡
+  the whole paragraph came out as ONE sentence: the reader showed a wall
+  of text. Amharic also writes its full stop in runs — ፡፡፡፡ closes a
+  paragraph — and those runs are not terminators either.
+- **Fix** (`lib/segment.ts`): the Ethiopic marks are split by hand, and a
+  RUN of them is ONE ending (the run stays with the sentence before it,
+  so the text is shown exactly as written). Ethiopic text is segmented
+  with the "am" locale; the English abbreviation rules are untouched for
+  everything else (verified identical output on mixed text).
+- **Also fixed, the same class of bug**: a heading ending in ። was not
+  read as a heading (`lib/structure.ts`); the phone's own voice read a
+  whole Amharic paragraph as one chunk, and Chrome cuts speech off at
+  15 seconds (`lib/speech.ts`); a selected Amharic word kept its full
+  stop when looked up (`lib/meaning.ts`).
+- **Old books heal themselves**: `getBook` re-segments stored paragraphs
+  with the current splitter on open, so a book imported before this fix
+  is split correctly the first time it is opened.

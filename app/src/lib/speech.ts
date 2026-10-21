@@ -97,11 +97,15 @@ export function loadVoices(timeoutMs = 2000): Promise<VoiceInfo[]> {
 /**
  * Split a text into speakable chunks: sentences first (so the pauses land
  * in the right places), then hard-split anything still too long.
+ *
+ * The Ethiopic marks (፡ ። ፧) end a sentence too — without them an
+ * Amharic paragraph is one chunk, and Chrome cuts it off at 15 seconds.
  */
 export function chunkText(text: string, maxChars = MAX_CHUNK): string[] {
   const clean = text.replace(/\s+/g, " ").trim();
   if (!clean) return [];
-  const sentences = clean.match(/[^.!?…]+[.!?…]+["'”’)]*|[^.!?…]+$/g) ?? [clean];
+  const sentences =
+    clean.match(/[^.!?…፡።፧]+[.!?…፡።፧]+["'”’)]*|[^.!?…፡።፧]+$/g) ?? [clean];
   const out: string[] = [];
   for (const raw of sentences) {
     const s = raw.trim();

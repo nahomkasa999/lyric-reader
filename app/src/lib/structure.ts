@@ -14,7 +14,10 @@ const MD_HEADING_RE = /^(#{1,6})\s+(.*)$/;
 function looksLikeHeading(line: string): boolean {
   const t = line.trim();
   if (!t || t.length > 70) return false;
-  if (/[.?!…:]$/.test(t)) return false;
+  // The Ethiopic marks count as terminal punctuation too: an Amharic
+  // title usually ends with ።, and must not be read as a heading
+  // because of it.
+  if (/[.?!…:፡።፧]$/.test(t)) return false;
   if (/^[A-Z][^a-z]*$/.test(t) && t.length > 3) return true; // ALL CAPS
   const words = t.split(/\s+/);
   if (words.length <= 8 && words.length >= 1) {

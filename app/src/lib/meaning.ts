@@ -186,7 +186,11 @@ interface LookupOpts {
 }
 
 function cleanText(t: string): string {
-  return t.replace(/^["'“”‘’\(\[]+|["'“”‘’\)\]\.,;:!?]+$/g, "").trim();
+  // The Ethiopic marks are stripped too — a selected Amharic word often
+  // carries its full stop with it.
+  return t
+    .replace(/^["'“”‘’\(\[\u1361\u1362\u1367]+|["'“”‘’\)\]\.,;:!?\u1361\u1362\u1367]+$/g, "")
+    .trim();
 }
 
 interface JsonResult {
