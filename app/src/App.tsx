@@ -18,7 +18,7 @@ import {
   saveProgress,
 } from "./lib/db";
 import { SAMPLE_TEXT, SAMPLE_TITLE } from "./lib/sample";
-import { startIndexing } from "./lib/indexBook";
+import { startIndexing, kickIndexer, refreshAll } from "./lib/indexBook";
 import AmbientBackground from "./components/AmbientBackground";
 
 const LAST_BOOK_KEY = "lyric-reader.last-book";
@@ -58,6 +58,13 @@ function Shell() {
   // The whole app is dark-only (the reader mockup is pure black).
   useEffect(() => {
     document.documentElement.classList.add("dark");
+  }, []);
+
+  // v4.13: the indexing queue wakes up once, when the app opens. A job
+  // that was interrupted by a reload picks up where it stopped.
+  useEffect(() => {
+    void refreshAll();
+    kickIndexer();
   }, []);
 
   // If the remembered book no longer exists (deleted), forget it.

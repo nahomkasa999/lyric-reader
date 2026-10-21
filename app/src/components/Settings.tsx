@@ -26,6 +26,7 @@ import {
   setApiKey,
 } from "../lib/apikey";
 import { testApiKey } from "../lib/gemini";
+import { kickIndexer } from "../lib/indexBook";
 import {
   getOpenRouterKey,
   removeOpenRouterKey,
@@ -107,6 +108,8 @@ function AiKeySection() {
               setKey(e.target.value);
               setApiKey(e.target.value);
               setResult(null);
+              // v4.13: a new key may unlock the books that are waiting.
+              kickIndexer();
             }}
             placeholder={hasEnvKey ? "Paste your own key (optional)" : "AIza…"}
             autoComplete="off"

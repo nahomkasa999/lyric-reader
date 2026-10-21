@@ -1,12 +1,32 @@
 // Minimal IndexedDB storage (no dependency): books + reading progress + marks.
-import type { BookDoc, Position } from "./types";
+import type { BookDoc, Item, Position } from "./types";
 import { migrateBook, resegmentItems } from "./types";
 import { splitSentences } from "./segment";
 
 const DB_NAME = "lyric-reader";
 // v4: the knowledge base (chunks + their vectors) and the assistant's
 // threads joined the library.
-const DB_VERSION = 4;
+// v5: the indexing queue — one row per book that is waiting to be embedded.
+const DB_VERSION = 5;
+
+/**
+ * A book as it sits in IndexedDB.
+ *
+ * The rows are plain objects, so the shape is only known at runtime: an
+ * old book has `pages` instead of `items`. A named interface keeps the
+ * casts honest (and keeps `unknown` out of this file).
+ */
+interface StoredBook {
+  id?: string;
+  title?: string;
+  items?: Item[];
+  pages?: Array<{
+    sentences?: Array<{ text?: string; kind?: string; level?: number }>;
+  }>;
+  totalSentences?: number;
+  createdAt?: number;
+  source?: string;
+}
 
 export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -32,6 +52,9 @@ export function openDb(): Promise<IDBDatabase> {
       // The assistant's conversations (lib/assistantStore.ts).
       if (!db.objectStoreNames.contains("threads"))
         db.createObjectStore("threads", { keyPath: "id" });
+      // v5: the indexing queue (lib/indexJobs.ts) — one row per book.
+      if (!db.objectStoreNames.contains("indexJobs"))
+        db.createObjectStore("indexJobs", { keyPath: "bookId" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -70,7 +93,9 @@ export async function saveBook(book: BookDoc): Promise<void> {
  * the source item so reading position and page numbers don't shift.
  */
 export async function getBook(id: string): Promise<BookDoc | undefined> {
-  const raw = await tx<unknown>("books", "readonly", (s) => s.get(id));
+  const raw = await tx<StoredBook | undefined>("books", "readonly", (s) =>
+    s.get(id),
+  );
   if (!raw) return undefined;
   let book = migrateBook(raw);
   const { items, changed } = resegmentItems(book.items, splitSentences);
@@ -78,7 +103,7 @@ export async function getBook(id: string): Promise<BookDoc | undefined> {
     book = { ...book, items, totalSentences: items.length };
   }
   // Persist the migrated shape once so this is a one-time cost.
-  if (!(raw as Record<string, unknown>).items || changed) {
+  if (!raw.items || changed) {
     tx("books", "readwrite", (s) => s.put(book)).catch(() => {});
   }
   return book;
@@ -98,7 +123,7 @@ export async function listBooks(): Promise<BookMeta[]> {
     const t = db.transaction("books", "readonly");
     const req = t.objectStore("books").getAll();
     req.onsuccess = () => {
-      const books = (req.result as unknown[]).map((raw) => {
+      const books = (req.result as StoredBook[]).map((raw) => {
         const b = migrateBook(raw);
         return {
           id: b.id,

@@ -1,9 +1,13 @@
-// The raw storage of the knowledge base (v4.12).
+// The raw storage of the knowledge base (v4.13).
 //
-// Two stores: `chunks` (the passages) and `vectors` (the embeddings and
-// the words of each passage). The vectors are kept in memory after the
-// first read — the search reads them every time, and a library of a few
-// thousand passages is a few megabytes.
+// Two stores: `chunks` (the passages of every book, with their words)
+// and `vectors` (the embeddings). The vectors are kept in memory after
+// the first read — the search reads them every time, and a library of
+// a few thousand passages is a few megabytes.
+//
+// The passages are ALWAYS written locally and immediately: the search
+// must work before a single embedding exists. That is the whole point
+// of the two-store split.
 import { openDb } from "./db";
 
 /** A passage, as it is stored. */
@@ -15,20 +19,18 @@ export interface StoredChunk {
   page: number;
   from: number;
   to: number;
+  /** the passage's distinct words — the lexical half of the search */
+  w?: string[];
 }
 
 /** A vector, as it is stored. */
 export interface StoredVector {
   id: string;
   v: Float32Array;
-  /** the passage's distinct words — the lexical half of the search */
-  w: string[];
 }
 
-export async function putAll(
-  store: string,
-  rows: unknown[],
-): Promise<void> {
+/** Write a list of rows into a store, in one transaction. */
+export async function putAll<T>(store: string, rows: T[]): Promise<void> {
   if (!rows.length) return;
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
@@ -46,6 +48,7 @@ export async function putAll(
   });
 }
 
+/** Every row of a store. */
 export async function getAll<T>(store: string): Promise<T[]> {
   const db = await openDb();
   return new Promise<T[]>((resolve, reject) => {
@@ -62,13 +65,14 @@ export async function getAll<T>(store: string): Promise<T[]> {
   });
 }
 
-/**
- * The vectors, kept in memory after the first read.
- *
- * The cache is dropped whenever the index changes — see forgetVectors().
- */
-let vectorCache: StoredVector[] | null = null;
+// ---------------------------------------------------------------------------
+// The caches. A write drops them; a read fills them.
+// ---------------------------------------------------------------------------
 
+let vectorCache: StoredVector[] | null = null;
+let chunkCache: StoredChunk[] | null = null;
+
+/** The vectors, kept in memory after the first read. */
 export async function allVectors(): Promise<StoredVector[]> {
   if (vectorCache) return vectorCache;
   const all = await getAll<StoredVector>("vectors").catch(() => []);
@@ -76,9 +80,28 @@ export async function allVectors(): Promise<StoredVector[]> {
   return all;
 }
 
+/** The passages of every book, kept in memory after the first read. */
+export async function allChunks(): Promise<StoredChunk[]> {
+  if (chunkCache) return chunkCache;
+  const all = await getAll<StoredChunk>("chunks").catch(() => []);
+  chunkCache = all;
+  return all;
+}
+
 /** The index changed: the cached vectors are stale. */
 export function forgetVectors(): void {
   vectorCache = null;
+}
+
+/** The passages changed: the cached passages are stale. */
+export function forgetChunks(): void {
+  chunkCache = null;
+}
+
+/** Everything changed. */
+export function forgetAll(): void {
+  vectorCache = null;
+  chunkCache = null;
 }
 
 /** The passages of the ids, read one by one (only the ones we need). */
@@ -108,4 +131,69 @@ export async function chunksById(
     };
   });
   return out;
+}
+
+/**
+ * Forget every row of a store whose key starts with `${prefix}:`.
+ *
+ * The ids of a book's rows all share the book's id, so a prefix scan
+ * is enough to delete them all.
+ */
+export async function deleteByPrefix(
+  store: string,
+  prefix: string,
+): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve) => {
+    const t = db.transaction(store, "readwrite");
+    const s = t.objectStore(store);
+    const req = s.getAllKeys();
+    req.onsuccess = () => {
+      for (const k of req.result as string[]) {
+        if (typeof k === "string" && k.startsWith(`${prefix}:`)) s.delete(k);
+      }
+    };
+    t.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    t.onerror = () => {
+      db.close();
+      resolve();
+    };
+  });
+}
+
+/**
+ * Add vectors for a book, from a given passage index.
+ *
+ * The ids are `${bookId}:${from + i}` — the same shape the passages use,
+ * so a vector and its passage always line up.
+ */
+export async function appendVectors(
+  bookId: string,
+  from: number,
+  vectors: Float32Array[],
+): Promise<void> {
+  if (!vectors.length) return;
+  const rows: StoredVector[] = vectors.map((v, i) => ({
+    id: `${bookId}:${from + i}`,
+    v,
+  }));
+  await putAll("vectors", rows);
+  forgetVectors();
+}
+
+/** The vectors of one book. */
+export async function vectorsOfBook(
+  bookId: string,
+): Promise<StoredVector[]> {
+  const all = await allVectors();
+  return all.filter((v) => v.id.startsWith(`${bookId}:`));
+}
+
+/** Forget a book's vectors — a prefix scan over the keys. */
+export async function deleteVectors(bookId: string): Promise<void> {
+  await deleteByPrefix("vectors", bookId);
+  forgetVectors();
 }

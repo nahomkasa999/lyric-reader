@@ -12,6 +12,7 @@ import {
   startIndexing,
 } from "../lib/indexBook";
 import { deleteIndex } from "../lib/vectorIndex";
+import { deleteJob } from "../lib/indexJobs";
 import {
   deleteBook,
   getBook,
@@ -144,6 +145,8 @@ export default function Library({
       await deleteBook(id);
       // v4.12: the passages of a deleted book go with it.
       await deleteIndex(id).catch(() => {});
+      // v4.13: so does its place in the indexing queue.
+      await deleteJob(id).catch(() => {});
       // The hero must not point at a book that is gone.
       if (readLastBook() === id) {
         try {
