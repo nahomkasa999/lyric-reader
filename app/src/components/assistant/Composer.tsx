@@ -6,6 +6,8 @@
 // Above the pill sits the strip that says how the indexing is going —
 // it only appears when there is something to say.
 import { useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Props {
   value: string;
@@ -52,7 +54,7 @@ export default function Composer({
     <div className="chat-composer-wrap">
       {strip}
       <div className="chat-composer">
-        <textarea
+        <Textarea
           ref={areaRef}
           data-testid="assistant-input"
           className="chat-input"
@@ -71,16 +73,16 @@ export default function Composer({
           }}
         />
         {streaming ? (
-          <button
+          <Button
             data-testid="assistant-stop"
             className="chat-send chat-stop"
             onClick={onStop}
             aria-label="Stop"
           >
             <span className="chat-stop-square" aria-hidden />
-          </button>
+          </Button>
         ) : (
-          <button
+          <Button
             data-testid="assistant-send"
             className="chat-send"
             onClick={onSend}
@@ -88,7 +90,7 @@ export default function Composer({
             aria-label="Send"
           >
             ↑
-          </button>
+          </Button>
         )}
       </div>
     </div>

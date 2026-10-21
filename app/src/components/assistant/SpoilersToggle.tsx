@@ -4,6 +4,8 @@
 // decides once, and the answer is allowed to say what happens later in
 // the book. It is off by default — an answer about a book you are
 // halfway through must not give away the end.
+import { Switch } from "@/components/ui/switch";
+
 interface Props {
   on: boolean;
   onChange: (v: boolean) => void;
@@ -11,24 +13,15 @@ interface Props {
 
 export default function SpoilersToggle({ on, onChange }: Props) {
   return (
-    <button
-      data-testid="assistant-spoilers"
-      className={`chat-toggle${on ? " on" : ""}`}
-      aria-pressed={on}
-      aria-label="Allow spoilers"
-      title="Allow spoilers — let the answer say what happens later"
-      onClick={() => onChange(!on)}
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
-        <path
-          d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          fill="none"
-        />
-        <circle cx="12" cy="12" r="2.6" fill="currentColor" />
-      </svg>
-      <span>Spoilers</span>
-    </button>
+    <label className="chat-toggle" data-on={on ? "true" : "false"}>
+      <span className="chat-toggle-label">Spoilers</span>
+      <Switch
+        checked={on}
+        onCheckedChange={onChange}
+        aria-label="Allow spoilers"
+        data-testid="assistant-spoilers"
+        size="sm"
+      />
+    </label>
   );
 }

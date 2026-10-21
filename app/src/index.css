@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* shadcn/ui: the keyframes and the data-state variants its components use. */
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 @import "./chat.css";
 @import "./chat-answers.css";
 @import "./chat-composer.css";

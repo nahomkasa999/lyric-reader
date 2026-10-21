@@ -4,6 +4,8 @@
 // new thread is an ICON ONLY — a pencil in a square — because a chip
 // row of "New thread" labels was the part of the old sheet that felt
 // worst.
+import { Button } from "@/components/ui/button";
+
 interface ButtonProps {
   /** the buttons are not the drag surface */
   onPointerDown?: (e: { stopPropagation: () => void }) => void;
@@ -18,8 +20,10 @@ export function ThreadsButton({
   ...rest
 }: ButtonProps & { onOpenThreads: () => void }) {
   return (
-    <button
+    <Button
       data-testid="assistant-menu"
+      variant="ghost"
+      size="icon"
       className="chat-iconbtn"
       aria-label="Threads"
       onPointerDown={rest.onPointerDown ?? noDrag}
@@ -33,7 +37,7 @@ export function ThreadsButton({
           strokeLinecap="round"
         />
       </svg>
-    </button>
+    </Button>
   );
 }
 
@@ -42,8 +46,10 @@ export function NewThreadButton({
   ...rest
 }: ButtonProps & { onNewThread: () => void }) {
   return (
-    <button
+    <Button
       data-testid="assistant-new-thread"
+      variant="ghost"
+      size="icon"
       className="chat-iconbtn"
       aria-label="New thread"
       onPointerDown={rest.onPointerDown ?? noDrag}
@@ -67,6 +73,6 @@ export function NewThreadButton({
           strokeLinecap="round"
         />
       </svg>
-    </button>
+    </Button>
   );
 }

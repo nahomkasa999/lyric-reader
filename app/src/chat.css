@@ -104,11 +104,19 @@
 .chat-iconbtn {
   width: 34px;
   height: 34px;
+  min-width: 34px;
+  padding: 0;
   display: grid;
   place-items: center;
   border-radius: 999px;
   border: 1px solid rgb(255 255 255 / 0.12);
   background: rgb(255 255 255 / 0.06);
+  color: rgb(255 255 255 / 0.92);
+  box-shadow: none;
+}
+
+.chat-iconbtn:hover {
+  background: rgb(255 255 255 / 0.1);
   color: rgb(255 255 255 / 0.92);
 }
 

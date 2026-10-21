@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { config as loadEnvFile } from "dotenv";
+import { fileURLToPath, URL } from "node:url";
 
 // The Gemini key lives in the repo's .env.local (never in the code,
 // never in git). Vite only hands VITE_-prefixed vars to the browser, so
@@ -16,6 +17,12 @@ export default defineConfig({
   // Build identifier stamped into the bundle so a screenshot of the
   // Settings page always tells which build is actually running on a
   // device (v4.6: ended the "which build is on the phone" guessing).
+  resolve: {
+    // The shadcn/ui path alias — "@/components/ui/button".
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   define: {
     __BUILD_ID__: JSON.stringify(
       process.env.LR_BUILD_ID ??

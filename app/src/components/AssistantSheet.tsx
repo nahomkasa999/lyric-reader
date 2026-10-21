@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import ChatSheet from "./assistant/ChatSheet";
 import Composer from "./assistant/Composer";
 import IndexStrip from "./assistant/IndexStrip";
+import { Button } from "@/components/ui/button";
 import Message from "./assistant/Message";
 import SpoilersToggle from "./assistant/SpoilersToggle";
 import Markdown from "./assistant/Markdown";
@@ -94,13 +95,13 @@ export default function AssistantSheet({
           <p className="chat-muted">
             Add your free Gemini key to switch the assistant on.
           </p>
-          <button
+          <Button
             data-testid="assistant-to-settings"
             className="chat-cta"
             onClick={onOpenSettings}
           >
             Add key in Settings
-          </button>
+          </Button>
         </div>
       ) : (
         <>

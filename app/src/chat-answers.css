@@ -140,12 +140,22 @@
   align-items: center;
   gap: 5px;
   max-width: 100%;
+  height: auto;
   padding: 5px 10px;
   border-radius: 999px;
   border: 1px solid rgb(255 255 255 / 0.12);
   background: rgb(255 255 255 / 0.06);
   color: rgb(255 255 255 / 0.78);
   font-size: 12px;
+  font-weight: 400;
+}
+
+.chat-chip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: inherit;
+  font: inherit;
 }
 
 .chat-chip-page {

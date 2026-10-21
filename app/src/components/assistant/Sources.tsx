@@ -3,6 +3,7 @@
 // The sources are part of the answer, always below it — never floating
 // above the text. A chip is a place in a book: tap it and the reader
 // opens there.
+import { Badge } from "@/components/ui/badge";
 import type { Source } from "../../lib/assistantStore";
 
 interface Props {
@@ -23,16 +24,19 @@ export default function Sources({ sources, onJump }: Props) {
       <p className="chat-sources-label">Sources · {sources.length}</p>
       <div className="chat-chips">
         {shown.map((s, i) => (
-          <button
+          <Badge
             key={`${s.bookId}:${s.item}:${i}`}
             data-testid={`assistant-source-${i}`}
+            variant="outline"
             className="chat-chip"
-            onClick={() => onJump(s.bookId, s.item)}
+            asChild
           >
-            <span aria-hidden>📖</span>
-            <span className="truncate">{s.bookTitle}</span>
-            <span className="chat-chip-page">p.{s.page}</span>
-          </button>
+            <button onClick={() => onJump(s.bookId, s.item)}>
+              <span aria-hidden>📖</span>
+              <span className="truncate">{s.bookTitle}</span>
+              <span className="chat-chip-page">p.{s.page}</span>
+            </button>
+          </Badge>
         ))}
         {rest > 0 && (
           <span data-testid="assistant-source-more" className="chat-chip chat-chip-more">
