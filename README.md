@@ -26,9 +26,9 @@ npx vite preview --port 4173   # serve the build
 Then open `http://localhost:4173` (or the machine's LAN IP, e.g.
 `http://192.168.x.x:4173`, from your phone on the same Wi-Fi).
 
-### App key (optional, v4.3)
+### Read aloud and the ElevenLabs key
 
-Nahom wanted meanings and Ask to work with zero setup, so the app can
+**Nahom wanted meanings and Ask to work with zero setup, so the app can
 carry his key itself. Set `VITE_GEMINI_API_KEY` as a **Production**
 environment variable in Vercel (project → Settings → Environment
 Variables) and **redeploy** — the built bundle then includes the key and
@@ -41,6 +41,12 @@ the AI features turn on for everyone with no setup.
 - Caveat: the key ships inside the public web bundle, so it is extractable
   by anyone who downloads it and its quota is shared. Fine at this scale;
   revisit (proxy server, per-user keys) if the app spreads widely.
+
+**Read aloud is different: every reader brings their own ElevenLabs
+key.** There is no shared key in the build and no Vercel variable to
+set — paste your key in Settings → Read aloud and it stays on your
+phone, used only for your own quota. Without a key the phone's own
+voice reads instead.
 
 ## Install it
 
@@ -156,10 +162,11 @@ app/src/
     reader/       the reader's parts: TopBar, ReaderControls, VoiceSheet
     settings/     the settings groups (controls, Read aloud)
 
-Read aloud needs a key: put it in `.env.local` at the repo root as
-`ELEVENLABS_API_KEY=…` (gitignored, never in the code) — the build
-reads it and hands it to the app as the shared key. Each user can still
-paste their own key in Settings.
+Read aloud needs a key, and it is **the reader's own**: paste it in
+Settings → Read aloud and it stays on that phone (gitignored, never in
+the code, never in a shared bundle). Each reader brings their own key
+and uses their own quota. The repo's `.env.local` may hold a key for
+local testing only — the app itself never ships one.
     App.tsx       shell, dark mode, sample seeding, last-book resume
 ```
 

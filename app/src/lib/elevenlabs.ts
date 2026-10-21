@@ -2,14 +2,13 @@
 //
 // The phone asks ElevenLabs for the audio, so it never runs a model
 // itself: no WebGPU, no 86 MB download, no battery drain on a budget
-// phone. Two kinds of key:
+// phone.
 //
-//  · the app's own key (VITE_ELEVENLABS_API_KEY, baked at build time) —
-//    the app works out of the box, on the app's shared quota
-//  · the user's own key, pasted in Settings — stored on their phone
-//    only, and used for their own quota
+// The key is the USER'S OWN: they paste it in Settings and it stays on
+// their phone only, and it is sent to api.elevenlabs.io and nowhere
+// else. There is no shared key baked into the build — every reader
+// brings their own, and their quota is their own.
 //
-// Either way the key is sent to api.elevenlabs.io and nowhere else.
 // Without a key the app falls back to the browser's own speech engine
 // (lib/speech.ts) — rougher, but it always works.
 import type { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
@@ -18,8 +17,23 @@ import { playAudio, stopAudio } from "./audio";
 
 const KEY = "lr-elevenlabs-key";
 
-/** The model that reads: steady on long text, and it takes a speed. */
+/**
+ * The model that reads: steady on long text, and it takes a speed.
+ * `eleven_multilingual_v2` is the only generation that accepts the
+ * `speed` voice setting — the app's speed slider depends on it.
+ */
 export const ELEVEN_MODEL = "eleven_multilingual_v2";
+
+/**
+ * The model for the languages v2 does not know (29 of them — Amharic
+ * is not one): `eleven_v4` speaks 90+ languages and takes
+ * `language_code`, but it has no `speed` setting, so the slider does
+ * not apply there.
+ */
+export const ELEVEN_MODEL_V4 = "eleven_v4";
+
+/** Amharic (and the rest of the Ethiopic script) needs the v4 model. */
+const ETHIOPIC_RE = /[\u1200-\u137F\u1380-\u139F]/;
 
 /** Where the user gets a key. */
 export const ELEVEN_KEYS_URL = "https://elevenlabs.io/app/settings/api-keys";
@@ -59,22 +73,14 @@ export function removeElevenLabsKey(): void {
   }
 }
 
-/** The app-level key, baked into the build (like VITE_GEMINI_API_KEY). */
-export function getEnvElevenLabsKey(): string {
-  try {
-    return ((import.meta.env?.VITE_ELEVENLABS_API_KEY ?? "") as string).trim();
-  } catch {
-    return "";
-  }
-}
-
-/** The key actually used: the user's own wins over the app's. */
-export function getEffectiveElevenLabsKey(): string {
-  return getElevenLabsKey() || getEnvElevenLabsKey();
-}
-
+/**
+ * The key that is used: the reader's own, pasted in Settings.
+ *
+ * There is no shared key in the build — every reader brings their own,
+ * and their quota is their own.
+ */
 export function hasElevenLabsKey(): boolean {
-  return getEffectiveElevenLabsKey().length > 0;
+  return getElevenLabsKey().length > 0;
 }
 
 /**
@@ -156,11 +162,16 @@ export async function speakAudio(
   speed = 1,
 ): Promise<ArrayBuffer> {
   if (!key) throw new Error("No ElevenLabs key yet.");
+  // Amharic is read by the v4 model (it knows the language); the speed
+  // setting belongs to the v2 model, so it is left out there.
+  const amharic = ETHIOPIC_RE.test(text);
   const stream = await (await client(key)).textToSpeech.convert(voiceId, {
     text,
-    modelId: ELEVEN_MODEL,
+    modelId: amharic ? ELEVEN_MODEL_V4 : ELEVEN_MODEL,
     outputFormat: "mp3_44100_128",
-    voiceSettings: { speed: Math.min(1.5, Math.max(0.7, speed)) },
+    ...(amharic
+      ? { languageCode: "am" }
+      : { voiceSettings: { speed: Math.min(1.5, Math.max(0.7, speed)) } }),
   });
   // The SDK hands back a web stream — collect it into one buffer.
   const reader = stream.getReader();

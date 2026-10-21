@@ -50,7 +50,7 @@ import TopBar from "./reader/TopBar";
 import VoiceSheet from "./reader/VoiceSheet";
 import ReaderControls from "./reader/ReaderControls";
 import { useReadAloud } from "./reader/useReadAloud";
-import { getEffectiveElevenLabsKey } from "../lib/elevenlabs";
+import { getElevenLabsKey } from "../lib/elevenlabs";
 import {
   BookmarkIcon,
   CopyIcon,
@@ -589,7 +589,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
     voiceURI: settings.readAloudSystemVoice,
     speed: settings.readAloudRate,
     engine: settings.readAloudEngine,
-    key: getEffectiveElevenLabsKey(),
+    key: getElevenLabsKey(),
   });
   voiceRef.current = voice;
 
@@ -1826,7 +1826,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
             onSpeedChange={(v) => updateSettings({ readAloudRate: v })}
             engine={settings.readAloudEngine}
             onEngineChange={(v) => updateSettings({ readAloudEngine: v })}
-            apiKey={getEffectiveElevenLabsKey()}
+            apiKey={getElevenLabsKey()}
           />
         )}
       </div>

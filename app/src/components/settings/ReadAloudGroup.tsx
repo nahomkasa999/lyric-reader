@@ -1,9 +1,9 @@
 // Settings → Read aloud (v4.9).
 //
-// The voice comes from ElevenLabs. The app ships with a key of its own
-// (so it works out of the box, on the app's shared quota); a user can
-// paste their own key here instead — it stays on their phone and is
-// used for their own quota.
+// The voice comes from ElevenLabs. The key is the reader's OWN: they
+// paste it here, it stays on their phone, and it is used for their own
+// quota. There is no shared key in the build — everyone brings their
+// own.
 //
 // Without any key the reader falls back to the phone's own voice.
 import { useEffect, useState } from "react";
@@ -12,7 +12,6 @@ import { Group, Row, SliderRow, Switch } from "./controls";
 import { useSettings } from "../../lib/settings";
 import {
   ELEVEN_KEYS_URL,
-  getEffectiveElevenLabsKey,
   getElevenLabsKey,
   removeElevenLabsKey,
   setElevenLabsKey,
@@ -26,7 +25,6 @@ export default function ReadAloudGroup() {
   const [sheet, setSheet] = useState(false);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
-  const appKey = getEffectiveElevenLabsKey();
 
   useEffect(() => {
     if (key) setElevenLabsKey(key);
@@ -68,7 +66,7 @@ export default function ReadAloudGroup() {
                 setKey(e.target.value);
                 setResult(null);
               }}
-              placeholder={appKey ? "Using the app's key" : "sk_…"}
+              placeholder="sk_…"
               autoComplete="off"
               spellCheck={false}
               className="set-field mono min-w-0 flex-1"
@@ -81,7 +79,7 @@ export default function ReadAloudGroup() {
                 setTesting(true);
                 setResult(null);
                 const r = await testKey(
-                  key.trim() || getEffectiveElevenLabsKey(),
+                  key.trim() || getElevenLabsKey(),
                 );
                 setTesting(false);
                 setResult(
@@ -109,10 +107,8 @@ export default function ReadAloudGroup() {
             </a>{" "}
             — stays on this phone only, sent only to ElevenLabs.{" "}
             {personal
-              ? "Your own key is in use."
-              : appKey
-                ? "The app's shared key is in use."
-                : "Without a key the phone's own voice reads instead."}
+              ? "Your key is in use — your own quota."
+              : "Without a key the phone's own voice reads instead."}
           </p>
           {personal && (
             <button
@@ -179,7 +175,7 @@ export default function ReadAloudGroup() {
           onSpeedChange={(v) => update({ readAloudRate: v })}
           engine={settings.readAloudEngine}
           onEngineChange={(v) => update({ readAloudEngine: v })}
-          apiKey={getEffectiveElevenLabsKey()}
+          apiKey={getElevenLabsKey()}
         />
       )}
     </>

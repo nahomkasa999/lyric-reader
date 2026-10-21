@@ -6,8 +6,8 @@ import {
   ELEVEN_KEYS_URL,
   STANDARD_VOICES,
   elevenError,
-  getEffectiveElevenLabsKey,
   getElevenLabsKey,
+  hasElevenLabsKey,
   listVoices,
   removeElevenLabsKey,
   setElevenLabsKey,
@@ -33,7 +33,13 @@ describe("the ElevenLabs key", () => {
 
   it("is the key that gets used", () => {
     setElevenLabsKey("sk_mine");
-    expect(getEffectiveElevenLabsKey()).toBe("sk_mine");
+    expect(getElevenLabsKey()).toBe("sk_mine");
+  });
+
+  it("is the reader's own key — there is no shared one", () => {
+    // The app carries no key of its own: every reader brings their own.
+    expect(getElevenLabsKey()).toBe("");
+    expect(hasElevenLabsKey()).toBe(false);
   });
 
   it("points at the place a key comes from", () => {

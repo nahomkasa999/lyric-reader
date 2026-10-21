@@ -846,3 +846,45 @@ added three small resilience items in the same pass:
   (`npx @elevenlabs/cli onboard check`: key in `.env.local`, SDK
   declared and imported). The live tests in
   `tests/elevenlabs.live.test.ts` do the same.
+
+## v4.10 fix — read aloud is bring-your-own-key; no shared key in the build (Oct 21, 2026)
+
+- **Decision**: the ElevenLabs key is **the reader's own**. There is no
+  shared key baked into the bundle and no Vercel variable to set — the
+  key is pasted in Settings → Read aloud, stays on that phone, and is
+  sent only to api.elevenlabs.io. Each reader uses their own quota.
+- **Why**: the shared-key pattern (a key in the build, shared quota,
+  extractable by anyone who downloads the bundle) came from the Gemini
+  side (v4.3), where zero-setup was wanted for *meanings* and *Ask*.
+  For read-aloud the owner wants the opposite: the reader brings their
+  own key. The app-level ElevenLabs key is therefore gone.
+- **What changed**: `getEnvElevenLabsKey()` and the
+  `VITE_ELEVENLABS_API_KEY` define in `vite.config.ts` are removed —
+  no key is in the bundle any more; `getElevenLabsKey()` is the only
+  source. The Settings copy and the voice sheet say so plainly, and
+  the voice sheet offers "Get a key" and "Use this phone's voice" when
+  there is none.
+- **The tradeoff, stated**: a key in the browser can be read by the
+  reader (it is their own key, on their own phone) and the app has no
+  server to hold it. The ElevenLabs guidance is to keep keys on a
+  server and issue short-lived tokens; that does not apply to a
+  100%-local app with no accounts and no backend, where the alternative
+  is no ElevenLabs at all.
+- The Gemini app key is untouched — that one is a deliberate
+  zero-setup decision for the AI features.
+
+## v4.10 — the model that reads: v2 for the speed, v4 for Amharic (Oct 21, 2026)
+
+- From the ElevenLabs text-to-speech skill: `eleven_multilingual_v2` is the
+  only generation that accepts the **`speed`** voice setting (v4 has only
+  `stability` and `similarity_boost`), and it is "most stable on very
+  long-form generations" — which is what reading a book is. It knows 29
+  languages, though, and **Amharic is not one of them**.
+- `eleven_v4` speaks 90+ languages and takes `language_code` (the API
+  accepts `"am"`, verified against the live API), but it has no speed.
+- → The app picks the model by the script of the text: **Ethiopic text
+  is read by `eleven_v4` with `language_code: "am"`** (no speed — the
+  slider does not apply there), **everything else by
+  `eleven_multilingual_v2` with the speed**. The reader keeps its speed
+  slider for the languages it works for, and Amharic is read by a model
+  that knows the language.

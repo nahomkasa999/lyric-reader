@@ -4,9 +4,12 @@ import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { config as loadEnvFile } from "dotenv";
 
-// The ElevenLabs key lives in the repo's .env.local (never in the code,
+// The Gemini key lives in the repo's .env.local (never in the code,
 // never in git). Vite only hands VITE_-prefixed vars to the browser, so
 // the key is passed across under that name here.
+//
+// The ElevenLabs key is NOT here: each reader brings their own and it
+// stays on their phone (Settings → Read aloud).
 loadEnvFile({ path: "../.env.local" });
 
 export default defineConfig({
@@ -14,9 +17,6 @@ export default defineConfig({
   // Settings page always tells which build is actually running on a
   // device (v4.6: ended the "which build is on the phone" guessing).
   define: {
-    "import.meta.env.VITE_ELEVENLABS_API_KEY": JSON.stringify(
-      process.env.ELEVENLABS_API_KEY ?? "",
-    ),
     __BUILD_ID__: JSON.stringify(
       process.env.LR_BUILD_ID ??
         new Date().toISOString().slice(0, 16).replace("T", " "),
