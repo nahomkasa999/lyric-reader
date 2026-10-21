@@ -815,3 +815,34 @@ added three small resilience items in the same pass:
 - **Old books heal themselves**: `getBook` re-segments stored paragraphs
   with the current splitter on open, so a book imported before this fix
   is split correctly the first time it is opened.
+
+## v4.10 fix — the key never reached the voice sheet ("invalid ID: English (United States)") (Oct 21, 2026)
+
+- **Finding 1 — `key` is a RESERVED React prop.** The sheet was rendered
+  as `<VoiceSheet key={getEffectiveElevenLabsKey()} … />`. React uses
+  `key` for reconciliation and never passes it to the component, so
+  inside the sheet the key was **always `undefined`**: the account's
+  voices were never fetched, the sheet always showed the phone's
+  voices, and every audition fell back to the phone's speech engine.
+  The reading itself was fine (it takes the key as a normal prop), so
+  the app could speak with ElevenLabs while the picker could not.
+  → Fix: the prop is now `apiKey` (both call sites).
+
+- **Finding 2 — a phone voice name stored as the ElevenLabs voice id.**
+  Older builds let the user pick a voice of the phone's own engine, and
+  that name ("English (United States)") ended up in `readAloudVoice`.
+  v4.9 turned that setting into "the ElevenLabs voice id", so the app
+  asked ElevenLabs to read with the id `English (United States)` and
+  the API answered **"An invalid ID has been received 'English
+  (United States)'"** — then, silently, the reader fell back to the
+  phone's voice. That is exactly "it plays with the local voice thing".
+  → Fix: `isVoiceId()` tells an id from a name (ids are letters and
+  digits, no spaces). A stored name is dropped when the settings are
+  read, the default voice (George) reads instead, and the reader says
+  why in a note. The audition follows the engine of the LIST it shows,
+  so a phone voice is never sent to ElevenLabs.
+
+- **Verified against the real API** with the project key
+  (`npx @elevenlabs/cli onboard check`: key in `.env.local`, SDK
+  declared and imported). The live tests in
+  `tests/elevenlabs.live.test.ts` do the same.

@@ -179,7 +179,7 @@ export default function ReadAloudGroup() {
           onSpeedChange={(v) => update({ readAloudRate: v })}
           engine={settings.readAloudEngine}
           onEngineChange={(v) => update({ readAloudEngine: v })}
-          key={getEffectiveElevenLabsKey()}
+          apiKey={getEffectiveElevenLabsKey()}
         />
       )}
     </>

@@ -10,6 +10,19 @@ export interface StandardVoice {
   meta: string;
 }
 
+/**
+ * Is this an ElevenLabs voice id?
+ *
+ * The ids look like "JBFqnCBsd6RMkjVDRZzb" — letters and digits, no
+ * spaces. A phone's own voice is called "English (United States)" or
+ * "Microsoft Zira Desktop - English (United States)": sending one of
+ * those to ElevenLabs is what makes the API answer "An invalid ID has
+ * been received", so they are told apart here.
+ */
+export function isVoiceId(id: string): boolean {
+  return /^[A-Za-z0-9_-]{10,64}$/.test((id ?? "").trim());
+}
+
 export const STANDARD_VOICES: StandardVoice[] = [
   { id: "JBFqnCBsd6RMkjVDRZzb", name: "George", meta: "male · narrative" },
   { id: "nPczCjzI2devNBz1zQrb", name: "Brian", meta: "male · deep" },

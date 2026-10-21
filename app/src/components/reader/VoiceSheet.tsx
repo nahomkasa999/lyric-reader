@@ -23,6 +23,7 @@ import {
   stopAudio,
   type ElevenVoice,
 } from "../../lib/elevenlabs";
+import { isVoiceId } from "../../lib/elevenlabsVoices";
 import { loadVoices, speak as speakSystem, type VoiceInfo } from "../../lib/speech";
 
 interface Props {
@@ -39,8 +40,14 @@ interface Props {
   /** which engine reads */
   engine: "eleven" | "system";
   onEngineChange: (e: "eleven" | "system") => void;
-  /** the ElevenLabs key (empty = none) */
-  key: string;
+  /**
+   * The ElevenLabs key.
+   *
+   * NOT named "key": that is a reserved React prop, and React never
+   * passes it to the component — the sheet used to get `undefined` and
+   * so never listed the account's voices at all.
+   */
+  apiKey: string;
 }
 
 const SAMPLE = "This is how the page will sound when it reads to you.";
@@ -84,7 +91,7 @@ export default function VoiceSheet({
   onSpeedChange,
   engine,
   onEngineChange,
-  key,
+  apiKey,
 }: Props) {
   const [voices, setVoices] = useState<VoiceCard[]>([]);
   const [phone, setPhone] = useState<VoiceCard[]>([]);
@@ -92,18 +99,26 @@ export default function VoiceSheet({
   const [error, setError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<string | null>(null);
 
+  // The phone's voice is the one the phone reads with — and without a
+  // key, the one that reads at all.
+  const phoneEngine = engine === "system" || !apiKey;
+  // A stale setting can hold a phone voice name ("English (United
+  // States)") from the old engine — that is not an ElevenLabs id.
+  const chosenEleven = isVoiceId(voice) ? voice : DEFAULT_VOICE;
+  const chosen = phoneEngine ? systemVoice : chosenEleven;
+
   // The account's voices — fetched once, when the sheet opens. A key
   // without the "voices_read" permission cannot list them; the standard
   // voices are used instead, so reading still works.
   useEffect(() => {
-    if (!key) {
+    if (!apiKey) {
       setVoices([]);
       return;
     }
     let alive = true;
     setLoading(true);
     setError(null);
-    void listVoices(key)
+    void listVoices(apiKey)
       .then((v) => {
         if (alive) setVoices(v.map(toCard));
       })
@@ -124,7 +139,7 @@ export default function VoiceSheet({
       alive = false;
       stopAudio();
     };
-  }, [key]);
+  }, [apiKey]);
 
   // The phone's own voices — they arrive late in Chrome, so we wait for
   // the list instead of taking the empty one.
@@ -147,8 +162,11 @@ export default function VoiceSheet({
     }
     setPreviewing(id);
     try {
-      if (engine === "eleven" && key) {
-        const data = await speakAudio(SAMPLE, id, key, speed);
+      // The engine of the LIST being shown decides the engine of the
+      // preview: a phone voice sent to ElevenLabs comes back as
+      // "An invalid ID has been received".
+      if (!phoneEngine && apiKey) {
+        const data = await speakAudio(SAMPLE, id, apiKey, speed);
         await playAudio(data);
       } else {
         await speakSystem(SAMPLE, { rate: speed, voiceURI: id });
@@ -158,10 +176,6 @@ export default function VoiceSheet({
     }
     setPreviewing(null);
   };
-
-  // The phone's voice is the one the phone reads with.
-  const phoneEngine = engine === "system" || !key;
-  const chosen = phoneEngine ? systemVoice : voice;
 
   return (
     <div className="ask-layer" data-testid="voice-layer">
@@ -192,7 +206,7 @@ export default function VoiceSheet({
                 ? phone.length
                   ? `${phone.length - 1} voices on this device`
                   : "The phone's own voice"
-                : !key
+                : !apiKey
                   ? "No key yet — add one in Settings."
                   : loading
                     ? "Reading the voice list…"
@@ -210,7 +224,7 @@ export default function VoiceSheet({
 
         {/* No key: say it plainly — the phone's voice is reading, and
             this is why. */}
-        {!key && engine === "eleven" && (
+        {!apiKey && engine === "eleven" && (
           <>
             <p className="voice-note" data-testid="voice-no-key">
               There is no ElevenLabs key on this phone, so the phone&apos;s
@@ -301,7 +315,7 @@ export default function VoiceSheet({
             >
               {phoneEngine ? "Switch to ElevenLabs" : "Switch to this phone"}
             </button>
-            {!phoneEngine && voice !== DEFAULT_VOICE && (
+            {!phoneEngine && chosenEleven !== DEFAULT_VOICE && (
               <button
                 data-testid="voice-default"
                 className="set-chip"

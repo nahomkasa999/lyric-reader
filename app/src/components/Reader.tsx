@@ -1826,7 +1826,7 @@ export default function Reader({ bookId, onBack, onOpenSettings, onOpenSaved }: 
             onSpeedChange={(v) => updateSettings({ readAloudRate: v })}
             engine={settings.readAloudEngine}
             onEngineChange={(v) => updateSettings({ readAloudEngine: v })}
-            key={getEffectiveElevenLabsKey()}
+            apiKey={getEffectiveElevenLabsKey()}
           />
         )}
       </div>

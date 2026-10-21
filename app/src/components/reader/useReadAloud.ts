@@ -16,11 +16,13 @@
 // sheet) hold the voice until they close.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  DEFAULT_VOICE,
   playAudio,
   speakAudio,
   speakError,
   stopAudio,
 } from "../../lib/elevenlabs";
+import { isVoiceId } from "../../lib/elevenlabsVoices";
 import {
   speak as speakSystem,
   speechSupported,
@@ -108,6 +110,19 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   /** ElevenLabs only reads when it has a key to read with. */
   const canUseEleven = engine === "eleven" && !!key;
 
+  /**
+   * The voice that is actually sent to ElevenLabs. A stale setting can
+   * hold a phone voice name ("English (United States)") from the old
+   * engine — ElevenLabs answers "An invalid ID has been received", and
+   * the reader falls back to the phone's voice with no reason given.
+   * Such a name is not an id, so the default voice reads instead.
+   */
+  const elevenVoice = useMemo(
+    () => (isVoiceId(voice) ? voice : DEFAULT_VOICE),
+    [voice],
+  );
+  const staleVoice = voice !== elevenVoice;
+
   /** Say it once — the note must not be rewritten on every sentence. */
   const note = useCallback((msg: string | null) => {
     setError((old) => (old === msg ? old : msg));
@@ -126,10 +141,10 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   /** The audio for a text: from the cache if it is already here. */
   const fetchAudio = useCallback(
     async (text: string): Promise<ArrayBuffer> => {
-      const k = `${voice}\u0000${speed}\u0000${text}`;
+      const k = `${elevenVoice}\u0000${speed}\u0000${text}`;
       const hit = ready.current.get(k);
       if (hit) return hit;
-      const p = speakAudio(text, voice, key, speed).catch((e) => {
+      const p = speakAudio(text, elevenVoice, key, speed).catch((e) => {
         // A failed request must not be cached — it is fetched again.
         ready.current.delete(k);
         throw e;
@@ -137,13 +152,13 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
       ready.current.set(k, p);
       return p;
     },
-    [voice, key, speed],
+    [elevenVoice, key, speed],
   );
 
   // A new voice (or speed) makes every cached clip worthless.
   useEffect(() => {
     ready.current.clear();
-  }, [voice, speed, key]);
+  }, [elevenVoice, speed, key]);
 
   /** Start the next sentence while this one is being read. */
   const prefetch = useCallback(
@@ -168,7 +183,13 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
           if (token.current !== mine) return;
           await playAudio(data);
           played = true;
-          note(null);
+          // The stored voice was a phone voice name — the default voice
+          // read instead. Say so, once.
+          note(
+            staleVoice
+              ? "That voice belongs to the phone, not to ElevenLabs — the default voice is reading. Pick one from the voice list."
+              : null,
+          );
         } catch (e) {
           // ElevenLabs could not do it — say so, and let the phone's
           // voice take over. Silently swapping engines is what made the
@@ -191,7 +212,7 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
       }
       if (token.current === mine) setSpeaking(false);
     },
-    [canUseEleven, engine, fetchAudio, speed, voiceURI, note],
+    [canUseEleven, engine, fetchAudio, speed, voiceURI, note, staleVoice],
   );
 
   /** Say the current sentence; when it ends, turn the page and go on. */

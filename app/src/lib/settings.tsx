@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { isAutoSpeed } from "./autoscroll";
+import { isVoiceId } from "./elevenlabsVoices";
 
 export type FontChoice =
   | "Geist"
@@ -164,7 +165,13 @@ export function load(): ReaderSettings {
       /* not a number -> keep default */
     }
     if (typeof s.readAloud === "boolean") d.readAloud = s.readAloud;
-    if (typeof s.readAloudVoice === "string") d.readAloudVoice = s.readAloudVoice;
+    // A voice id from an older build can be a phone voice name
+    // ("English (United States)") — sending that to ElevenLabs is what
+    // makes the API answer "An invalid ID has been received". A name
+    // that is not an id is dropped, and the default voice reads.
+    if (typeof s.readAloudVoice === "string" && isVoiceId(s.readAloudVoice)) {
+      d.readAloudVoice = s.readAloudVoice;
+    }
     if (typeof s.readAloudSystemVoice === "string") {
       d.readAloudSystemVoice = s.readAloudSystemVoice;
     }

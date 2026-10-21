@@ -8,6 +8,7 @@ import {
   useReadAloud,
   type ReadAloud,
 } from "../src/components/reader/useReadAloud";
+import { DEFAULT_VOICE } from "../src/lib/elevenlabs";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -19,6 +20,7 @@ const spoken: { text: string; voiceURI: string; rate: number }[] = [];
 let failWith: unknown = null;
 
 vi.mock("../src/lib/elevenlabs", () => ({
+  DEFAULT_VOICE: "JBFqnCBsd6RMkjVDRZzb",
   playAudio: async () => {},
   stopAudio: () => {},
   speakAudio: async (
@@ -71,7 +73,7 @@ function Harness(props: Props) {
     nextText,
     blocked,
     advance,
-    voice: props.voice ?? "voice-a",
+    voice: props.voice ?? "AAAAAAAAAAAAAAAAAAAA",
     voiceURI: props.voiceURI ?? "",
     speed: 1,
     engine: props.engine ?? "eleven",
@@ -106,36 +108,36 @@ describe("the read-aloud session", () => {
   });
 
   it("reads with the voice that was picked", async () => {
-    const { root } = await mount({ voice: "voice-b" });
+    const { root } = await mount({ voice: "BBBBBBBBBBBBBBBBBBBB" });
     await act(async () => {
       api!.toggle();
     });
-    expect(request("Hello there.")?.voice).toBe("voice-b");
+    expect(request("Hello there.")?.voice).toBe("BBBBBBBBBBBBBBBBBBBB");
     // The phone's voice did not take part.
     expect(spoken.length).toBe(0);
     await act(async () => root.unmount());
   });
 
   it("fetches the next sentence ahead, with the same voice", async () => {
-    const { root } = await mount({ voice: "voice-b" });
+    const { root } = await mount({ voice: "BBBBBBBBBBBBBBBBBBBB" });
     await act(async () => {
       api!.toggle();
     });
-    expect(request("And then this.")?.voice).toBe("voice-b");
+    expect(request("And then this.")?.voice).toBe("BBBBBBBBBBBBBBBBBBBB");
     await act(async () => root.unmount());
   });
 
   it("does not serve the old voice's audio after a voice change", async () => {
-    const { container, root } = await mount({ voice: "voice-a", follow: true });
-    expect(request("Hello there.")?.voice).toBe("voice-a");
+    const { container, root } = await mount({ voice: "AAAAAAAAAAAAAAAAAAAA", follow: true });
+    expect(request("Hello there.")?.voice).toBe("AAAAAAAAAAAAAAAAAAAA");
 
     // The user picks another voice.
     await act(async () => {
-      root.render(createElement(Harness, { voice: "voice-b", follow: true }));
+      root.render(createElement(Harness, { voice: "BBBBBBBBBBBBBBBBBBBB", follow: true }));
     });
     // The sentence is asked for again — with the new voice.
     const fresh = asked.filter((a) => a.text === "Hello there.");
-    expect(fresh.map((a) => a.voice)).toEqual(["voice-a", "voice-b"]);
+    expect(fresh.map((a) => a.voice)).toEqual(["AAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBB"]);
     await act(async () => root.unmount());
     container.remove();
   });
@@ -155,7 +157,7 @@ describe("the read-aloud session", () => {
 
   it("says so when ElevenLabs cannot read, and the phone reads instead", async () => {
     failWith = { status: 429, message: "quota" };
-    const { root } = await mount({ voice: "voice-a" });
+    const { root } = await mount({ voice: "AAAAAAAAAAAAAAAAAAAA" });
     await act(async () => {
       api!.toggle();
     });
@@ -183,5 +185,17 @@ describe("the read-aloud session", () => {
     const second = await mount({ apiKey: "" });
     expect(api!.actual).toBe("system");
     await act(async () => second.root.unmount());
+  });
+
+  it("never sends a phone voice name to ElevenLabs", async () => {
+    // A stale setting can hold "English (United States)" — ElevenLabs
+    // answers "An invalid ID has been received" for that.
+    const { root } = await mount({ voice: "English (United States)" });
+    await act(async () => {
+      api!.toggle();
+    });
+    expect(request("Hello there.")?.voice).toBe(DEFAULT_VOICE);
+    expect(api!.error).toContain("default voice");
+    await act(async () => root.unmount());
   });
 });
