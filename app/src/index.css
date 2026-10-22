@@ -865,7 +865,15 @@
   z-index: 30;
 }
 .meaning-card {
+  /* A FIXED width, not just a maximum: the card is placed next to the
+     sentence while it still says "Looking it up…", and a card whose width
+     depends on its content would grow to the right afterwards and hang
+     off the screen. A fixed width means the place it was given is the
+     place it keeps. */
+  width: min(86vw, 340px);
   max-width: min(86vw, 340px);
+  /* A long word must never push the card wider than it is. */
+  overflow-wrap: anywhere;
   /* A long card scrolls INSIDE itself — the buttons under it stay put,
      so "Save word" is never below the edge of the screen. */
   display: flex;
@@ -884,7 +892,9 @@
   line-height: 1.22;
   color: var(--foreground);
   margin: 6px 8px 2px;
-  overflow-wrap: break-word;
+  /* `anywhere` (not `break-word`): a very long word must be able to
+     shrink, or the card's minimum width grows past the screen. */
+  overflow-wrap: anywhere;
 }
 .meaning-phonetic {
   font-size: 13px;

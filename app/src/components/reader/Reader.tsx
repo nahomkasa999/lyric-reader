@@ -487,9 +487,42 @@ export default function Reader({
     [],
   );
 
+  // Re-anchor the meaning card whenever its content changes. It is first
+  // placed while it still says "Looking it up…"; the definition — and the
+  // AI "in this sentence" line — can arrive later and make it much
+  // taller. Without re-running the clamp, a tall card hangs off-screen.
+  // This is a layout effect, so the new size is measured and clamped
+  // before the frame is painted (a rAF here leaves one off-screen frame).
+  useLayoutEffect(() => {
+    if (!meaning) return;
+    anchorCard(meaningCardRef, bookState.posRef.current.item);
+  }, [meaning, anchorCard, bookState.posRef]);
+
+  // A card can grow even after that (late webfonts, a longer definition):
+  // observe the card itself and re-clamp on every size change.
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    if (!pop && !meaning) return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (pop) anchorCard(menuRef, pop.i);
+        else if (meaning) {
+          anchorCard(meaningCardRef, bookState.posRef.current.item);
+        }
+      });
+    });
+    if (menuRef.current) ro.observe(menuRef.current);
+    if (meaningCardRef.current) ro.observe(meaningCardRef.current);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [pop, meaning, anchorCard, bookState.posRef]);
+
   // --- v4: the meaning of a word ---
   const meaningState = useReaderMeaning({
-    meaning,
     setMeaning,
     meaningRef,
     selRef,
@@ -498,13 +531,10 @@ export default function Reader({
     itemsRef,
     partsRef,
     vocabRef,
-    cardRef: meaningCardRef,
-    anchorCard,
     collapseSelection,
     pauseAuto: () => pauseAutoTransientRef.current(),
     stopVoice: () => voiceRef.current?.stop(),
     setVocab,
-    voiceURI: settings.readAloudSystemVoice,
   });
   const { openMeaning, copySelection, saveWord } = meaningState;
 

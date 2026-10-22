@@ -1,8 +1,8 @@
 // The word speaks (v4.12).
 //
-// Looking a word up is half hearing it: the app says the word out loud
-// when its meaning arrives, with the phone's own voice — instant, free,
-// offline — and the meaning card carries a button to hear it again.
+// Looking a word up is half hearing it: the meaning card carries a
+// button that says the word out loud, with the phone's own voice —
+// instant, free, offline. It never speaks on its own.
 //
 // The phone's engine, not ElevenLabs: a pronunciation is one short word,
 // and a network round trip per lookup would make the card feel slow.

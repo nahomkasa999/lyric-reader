@@ -104,9 +104,8 @@ offline afterwards.
   sentences in an answer are tappable: tap one and the reader jumps to it.
   Bring your own free Gemini key (Settings → AI) — plain-word definitions
   always work keyless via the free dictionary API. Looking a word up is
-  half hearing it: the word says itself when its meaning arrives (the
-  phone's own voice — instant and free), and the card has a button to
-  hear it again.
+  half hearing it: the card carries a speaker button that says the word
+  (the phone's own voice — instant and free). It never speaks by itself.
 - **The assistant (the chat bubble on Home, ⋯ → Assistant in the reader):**
   ask **your own library**. Every book is cut into passages and embedded in
   the background, so "what is the story so far?" or "why did he leave?"
@@ -181,7 +180,7 @@ app/src/
     assistantContext.ts what the model is shown: passages + bounded thread
     assistantStore.ts the assistant's threads (IndexedDB)
     transcribe.ts a video or audio file -> text (ElevenLabs Scribe v2)
-    wordSound.ts  the word says itself
+    wordSound.ts  the card's speaker button: the word, said
     vocab.ts      day grouping + saved-word text decoration
     speech.ts     the browser's speech engine (the fallback voice)
     elevenlabs.ts the ElevenLabs client: key, voices, text-to-speech

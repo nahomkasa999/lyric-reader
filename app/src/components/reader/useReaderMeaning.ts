@@ -2,15 +2,14 @@
 //
 // Long-press a word, tap Meaning, and the card says what it means —
 // and, when the AI is there, what it means in this sentence. The word
-// can be saved, and it says itself out loud when the meaning arrives.
-import { useCallback, useEffect, useRef } from "react";
+// can be saved. It is spoken only when the card's speaker is tapped.
+import { useCallback } from "react";
 import type React from "react";
 import type { RefObject } from "react";
 import { getEffectiveApiKey } from "../../lib/apikey";
 import { saveVocab, type VocabRecord } from "../../lib/db";
 import { geminiInContext, lookupMeaning } from "../../lib/meaning";
 import type { BookDoc, Item, Position } from "../../lib/types";
-import { sayWord } from "../../lib/wordSound";
 import type { MeaningState, SelectionState } from "./readerTypes";
 
 /** Cache of AI "as used in this sentence" lines: norm + sentence head -> line. */
@@ -19,8 +18,6 @@ const contextCache = new Map<string, string>();
 export interface MeaningOptions {
   /** the card that is open, if any */
   meaningRef: RefObject<MeaningState | null>;
-  /** the card that is open, if any */
-  meaning: MeaningState | null;
   /** the card changes */
   setMeaning: React.Dispatch<React.SetStateAction<MeaningState | null>>;
   /** the selection the pill is showing */
@@ -32,10 +29,6 @@ export interface MeaningOptions {
   partsRef: RefObject<string[][]>;
   /** the saved words, so "already saved" can be answered */
   vocabRef: RefObject<VocabRecord[]>;
-  /** the card element — the reader anchors it */
-  cardRef: RefObject<HTMLDivElement | null>;
-  /** place the card at the sentence */
-  anchorCard: (ref: RefObject<HTMLElement | null>, item: number) => void;
   /** the pill goes away, but the pause stays */
   collapseSelection: (resume?: boolean) => void;
   /** the card pauses the playback */
@@ -44,8 +37,6 @@ export interface MeaningOptions {
   stopVoice: () => void;
   /** the saved words change */
   setVocab: (fn: (prev: VocabRecord[]) => VocabRecord[]) => void;
-  /** the phone's own voice, for saying the word */
-  voiceURI: string;
 }
 
 export interface ReaderMeaning {
@@ -55,7 +46,7 @@ export interface ReaderMeaning {
 }
 
 export function useReaderMeaning(opts: MeaningOptions): ReaderMeaning {
-  const { meaning, setMeaning } = opts;
+  const { setMeaning } = opts;
 
   const openMeaning = useCallback(async () => {
     const s = opts.selRef.current;
@@ -74,7 +65,6 @@ export function useReaderMeaning(opts: MeaningOptions): ReaderMeaning {
     opts.stopVoice();
     opts.collapseSelection(false);
     setMeaning({ text, status: "loading", saved: false });
-    requestAnimationFrame(() => opts.anchorCard(opts.cardRef, item));
     const key = getEffectiveApiKey();
     const outcome = await lookupMeaning({ text, sentence, apiKey: key });
     // The card may have been closed while the lookup was in flight.
@@ -157,17 +147,6 @@ export function useReaderMeaning(opts: MeaningOptions): ReaderMeaning {
     });
     setMeaning((prev) => (prev ? { ...prev, saved: true } : prev));
   }, [opts]);
-
-  // Looking a word up is half hearing it — the word says itself when its
-  // meaning arrives (once per word, not on every re-render).
-  const spokenWord = useRef<string | null>(null);
-  useEffect(() => {
-    if (meaning?.status !== "ready") return;
-    const word = meaning.model?.word || meaning.text;
-    if (!word || spokenWord.current === word) return;
-    spokenWord.current = word;
-    sayWord(word, { voiceURI: opts.voiceURI });
-  }, [meaning?.status, meaning?.model?.word, meaning?.text, opts.voiceURI]);
 
   return { openMeaning, copySelection, saveWord };
 }
