@@ -94,8 +94,7 @@ export default function TopBar({
     <header
       data-topbar
       data-testid="top-bar"
-      className={`reader-bar shrink-0${visible ? "" : " chrome-hidden"}`}
-      style={{ paddingTop: "calc(10px + env(safe-area-inset-top))" }}
+      className={`reader-bar${visible ? "" : " chrome-hidden"}`}
       onFocus={onReveal}
       onPointerDown={onReveal}
     >

@@ -61,7 +61,7 @@ export default function ReaderPopup({
                   Delete
                 </button>
               )}
-              <span className="flex-1" />
+              <span className="note-editor-spacer" />
               <button
                 data-testid="note-cancel"
                 onClick={onCancelNote}

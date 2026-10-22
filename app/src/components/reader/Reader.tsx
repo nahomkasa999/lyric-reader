@@ -714,13 +714,10 @@ export default function Reader({
 
   if (failed) {
     return (
-      <div className="reader-root fixed inset-0 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-white/80">This book could not be opened.</p>
-          <button
-            onClick={onBack}
-            className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground"
-          >
+      <div className="reader-root reader-fallback">
+        <div className="reader-fallback-text">
+          <p>This book could not be opened.</p>
+          <button onClick={onBack} className="reader-fallback-button">
             Back to library
           </button>
         </div>
@@ -730,8 +727,8 @@ export default function Reader({
 
   if (!book || !items.length) {
     return (
-      <div className="reader-root fixed inset-0 flex items-center justify-center">
-        <p className="text-white/40 text-sm">Loading…</p>
+      <div className="reader-root reader-fallback">
+        <p className="reader-fallback-loading">Loading…</p>
       </div>
     );
   }
@@ -739,7 +736,7 @@ export default function Reader({
   return (
     <div
       data-testid="reader-root"
-      className={`reader-root fixed inset-0 flex flex-col overflow-hidden${
+      className={`reader-root${
         pop || meaning || assistantOpen || outlineOpen || vocabPreview
           ? " fx"
           : ""
@@ -873,7 +870,7 @@ export default function Reader({
       {/* Hairline progress: visible with the chrome only */}
       <div
         data-testid="reader-progress"
-        className={`reader-progress shrink-0${chrome.visible ? "" : " chrome-hidden"}`}
+        className={`reader-progress${chrome.visible ? "" : " chrome-hidden"}`}
         aria-hidden
       >
         <i style={{ width: `${pct}%` }} />

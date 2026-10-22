@@ -260,8 +260,15 @@
 }
 
 .reader-root {
-  /* The ambient background sits behind the text (DESIGN.md): the reader
-     keeps its own layout, but the canvas is the app's background. */
+  /* The reader's own screen: a fixed column — the bar, the stage, the
+     bottom nav — with the ambient background behind the text (DESIGN.md):
+     the reader keeps its own layout, but the canvas is the app's
+     background. */
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: transparent;
   z-index: 1;
   color: #fff;
@@ -270,6 +277,30 @@
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* The two fallback screens (the book would not open / still loading). */
+.reader-fallback {
+  align-items: center;
+  justify-content: center;
+}
+.reader-fallback-text {
+  text-align: center;
+}
+.reader-fallback-text p {
+  color: rgb(255 255 255 / 80%);
+}
+.reader-fallback-button {
+  margin-top: 16px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 14px;
+}
+.reader-fallback-loading {
+  color: rgb(255 255 255 / 40%);
+  font-size: 14px;
 }
 
 /* Top bar + hairline progress (his #bar / #prog).
@@ -281,6 +312,10 @@
   grid-template-columns: 40px 1fr 40px;
   align-items: center;
   padding: 10px 12px;
+  /* The bar keeps clear of the notch. */
+  padding-top: calc(10px + env(safe-area-inset-top));
+  /* The bar keeps its space in the column, visible or not. */
+  flex-shrink: 0;
   color: var(--muted-foreground);
   font-size: 14px;
   transition: filter 0.3s, opacity 250ms ease, transform 250ms ease, visibility 0s;
@@ -401,6 +436,8 @@
   height: 3px;
   background: color-mix(in oklch, #fff 10%, transparent);
   transition: filter 0.3s, opacity 250ms ease, visibility 0s;
+  /* The hairline keeps its space in the column, visible or not. */
+  flex-shrink: 0;
 }
 /* v3.1: the progress hairline hides with the rest of the chrome. */
 .reader-progress.chrome-hidden {
@@ -419,6 +456,10 @@
 /* Stage: the scrolling track lives here, masked at the edges (his #stage). */
 .reader-stage {
   position: relative;
+  /* The stage takes the space the chrome leaves it, and never grows past
+     it (min-height: 0 lets it shrink inside the column). */
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   touch-action: none;
   -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
@@ -672,6 +713,8 @@
   padding: 8px 14px;
   background: var(--background);
   font-size: 13px;
+  /* A chip is a chip — it never squashes to fit. */
+  flex-shrink: 0;
 }
 .set-chip.on {
   outline: 2px solid var(--primary);
@@ -738,6 +781,10 @@
   align-items: center;
   gap: 8px;
   margin-top: 10px;
+}
+/* The gap that pushes the note buttons to the right. */
+.note-editor-spacer {
+  flex: 1;
 }
 .note-btn {
   padding: 8px 14px;
@@ -965,6 +1012,27 @@
   font-weight: 600;
   border: 1px solid var(--border);
   color: var(--foreground);
+}
+/* The speaker button of the card — the only thing that says the word. */
+.meaning-say {
+  display: inline-grid;
+  place-items: center;
+  align-items: center;
+  vertical-align: middle;
+  width: 28px;
+  height: 28px;
+  margin-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  background: transparent;
+}
+.meaning-say:active {
+  background: var(--accent);
+}
+/* A button that takes the space the row has left. */
+.meaning-fill {
+  flex: 1;
 }
 .meaning-status {
   padding: 18px 14px;
@@ -1233,6 +1301,7 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  margin: 0 16px 10px;
 }
 
 /* The name of the group of voices (ElevenLabs / this phone). */
@@ -1389,6 +1458,10 @@
   gap: 10px;
   padding: 16px 16px 8px;
 }
+/* The title column may shrink; the ✕ may not. */
+.outline-head-text {
+  min-width: 0;
+}
 .outline-title {
   font-size: 17px;
   font-weight: 600;
@@ -1444,6 +1517,12 @@
 }
 .outline-row:active {
   background: var(--accent);
+}
+/* The row's text takes the space the page number leaves. */
+.outline-row-text {
+  min-width: 0;
+  flex: 1;
+  text-align: left;
 }
 .outline-row-title {
   display: block;

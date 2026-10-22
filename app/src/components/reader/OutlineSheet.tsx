@@ -78,7 +78,7 @@ export default function OutlineSheet({
         aria-label="Outline"
       >
         <div className="outline-header">
-          <div className="min-w-0">
+          <div className="outline-head-text">
             <div className="outline-title">Outline</div>
             <div className="outline-sub">
               {outline.length} {outline.length === 1 ? "section" : "sections"}
@@ -129,7 +129,7 @@ export default function OutlineSheet({
                     onClose();
                   }}
                 >
-                  <span className="min-w-0 flex-1 text-left">
+                  <span className="outline-row-text">
                     <span className="outline-row-title">{e.text}</span>
                     {e.hint && <span className="outline-row-hint">{e.hint}</span>}
                   </span>

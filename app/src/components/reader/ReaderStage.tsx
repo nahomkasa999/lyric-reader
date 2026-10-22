@@ -33,7 +33,7 @@ export default function ReaderStage({
   trackRef,
 }: Props) {
   return (
-    <div ref={stageRef} data-testid="stage" className="reader-stage min-h-0 flex-1">
+    <div ref={stageRef} data-testid="stage" className="reader-stage">
       <div ref={trackRef} data-testid="track" className="reader-track">
         {items.map(({ idx, item, parts: ps }) => {
           const isCur = idx === current;

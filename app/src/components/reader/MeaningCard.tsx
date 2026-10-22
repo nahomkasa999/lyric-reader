@@ -42,9 +42,8 @@ function parts(
   const closeWide = (
     <button
       data-testid="meaning-close"
-      className="meaning-close"
+      className="meaning-close meaning-fill"
       onClick={onClose}
-      style={{ flex: 1 }}
     >
       Close
     </button>
@@ -52,8 +51,7 @@ function parts(
   const toSettings = (
     <button
       data-testid="meaning-to-settings"
-      className="meaning-save"
-      style={{ flex: 1 }}
+      className="meaning-save meaning-fill"
       onClick={onOpenSettings}
     >
       Add key in Settings
@@ -70,7 +68,7 @@ function parts(
             <button
               data-testid="meaning-say"
               aria-label={`Say ${model.word}`}
-              className="ml-2 inline-grid h-7 w-7 place-items-center align-middle rounded-full border border-border"
+              className="meaning-say"
               onClick={() =>
                 sayWord(model.word || meaning.text, { voiceURI })
               }

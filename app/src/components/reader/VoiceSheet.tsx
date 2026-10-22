@@ -216,7 +216,7 @@ export default function VoiceSheet({
           </div>
           <button
             data-testid="voice-engine-toggle"
-            className="set-chip shrink-0"
+            className="set-chip"
             onClick={() => onEngineChange(phoneEngine ? "eleven" : "system")}
           >
             {phoneEngine ? "Use ElevenLabs" : "Use this phone"}
@@ -232,10 +232,10 @@ export default function VoiceSheet({
               own voice reads. Add a free key in Settings → Read aloud to
               use the ElevenLabs voices.
             </p>
-            <div className="voice-foot-row" style={{ margin: "0 16px 10px" }}>
+            <div className="voice-foot-row">
               <a
                 data-testid="voice-key-link"
-                className="set-chip shrink-0"
+                className="set-chip"
                 href={ELEVEN_KEYS_URL}
                 target="_blank"
                 rel="noreferrer"
