@@ -8,7 +8,7 @@ import type React from "react";
 import type { RefObject } from "react";
 import { getEffectiveApiKey } from "../../lib/apikey";
 import { saveVocab, type VocabRecord } from "../../lib/db";
-import { geminiInContext, lookupMeaning } from "../../lib/meaning";
+import { geminiInContext, lookupMeaning, translateText } from "../../lib/meaning";
 import type { BookDoc, Item, Position } from "../../lib/types";
 import type { MeaningState, SelectionState } from "./readerTypes";
 
@@ -41,6 +41,8 @@ export interface MeaningOptions {
 
 export interface ReaderMeaning {
   openMeaning: () => Promise<void>;
+  /** translate the highlighted text into Amharic */
+  openTranslation: () => Promise<void>;
   copySelection: () => Promise<void>;
   saveWord: () => Promise<void>;
 }
@@ -76,7 +78,7 @@ export function useReaderMeaning(opts: MeaningOptions): ReaderMeaning {
       setMeaning({ text, status: "ready", model, saved: alreadySaved });
       // The AI "in this sentence" line for single words never blocks the
       // dictionary result — it appends when it arrives (cached per norm).
-      if (key && !/\s/.test(text.trim()) && !model.inContext) {
+      if (key && !/\s/.test(text.trim()) && !model.inContext && !model.lang) {
         const cacheKey = `${norm}::${sentence.slice(0, 120)}`;
         const cached = contextCache.get(cacheKey);
         if (cached) {
@@ -105,6 +107,37 @@ export function useReaderMeaning(opts: MeaningOptions): ReaderMeaning {
         query: outcome.query,
       });
     }
+  }, [opts]);
+
+  /** Translate the highlighted text into Amharic, in the same card. */
+  const openTranslation = useCallback(async () => {
+    const s = opts.selRef.current;
+    if (!s || !opts.bookRef.current) return;
+    const text = s.text;
+    opts.pauseAuto();
+    opts.stopVoice();
+    opts.collapseSelection(false);
+    setMeaning({ text, status: "loading", saved: false, kind: "translation" });
+    const key = getEffectiveApiKey();
+    if (!key) {
+      setMeaning({ text, status: "needs-key", saved: false, kind: "translation" });
+      return;
+    }
+    const out = await translateText(text, key);
+    // The card may have been closed while the translation was on its way.
+    if (opts.meaningRef.current?.text !== text) return;
+    setMeaning(
+      out
+        ? {
+            text,
+            status: "ready",
+            saved: false,
+            kind: "translation",
+            translation: out.text,
+            target: out.target,
+          }
+        : { text, status: "error", saved: false, kind: "translation" },
+    );
   }, [opts]);
 
   const copySelection = useCallback(async () => {
@@ -148,5 +181,5 @@ export function useReaderMeaning(opts: MeaningOptions): ReaderMeaning {
     setMeaning((prev) => (prev ? { ...prev, saved: true } : prev));
   }, [opts]);
 
-  return { openMeaning, copySelection, saveWord };
+  return { openMeaning, openTranslation, copySelection, saveWord };
 }

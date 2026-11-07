@@ -58,8 +58,43 @@ function parts(
     </button>
   );
 
+  // A translation: the highlighted text, and the same text in Amharic.
+  if (meaning.kind === "translation" && meaning.status === "ready") {
+    return {
+      body: (
+        <>
+          <div className="meaning-example">"{meaning.text}"</div>
+          <div
+            data-testid="translation-text"
+            className="meaning-def"
+            lang={meaning.target === "Amharic" ? "am" : "en"}
+          >
+            {meaning.translation}
+          </div>
+        </>
+      ),
+      actions: (
+        <div className="meaning-actions">
+          <button
+            data-testid="translation-copy"
+            className="meaning-save"
+            onClick={() => {
+              void navigator.clipboard
+                ?.writeText(meaning.translation ?? "")
+                .catch(() => {});
+            }}
+          >
+            Copy
+          </button>
+          {close}
+        </div>
+      ),
+    };
+  }
+
   if (meaning.status === "ready" && meaning.model) {
     const model = meaning.model;
+    const am = model.lang === "am";
     return {
       body: (
         <>
@@ -95,8 +130,8 @@ function parts(
             </div>
           ))}
           {model.inContext && (
-            <div className="meaning-context">
-              <b>In this sentence</b>
+            <div className="meaning-context" lang={am ? "am" : undefined}>
+              <b>{am ? "በዚህ ዐረፍተ ነገር ውስጥ" : "In this sentence"}</b>
               {model.inContext}
             </div>
           )}
@@ -120,7 +155,11 @@ function parts(
 
   if (meaning.status === "loading") {
     return {
-      body: <div className="meaning-status">Looking it up…</div>,
+      body: (
+        <div className="meaning-status">
+          {meaning.kind === "translation" ? "Translating…" : "Looking it up…"}
+        </div>
+      ),
       actions: null,
     };
   }
@@ -140,7 +179,9 @@ function parts(
     return {
       body: (
         <div className="meaning-status">
-          Phrases need the AI to define them.
+          {meaning.kind === "translation"
+            ? "Translating needs the AI."
+            : "Phrases and Amharic words need the AI to define them."}
           <br />
           Add your free Gemini key to switch it on.
         </div>

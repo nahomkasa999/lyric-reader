@@ -35,6 +35,12 @@ export interface MeaningState {
   saved: boolean;
   /** for phrases without a key */
   query?: string;
+  /** the card shows a translation, not a dictionary entry */
+  kind?: "meaning" | "translation";
+  /** the translation, when the card is one */
+  translation?: string;
+  /** the language the translation is in */
+  target?: "Amharic" | "English";
 }
 
 /** The floating pill above the selection. */

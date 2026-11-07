@@ -16,6 +16,7 @@ interface Props {
   selection: SelectionState | null;
   pillRef: React.RefObject<HTMLDivElement | null>;
   onMeaning: () => void;
+  onTranslate: () => void;
   onCopy: () => void;
   /** the meaning card */
   meaning: MeaningState | null;
@@ -35,6 +36,7 @@ export default function ReaderOverlays({
   selection,
   pillRef,
   onMeaning,
+  onTranslate,
   onCopy,
   meaning,
   meaningCardRef,
@@ -63,6 +65,9 @@ export default function ReaderOverlays({
             onClick={onMeaning}
           >
             Meaning
+          </button>
+          <button data-testid="sel-translate" onClick={onTranslate}>
+            Translate
           </button>
           <button data-testid="sel-copy" onClick={onCopy}>
             Copy

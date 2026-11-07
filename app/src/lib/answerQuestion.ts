@@ -45,15 +45,46 @@ export interface AnswerResult {
   sources: Source[];
 }
 
+/** A question this short leans on the conversation: "and why?", "who else?". */
+const FOLLOW_UP_WORDS = 8;
+
+/** How many earlier questions the search borrows. */
+const SEARCH_HISTORY = 2;
+
+/**
+ * The words the SEARCH uses for a question.
+ *
+ * A follow-up ("and why?") means nothing alone, so the search of a short
+ * question is made from the reader's recent questions plus the new one —
+ * the same context the model gets in the prompt. A full question stands
+ * by itself, so an unrelated earlier topic cannot pull the search away.
+ * The model still receives the original question, unchanged.
+ */
+export function searchQueryFor(
+  question: string,
+  history: AssistantMessage[],
+): string {
+  const q = question.trim();
+  if (q.split(/\s+/).filter(Boolean).length > FOLLOW_UP_WORDS) return q;
+  const before = history
+    .filter((m) => m.role === "user")
+    .slice(-SEARCH_HISTORY)
+    .map((m) => m.text.trim())
+    .filter(Boolean);
+  return before.length ? `${before.join(" ")} ${q}` : q;
+}
+
 /** Find the passages and ask the model about them. */
 export async function answerQuestion(
   req: AnswerRequest,
 ): Promise<AnswerResult> {
   // 1. The question's own vector. A failure is not fatal: the keyword
   //    lane still finds the passage.
+  //    The search reads the question WITH its history, like a RAG chat.
+  const searchQuery = searchQueryFor(req.question, req.history);
   let vector: Float32Array | null = null;
   try {
-    vector = await embedQuery(req.question, req.key, fetch, req.signal);
+    vector = await embedQuery(searchQuery, req.key, fetch, req.signal);
   } catch (e) {
     // A stopped request must not fall through to the words.
     if (req.signal?.aborted) throw e;
@@ -63,7 +94,7 @@ export async function answerQuestion(
 
   // 2. The passages — never past the page the reader is on.
   const maxItem = req.spoilers ? undefined : req.item;
-  const hits = await retrieve(req.question, vector, {
+  const hits = await retrieve(searchQuery, vector, {
     bookId: req.bookId,
     maxItem,
   });

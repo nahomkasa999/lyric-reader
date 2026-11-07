@@ -211,7 +211,7 @@ export default function Reader({
     setSel({
       text,
       top: Math.max(8, rect.top - 60),
-      left: clamp(rect.left, 16, window.innerWidth - 190),
+      left: clamp(rect.left, 16, window.innerWidth - 290),
     });
   }, [collapseSelection]);
 
@@ -536,7 +536,7 @@ export default function Reader({
     stopVoice: () => voiceRef.current?.stop(),
     setVocab,
   });
-  const { openMeaning, copySelection, saveWord } = meaningState;
+  const { openMeaning, openTranslation, copySelection, saveWord } = meaningState;
 
   // Re-clamp the selection pill horizontally after it renders, so the
   // real (not guessed) width is what stays inside the viewport.
@@ -952,22 +952,15 @@ export default function Reader({
         interrupt={voice.speaking || voice.session}
       />
 
-      {/* v4.9: the voice could not do it — say so. The reader must never
-          silently swap in another voice and leave the user wondering. */}
-      {voice.error && (
-        <button
-          data-testid="voice-error-toast"
-          className="voice-toast show"
-          onClick={() => voice.clearError()}
-        >
-          {voice.error}
-        </button>
-      )}
+      {/* The "ElevenLabs did not accept the key" toast is gone: the phone's
+          voice reads quietly, with no message on every sentence. The hook
+          still keeps the reason in voice.error for anyone who wants it. */}
 
       <ReaderOverlays
         selection={sel}
         pillRef={pillRef}
         onMeaning={() => void openMeaning()}
+        onTranslate={() => void openTranslation()}
         onCopy={() => void copySelection()}
         meaning={meaning}
         meaningCardRef={meaningCardRef}

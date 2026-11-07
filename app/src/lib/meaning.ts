@@ -28,6 +28,8 @@ export interface MeaningModel {
   groups: DictPos[];
   /** AI line explaining the word/phrase in the given sentence */
   inContext?: string;
+  /** the language of the meaning, when it is not English */
+  lang?: "am";
 }
 
 export interface MeaningOutcome {
@@ -333,6 +335,109 @@ export async function geminiFullMeaning(
   }
 }
 
+/** Any Ethiopic character — the script of Amharic. */
+const ETHIOPIC = /[\u1200-\u137F\u1380-\u139F]/;
+
+/** Is this text Amharic (written in the Ethiopic script)? */
+export function isAmharic(text: string): boolean {
+  return ETHIOPIC.test(text);
+}
+
+/**
+ * The meaning of an Amharic word or phrase, written in Amharic.
+ *
+ * The English dictionaries do not know Amharic, so the AI defines it —
+ * every field in Amharic. Null on any failure.
+ */
+export async function geminiAmharicMeaning(
+  query: string,
+  sentence: string,
+  apiKey: string,
+  fetchFn?: typeof fetch,
+): Promise<MeaningModel | null> {
+  try {
+    const raw = await aiGenerate({
+      apiKey,
+      json: true,
+      maxTokens: 2048,
+      system:
+        "You are a concise Amharic dictionary. Reply with JSON only. " +
+        "Write every value in Amharic (Ge'ez script).",
+      messages: [
+        {
+          role: "user",
+          text:
+            `Explain the meaning of this Amharic word or phrase: "${query}".\n` +
+            `It appears in this sentence: "${sentence}".\n` +
+            `Reply with JSON: {"partOfSpeech": "the part of speech, in Amharic", ` +
+            `"definition": "the meaning, in Amharic", "example": "a short example, in Amharic", ` +
+            `"inContext": "what it means in that sentence, in Amharic"}. ` +
+            `Keep the definition under 25 words and inContext under 20 words.`,
+        },
+      ],
+      fetchFn,
+    });
+    const p = JSON.parse(raw) as {
+      partOfSpeech?: string;
+      definition?: string;
+      example?: string;
+      inContext?: string;
+    };
+    if (!p.definition?.trim()) return null;
+    return {
+      word: query,
+      lang: "am",
+      groups: [
+        {
+          partOfSpeech: p.partOfSpeech?.trim() || "ቃል",
+          defs: [
+            {
+              definition: p.definition.trim(),
+              example: p.example?.trim() || undefined,
+            },
+          ],
+        },
+      ],
+      inContext: p.inContext?.trim() || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** What a translation says, and which way it went. */
+export interface Translation {
+  text: string;
+  target: "Amharic" | "English";
+}
+
+/**
+ * Translate the highlighted text into Amharic. Text that is already
+ * Amharic goes the other way, into English. Null on any failure.
+ */
+export async function translateText(
+  text: string,
+  apiKey: string,
+  fetchFn?: typeof fetch,
+): Promise<Translation | null> {
+  const target = isAmharic(text) ? "English" : "Amharic";
+  try {
+    const out = await aiGenerate({
+      apiKey,
+      maxTokens: 2048,
+      system:
+        `Translate the text into ${target}. Reply with the translation ` +
+        "only — no quotes, notes or preamble.",
+      messages: [{ role: "user", text }],
+      fetchFn,
+    });
+    const clean = out.trim();
+    return clean ? { text: clean, target } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Ask Gemini for a phrase/idiom meaning as JSON. Null on any failure. */
 export async function geminiMeaning(
   query: string,
@@ -408,6 +513,13 @@ export async function lookupMeaning(opts: LookupOpts): Promise<MeaningOutcome> {
   const fetchFn = opts.fetchFn ?? fetch;
   const text = cleanText(opts.text);
   if (!text) return { status: "error" };
+
+  // Amharic: no English dictionary knows it — the AI defines it, in Amharic.
+  if (isAmharic(text)) {
+    if (!opts.apiKey) return { status: "needs-key", query: text };
+    const am = await geminiAmharicMeaning(text, opts.sentence, opts.apiKey, fetchFn);
+    return am ? { status: "ready", model: am } : { status: "error" };
+  }
 
   if (/\s/.test(text)) {
     // Phrase: only Gemini can define it.
