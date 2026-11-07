@@ -19,6 +19,7 @@ import { readSse } from "./sse";
 interface StreamFrame {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string; thought?: boolean }> };
+    finishReason?: string;
   }>;
   promptFeedback?: { blockReason?: string };
 }
@@ -93,6 +94,7 @@ export async function geminiStream(
   }
 
   let out = "";
+  let finish = "";
   await readSse(res, (payload) => {
     let frame: StreamFrame;
     try {
@@ -106,6 +108,7 @@ export async function geminiStream(
         "The AI declined that request. Try asking it differently.",
       );
     }
+    finish = frame.candidates?.[0]?.finishReason ?? finish;
     const parts = frame.candidates?.[0]?.content?.parts ?? [];
     for (const part of parts) {
       // A thinking model's thoughts are not for the reader.
@@ -116,5 +119,15 @@ export async function geminiStream(
       onToken(text);
     }
   });
+  // A thinking model can spend its whole budget on thoughts, or be cut
+  // off by a safety filter, and then nothing visible arrives. That must
+  // be said — an empty reply shown as an answer looks like a dead AI.
+  if (!out.trim()) {
+    const suffix = finish ? ` (finish: ${finish})` : "";
+    throw new GeminiError(
+      "unknown",
+      `The AI came back empty${suffix} — try asking again.`,
+    );
+  }
   return out;
 }

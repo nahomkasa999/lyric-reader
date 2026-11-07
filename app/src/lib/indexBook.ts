@@ -332,7 +332,22 @@ async function runJob(job: IndexJobRow): Promise<void> {
       await failJob(job, new GeminiError("unknown", "The AI sent back the wrong number of vectors."));
       return;
     }
-    await appendVectors(job.bookId, slice.from, batch).catch(() => {});
+    // The vectors belong to the passages they were made from. A write
+    // that fails is NOT done work: the count stays where it was, and the
+    // job says why it stopped.
+    const ids = ready.slice(slice.from, slice.to).map((p) => p.id);
+    try {
+      await appendVectors(ids, batch);
+    } catch {
+      await failJob(
+        job,
+        new GeminiError(
+          "unknown",
+          "The index could not be saved — free some space on this phone, then press Retry.",
+        ),
+      );
+      return;
+    }
     job.embedded = slice.to;
     await persist(job);
   }

@@ -150,6 +150,9 @@ export function clampPitch(v: number): number {
 // cancelled) must never resolve the promise of the next one.
 let generation = 0;
 let keepalive: number | null = null;
+// The promise of the speak() that is talking now. A cancel settles it,
+// so the reading that waits on it can end instead of hanging.
+let pendingDone: (() => void) | null = null;
 
 function stopKeepalive(): void {
   if (keepalive !== null) {
@@ -187,13 +190,19 @@ export function speechActive(): boolean {
 export function stopSpeech(): void {
   generation += 1;
   stopKeepalive();
+  const settle = pendingDone;
+  pendingDone = null;
   const s = getSynth();
-  if (!s) return;
-  try {
-    s.cancel();
-  } catch {
-    /* ignore */
+  if (s) {
+    try {
+      s.cancel();
+    } catch {
+      /* ignore */
+    }
   }
+  // A cancelled speech is over: its promise must resolve, or the reading
+  // that waits for it would never end.
+  settle?.();
 }
 
 /**
@@ -220,12 +229,15 @@ export function speak(
 
   return new Promise<void>((resolve) => {
     let left = chunks.length;
+    const finish = () => {
+      if (pendingDone === finish) pendingDone = null;
+      stopKeepalive();
+      resolve();
+    };
+    pendingDone = finish;
     const done = () => {
       left -= 1;
-      if (left <= 0 && gen === generation) {
-        stopKeepalive();
-        resolve();
-      }
+      if (left <= 0 && gen === generation) finish();
     };
     for (const chunk of chunks) {
       const u = new SpeechSynthesisUtterance(chunk);

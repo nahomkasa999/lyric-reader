@@ -165,21 +165,24 @@ export async function deleteByPrefix(
 }
 
 /**
- * Add vectors for a book, from a given passage index.
+ * Add vectors, one per passage id.
  *
- * The ids are `${bookId}:${from + i}` — the same shape the passages use,
- * so a vector and its passage always line up.
+ * A vector is stored under the id of the passage it belongs to. An
+ * array position is not an identity: it only lines up while the passage
+ * list never changes, and a re-cut book would attach every vector to the
+ * wrong passage.
+ *
+ * Throws when the write fails — the caller must not count the work as done.
  */
 export async function appendVectors(
-  bookId: string,
-  from: number,
+  ids: string[],
   vectors: Float32Array[],
 ): Promise<void> {
   if (!vectors.length) return;
-  const rows: StoredVector[] = vectors.map((v, i) => ({
-    id: `${bookId}:${from + i}`,
-    v,
-  }));
+  if (ids.length !== vectors.length) {
+    throw new Error("Every passage needs exactly one vector.");
+  }
+  const rows: StoredVector[] = vectors.map((v, i) => ({ id: ids[i], v }));
   await putAll("vectors", rows);
   forgetVectors();
 }

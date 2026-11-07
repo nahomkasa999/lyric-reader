@@ -104,6 +104,12 @@ export function useAnswers(opts: AnswerOptions): Answers {
             opts.setLive(live.current);
           },
         });
+        // An empty answer is not an answer: the question stays, the
+        // reader is told, and no blank bubble with citations is saved.
+        if (!result.text.trim()) {
+          opts.setError("The AI came back empty — try asking again.");
+          return;
+        }
         opts.setSources(result.sources);
         threads.commit({
           ...base,

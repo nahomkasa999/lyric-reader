@@ -19,6 +19,9 @@ import {
 import { retrieve } from "./retrieval";
 import type { AssistantMessage, Source } from "./assistantStore";
 
+/** The output budget of one answer — thoughts and text together. */
+export const ANSWER_TOKENS = 3000;
+
 export interface AnswerRequest {
   question: string;
   /** the messages before this question */
@@ -80,7 +83,9 @@ export async function answerQuestion(
     apiKey: req.key,
     system: prompt.system,
     messages: prompt.messages,
-    maxTokens: 1500,
+    // A thinking model spends this budget on its thoughts first; 1500 was
+    // not enough for a full answer after them.
+    maxTokens: ANSWER_TOKENS,
     signal: req.signal,
     onToken: req.onToken ?? (() => {}),
   });

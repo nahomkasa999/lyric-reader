@@ -6,6 +6,9 @@
 
 let ctx: AudioContext | null = null;
 let current: AudioBufferSourceNode | null = null;
+// The promise of the clip that is playing. A stop settles it, so the
+// reading that waits for the clip can end.
+let currentDone: (() => void) | null = null;
 
 /** Safari's name for the same thing. */
 interface WebkitWindow extends Window {
@@ -25,6 +28,8 @@ function audioContext(): AudioContext {
 
 /** Stop whatever is playing. */
 export function stopAudio(): void {
+  const settle = currentDone;
+  currentDone = null;
   if (current) {
     try {
       current.stop();
@@ -33,6 +38,7 @@ export function stopAudio(): void {
     }
     current = null;
   }
+  settle?.();
 }
 
 /** Play an audio buffer; resolves when the sound ends. */
@@ -46,10 +52,14 @@ export async function playAudio(data: ArrayBuffer): Promise<void> {
     src.buffer = buffer;
     src.connect(ac.destination);
     src.onended = () => {
-      if (current === src) current = null;
+      if (current === src) {
+        current = null;
+        currentDone = null;
+      }
       resolve();
     };
     current = src;
+    currentDone = resolve;
     src.start();
   });
 }

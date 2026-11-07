@@ -919,6 +919,9 @@ export default function Reader({
         autoPlaying={autoPlaying}
         onToggleAuto={() => {
           if (Date.now() < suppressUntil.current) return;
+          // One owner of the page at a time: the voice and auto-scroll
+          // never turn the page together.
+          voiceRef.current?.stop();
           toggleAuto();
         }}
         onCycleSpeed={() => {
@@ -932,6 +935,9 @@ export default function Reader({
         onToggleSpeak={() => {
           if (Date.now() < suppressUntil.current) return;
           const wasReading = voiceRef.current?.session;
+          // One owner of the page at a time: the voice takes over from
+          // auto-scroll (it never comes back by itself).
+          if (!wasReading) stopAutoHard();
           voiceRef.current?.toggle();
           // Manners: starting a reading hides the chrome — full focus.
           if (!wasReading) hideChrome();

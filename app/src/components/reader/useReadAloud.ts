@@ -14,6 +14,19 @@
 //
 // Overlays (the action popup, a selection, the meaning card, the Ask
 // sheet) hold the voice until they close.
+//
+// How the sentences are kept in order (the voice race, fixed):
+//   · The reader re-renders and passes NEW callbacks every time. The
+//     hook reads them from `latest`, so its own callbacks never change
+//     identity — nothing re-fires just because the page re-rendered.
+//   · A sentence is started once per position (`startedKey`). A
+//     re-render, a second tap or a resume for the same position is a
+//     no-op while that sentence is still being read.
+//   · Every reading carries a token. Only the reading that still holds
+//     the token may turn the page — a superseded or stopped reading
+//     never moves the reader on.
+//   · Cancelling the phone's speech or an audio clip settles its promise,
+//     so a cancelled reading always ends instead of hanging.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_VOICE,
@@ -77,14 +90,25 @@ export interface ReadAloud {
   resume: () => void;
 }
 
+/** The ElevenLabs voice id that is really sent. */
+function voiceIdOf(voice: string): string {
+  return isVoiceId(voice) ? voice : DEFAULT_VOICE;
+}
+
 export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   const [speaking, setSpeaking] = useState(false);
   const [session, setSession] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
-  // A token, so a cancelled utterance can never switch the button back.
+  // The newest options. Every callback below reads from here, so its
+  // identity stays the same for as long as the reader is open.
+  const latest = useRef(opts);
+  latest.current = opts;
+  // A token per reading: a newer reading (or a stop) supersedes the old.
   const token = useRef(0);
+  // The position whose sentence is being read — or was read last.
+  const startedKey = useRef<string | null>(null);
   // Audio already on its way from ElevenLabs. The key carries the voice
   // and the speed, so a voice change can never serve yesterday's audio.
   const ready = useRef(new Map<string, Promise<ArrayBuffer>>());
@@ -94,10 +118,6 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   const {
     follow,
     positionKey,
-    currentText,
-    nextText,
-    blocked,
-    advance,
     voice,
     voiceURI,
     speed,
@@ -112,20 +132,9 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   );
 
   /** ElevenLabs only reads when it has a key to read with. */
-  const canUseEleven = engine === "eleven" && !!key;
-
-  /**
-   * The voice that is actually sent to ElevenLabs. A stale setting can
-   * hold a phone voice name ("English (United States)") from the old
-   * engine — ElevenLabs answers "An invalid ID has been received", and
-   * the reader falls back to the phone's voice with no reason given.
-   * Such a name is not an id, so the default voice reads instead.
-   */
-  const elevenVoice = useMemo(
-    () => (isVoiceId(voice) ? voice : DEFAULT_VOICE),
-    [voice],
-  );
-  const staleVoice = voice !== elevenVoice;
+  // A stale voice setting (a phone voice name from the old engine) is
+  // not an ElevenLabs id: voiceIdOf() gives the default voice instead.
+  const canUseEleven = wantsEleven({ engine, key });
 
   /** Say it once — the note must not be rewritten on every sentence. */
   const note = useCallback((msg: string | null) => {
@@ -135,6 +144,7 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   /** Stop everything — both engines. */
   const stop = useCallback(() => {
     token.current += 1;
+    startedKey.current = null;
     sessionRef.current = false;
     setSession(false);
     setSpeaking(false);
@@ -143,26 +153,25 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   }, []);
 
   /** The audio for a text: from the cache if it is already here. */
-  const fetchAudio = useCallback(
-    async (text: string): Promise<ArrayBuffer> => {
-      const k = `${elevenVoice}\u0000${speed}\u0000${text}`;
-      const hit = ready.current.get(k);
-      if (hit) return hit;
-      const p = speakAudio(text, elevenVoice, key, speed).catch((e) => {
-        // A failed request must not be cached — it is fetched again.
-        ready.current.delete(k);
-        throw e;
-      });
-      ready.current.set(k, p);
-      return p;
-    },
-    [elevenVoice, key, speed],
-  );
+  const fetchAudio = useCallback(async (text: string): Promise<ArrayBuffer> => {
+    const c = latest.current;
+    const voiceId = voiceIdOf(c.voice);
+    const k = `${voiceId}\u0000${c.speed}\u0000${text}`;
+    const hit = ready.current.get(k);
+    if (hit) return hit;
+    const p = speakAudio(text, voiceId, c.key, c.speed).catch((e) => {
+      // A failed request must not be cached — it is fetched again.
+      ready.current.delete(k);
+      throw e;
+    });
+    ready.current.set(k, p);
+    return p;
+  }, []);
 
-  // A new voice (or speed) makes every cached clip worthless.
+  // A new voice (or speed, or key) makes every cached clip worthless.
   useEffect(() => {
     ready.current.clear();
-  }, [elevenVoice, speed, key]);
+  }, [voice, speed, key]);
 
   /** Start the next sentence while this one is being read. */
   const prefetch = useCallback(
@@ -176,73 +185,93 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
     [fetchAudio],
   );
 
-  /** Say a text with the engine the user picked. */
-  const play = useCallback(
-    async (text: string): Promise<void> => {
+  /**
+   * Say one sentence with the engine the user picked.
+   *
+   * Resolves when the sentence has been read, or when this reading was
+   * superseded or stopped. The caller tells the two apart by the token.
+   */
+  const play = useCallback(async (text: string, mine: number): Promise<void> => {
+    const c = latest.current;
+    // Whatever was still sounding belongs to the reading we replace.
+    stopAudio();
+    let played = false;
+    if (wantsEleven(c) && !forcedSystem.current) {
+      try {
+        const data = await fetchAudio(text);
+        if (token.current !== mine) return;
+        await playAudio(data);
+        if (token.current !== mine) return;
+        played = true;
+        // The stored voice was a phone voice name — the default voice
+        // read instead. Say so, once.
+        note(
+          voiceIdOf(c.voice) !== c.voice
+            ? "That voice belongs to the phone, not to ElevenLabs — the default voice is reading. Pick one from the voice list."
+            : null,
+        );
+      } catch (e) {
+        if (token.current !== mine) return;
+        // ElevenLabs could not do it — say so, and let the phone's
+        // voice take over, instead of swapping engines silently.
+        const err = e instanceof Error ? e : new Error("The voice failed.");
+        // Out of reach: the phone's own voice reads from here on, and
+        // the reader is told once — not once per sentence.
+        if (isNetworkError(err) && (!isOnline() || err instanceof TypeError)) {
+          forcedSystem.current = true;
+          note("You're offline — the phone's voice is reading instead.");
+        } else {
+          note(speakError(err));
+        }
+      }
+    } else if (c.engine === "eleven") {
+      // ElevenLabs was asked for, but there is no key to read with.
+      note(
+        "No ElevenLabs key — the phone's voice is reading instead. Add a key in Settings.",
+      );
+    }
+    if (played || token.current !== mine) return;
+    try {
+      await speakSystem(text, { rate: c.speed, voiceURI: c.voiceURI });
+    } catch {
+      /* this device has no speech at all */
+    }
+  }, [fetchAudio, note]);
+
+  /**
+   * Read the sentence at the reader's position, then turn the page.
+   *
+   * `force` reads it again even when it is already being read — used
+   * when the voice itself changed. Without it, the same position is
+   * never started twice.
+   */
+  const begin = useCallback(
+    (force: boolean) => {
+      const c = latest.current;
+      if (c.blocked()) return;
+      if (!force && startedKey.current === c.positionKey) return;
+      startedKey.current = c.positionKey;
+      const text = c.currentText().trim();
+      if (!text) {
+        stop();
+        return;
+      }
       const mine = ++token.current;
       setSpeaking(true);
-      let played = false;
-      if (canUseEleven && !forcedSystem.current) {
-        try {
-          const data = await fetchAudio(text);
-          if (token.current !== mine) return;
-          await playAudio(data);
-          played = true;
-          // The stored voice was a phone voice name — the default voice
-          // read instead. Say so, once.
-          note(
-            staleVoice
-              ? "That voice belongs to the phone, not to ElevenLabs — the default voice is reading. Pick one from the voice list."
-              : null,
-          );
-        } catch (e) {
-          // ElevenLabs could not do it — say so, and let the phone's
-          // voice take over, instead of swapping engines silently.
-          const err = e instanceof Error ? e : new Error("The voice failed.");
-          // Out of reach: the phone's own voice reads from here on, and
-          // the reader is told once — not once per sentence.
-          if (isNetworkError(err) && (!isOnline() || err instanceof TypeError)) {
-            forcedSystem.current = true;
-            note("You're offline — the phone's voice is reading instead.");
-          } else {
-            note(speakError(err));
-          }
-          played = false;
-        }
-      } else if (engine === "eleven") {
-        // ElevenLabs was asked for, but there is no key to read with.
-        note(
-          "No ElevenLabs key — the phone's voice is reading instead. Add a key in Settings.",
-        );
-      }
-      if (!played) {
-        try {
-          await speakSystem(text, { rate: speed, voiceURI });
-        } catch {
-          /* this device has no speech at all */
-        }
-      }
-      if (token.current === mine) setSpeaking(false);
+      // The next sentence is on its way while this one is read.
+      if (wantsEleven(c)) prefetch(c.nextText());
+      void (async () => {
+        await play(text, mine);
+        // Superseded or stopped: the newer reading owns the reader.
+        if (token.current !== mine) return;
+        setSpeaking(false);
+        if (!sessionRef.current) return;
+        // The end of the book stops the session.
+        if (!latest.current.advance()) stop();
+      })();
     },
-    [canUseEleven, engine, fetchAudio, speed, voiceURI, note, staleVoice],
+    [play, prefetch, stop],
   );
-
-  /** Say the current sentence; when it ends, turn the page and go on. */
-  const readCurrent = useCallback(async () => {
-    if (blocked()) return;
-    const text = currentText().trim();
-    if (!text) {
-      stop();
-      return;
-    }
-    const spoken = play(text);
-    // The next sentence is on its way while this one is read.
-    if (canUseEleven) prefetch(nextText());
-    await spoken;
-    if (!sessionRef.current) return;
-    // The end of the book stops the session.
-    if (!advance()) stop();
-  }, [blocked, currentText, play, prefetch, nextText, canUseEleven, advance, stop]);
 
   /** The speaker button: start the session, or stop it. */
   const toggle = useCallback(() => {
@@ -252,22 +281,31 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
     }
     sessionRef.current = true;
     setSession(true);
-    void readCurrent();
-  }, [readCurrent, stop]);
+    begin(false);
+  }, [begin, stop]);
 
   /** An overlay closed — pick the sentence up again. */
   const resume = useCallback(() => {
-    if (!sessionRef.current && !follow) return;
-    if (blocked()) return;
-    void readCurrent();
-  }, [follow, blocked, readCurrent]);
+    if (!sessionRef.current && !latest.current.follow) return;
+    begin(false);
+  }, [begin]);
 
   // Moving while the session runs speaks the new sentence straight away.
   useEffect(() => {
     if (!sessionRef.current && !follow) return;
-    if (blocked()) return;
-    void readCurrent();
-  }, [positionKey, follow, blocked, readCurrent]);
+    begin(false);
+  }, [positionKey, follow, begin]);
+
+  // A new voice, speed, key or engine: the sentence is read again, in
+  // the new voice — only when something is being read right now.
+  const voiceSignature = `${voiceIdOf(voice)}\u0000${speed}\u0000${key}\u0000${engine}\u0000${voiceURI}`;
+  const lastSignature = useRef(voiceSignature);
+  useEffect(() => {
+    if (lastSignature.current === voiceSignature) return;
+    lastSignature.current = voiceSignature;
+    if (startedKey.current === null) return;
+    begin(true);
+  }, [voiceSignature, begin]);
 
   // Follow-aloud off, session off — the voice is silent.
   useEffect(() => {
@@ -282,13 +320,20 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
   useOnline(() => {
     if (!forcedSystem.current) return;
     forcedSystem.current = false;
-    if (engine !== "eleven") return;
+    if (latest.current.engine !== "eleven") return;
     note("Back online — ElevenLabs is reading again.");
-    if (sessionRef.current) void readCurrent();
+    if (sessionRef.current) begin(true);
   });
 
   // Never talk to nobody: leaving the reader stops the voice.
-  useEffect(() => () => stopSpeech(), []);
+  useEffect(
+    () => () => {
+      token.current += 1;
+      stopSpeech();
+      stopAudio();
+    },
+    [],
+  );
 
   return {
     speaking,
@@ -301,4 +346,9 @@ export function useReadAloud(opts: ReadAloudOptions): ReadAloud {
     stop,
     resume,
   };
+}
+
+/** ElevenLabs is the engine, and a key is there to read with. */
+function wantsEleven(c: Pick<ReadAloudOptions, "engine" | "key">): boolean {
+  return c.engine === "eleven" && !!c.key;
 }
